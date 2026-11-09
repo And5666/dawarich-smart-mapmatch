@@ -12,7 +12,7 @@ from bisect import bisect_left
 from typing import Any
 
 from . import rail
-from .geo import cumulative, haversine, project_arc
+from .geo import cumulative, haversine, point_at, project_arc
 from .segment import features, prepare
 from .valhalla import ValhallaError, route_between, trace_attributes
 
@@ -127,15 +127,52 @@ def match_profiles(points: list[dict[str, Any]]) -> tuple[dict[str, list[dict[st
 
 
 def rail_candidates(points: list[dict[str, Any]]) -> list[dict[str, Any] | None]:
-    out: list[dict[str, Any] | None] = []
-    for p in points:
-        n = rail.nearest(p["lat"], p["lon"])
-        if not n or n["dist"] > 95:
-            out.append(None)
-        else:
-            out.append({"lat": n["lat"], "lon": n["lon"], "dist": n["dist"],
-                        "arc": n["arc"], "shape": n["shape"]})
-    return out
+    """Project a whole section onto one rail alignment.
+
+    Picking the nearest shape per fix makes the line jump between route
+    patterns on parallel tracks; those jumps add fabricated distance. Score
+    each shape by how many fixes it explains and by whether its arc span is
+    close to the raw distance, then project every fix onto the winner.
+    """
+    nearest = [rail.nearest(p["lat"], p["lon"]) for p in points]
+    counts: dict[int, int] = {}
+    for n in nearest:
+        if n and n["dist"] <= 110:
+            counts[n["shape"]] = counts.get(n["shape"], 0) + 1
+    if not counts:
+        return [None] * len(points)
+    path = sum(haversine(a["lat"], a["lon"], b["lat"], b["lon"])
+               for a, b in zip(points, points[1:]))
+    best: tuple[float, int, list[dict[str, Any] | None]] | None = None
+    for shape in counts:
+        poly = rail.shape_line(shape)
+        cum = rail.shape_cum(shape)
+        cands: list[dict[str, Any] | None] = []
+        arcs: list[float] = []
+        dists: list[float] = []
+        for p in points:
+            arc, dist = project_arc(poly, cum, p["lat"], p["lon"])
+            if dist > 110.0:
+                cands.append(None)
+            else:
+                lat, lon, _ = point_at(poly, cum, arc)
+                cands.append({"lat": lat, "lon": lon, "dist": dist, "arc": arc, "shape": shape})
+                arcs.append(arc)
+                dists.append(dist)
+        if not arcs:
+            continue
+        span = max(arcs) - min(arcs)
+        # A route pattern that covers the fixes but travels 2-3x the raw
+        # distance is a loop or a different service pattern, not the train.
+        if not (0.50 <= span / max(1.0, path) <= 1.40):
+            continue
+        cov = len(arcs) / max(1, len(points))
+        ratio_pen = abs(span / max(1.0, path) - 1.0)
+        med = sorted(dists)[len(dists) // 2]
+        score = cov - 0.25 * ratio_pen - 0.0003 * med
+        if best is None or score > best[0]:
+            best = (score, shape, cands)
+    return best[2] if best else [None] * len(points)
 
 
 def _smooth_speeds(points: list[dict[str, Any]]) -> list[float]:

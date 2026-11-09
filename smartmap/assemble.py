@@ -111,6 +111,11 @@ def _matched_run(fixes: list[dict[str, Any]], mode: str,
                 _append_raw(out, p)
             else:
                 seg = subline(poly, cum, a, b)
+                # subline() always walks forward along the shape. If the fix
+                # order is backward (a train or a loop), reverse it, otherwise
+                # the line goes out and back over the same stretch.
+                if (c.get("arc") or 0.0) < (prev[1].get("arc") or 0.0):
+                    seg.reverse()
                 if len(seg) >= 2:
                     _append_curve(out, seg, int(prev[0]["timestamp"]), int(p["timestamp"]),
                                   SPACING.get(mode, 25.0), p.get("accuracy"))
@@ -151,6 +156,17 @@ def build_track(track_id: int, matched: dict[str, Any]) -> dict[str, Any]:
             pts = _matched_run(fixes[i:j], mode, cand_by[i:j], shapes)
             engine = "rail" if mode == "rail" else f"matched:{mode}"
             label_mode = LABEL.get(mode, mode)
+            if mode == "rail":
+                raw_run = sum(haversine(a["lat"], a["lon"], b["lat"], b["lon"])
+                              for a, b in zip(fixes[i:j], fixes[i + 1:j]))
+                gen_run = sum(haversine(a["lat"], a["lon"], b["lat"], b["lon"])
+                              for a, b in zip(pts, pts[1:]))
+                # A route pattern can be a loop or a different service. If it
+                # does not resemble the raw train distance, keep the record.
+                if gen_run > 1.35 * raw_run + 150 or gen_run < 0.65 * raw_run - 150:
+                    pts = [_raw_point(p) for p in fixes[i:j]]
+                    engine = "raw"
+                    label_mode = "raw"
         runs.append({"start": i, "end": j, "mode": label_mode, "engine": engine,
                      "points": pts, "n_in": j - i, "start_ts": int(fixes[i]["timestamp"]),
                      "end_ts": int(fixes[j - 1]["timestamp"])})
