@@ -11,7 +11,10 @@ MIN_GAP = 2.0
 
 def _profile(a: dict[str, Any], b: dict[str, Any], gap: float) -> str:
     modes = {a.get("mode"), b.get("mode")}
-    if "driving" in modes or "train" in modes:
+    if "train" in modes:
+        # Station access is walking unless the other side is a road leg.
+        return "pedestrian" if modes & {"walking", "stationary", "raw"} else "auto"
+    if "driving" in modes:
         return "auto"
     if "cycling" in modes:
         return "bicycle"
@@ -25,11 +28,18 @@ def _route_points(a: dict[str, Any], b: dict[str, Any], profile: str) -> tuple[l
     q = b["points"][0]
     gap = haversine(p[0], p[1], q[0], q[1])
     r = route_between({"lat": p[0], "lon": p[1]}, {"lat": q[0], "lon": q[1]}, profile)
-    if not r or len(r.get("shape") or []) < 2:
-        return [p, q], "connector"
-    if r["length_m"] > max(500.0, gap * 4.0 + 200.0):
+    if not r or len(r.get("shape") or []) < 2 or float(r.get("length_m") or 0) <= 0:
         return [p, q], "connector"
     poly = r["shape"]
+    # Valhalla can return a degenerate route for two points off the network:
+    # a shape far from both endpoints and a zero summary length. Reject it.
+    if haversine(p[0], p[1], poly[0][0], poly[0][1]) > 120.0 or             haversine(q[0], q[1], poly[-1][0], poly[-1][1]) > 120.0:
+        return [p, q], "connector"
+    poly_len = sum(haversine(a[0], a[1], b[0], b[1]) for a, b in zip(poly, poly[1:]))
+    # A connector is a seam, not a detour. If the routed line is more than
+    # roughly twice the straight gap, show the honest straight link instead.
+    if poly_len > max(120.0, gap * 2.0 + 80.0):
+        return [p, q], "connector"
     pts: list[list[float]] = [p]
     for lat, lon in poly:
         if haversine(pts[-1][0], pts[-1][1], lat, lon) > 2.0:
