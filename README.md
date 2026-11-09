@@ -3,8 +3,10 @@
 State-first map matching for GPS traces in a self-hosted Dawarich.
 
 Every input fix gets one state: `auto`, `bicycle`, `pedestrian`, `rail`, or
-`raw`. The output line is built from that state sequence. There is no second
-pass that stitches seams, routes connectors, or re-adds points after matching.
+`raw`. The output line is built from that state sequence. Connectors are added
+after matching only where two visible state parts do not meet; each connector
+is routed with the profile that fits both sides, and falls back to a straight
+line only when routing is impossible.
 
 ## How it works
 
@@ -18,8 +20,9 @@ pass that stitches seams, routes connectors, or re-adds points after matching.
    Unmatched fixes are not replaced by the input coordinate; they become raw.
 4. **Assemble** - matched runs follow the matched shape, raw runs keep the
    recorded fixes. Stationary and gap states are never routed.
-5. **Review** - contiguous state runs become clickable parts. There are no
-   synthetic bridge parts.
+5. **Review** - contiguous state runs become clickable parts. A routed
+   connector is inserted wherever adjacent parts leave a real gap; it is shown
+   as its own coloured part and keeps the timeline continuous.
 
 When Valhalla abandons a fast road section because the fixes are sparse, a
 road route between the raw run's endpoints is used only if it explains most of
