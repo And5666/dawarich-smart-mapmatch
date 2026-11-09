@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+out/
+*.log
+data/raw_v5.json
+data/v29_meta.json
+data/*.local.json
+.env
