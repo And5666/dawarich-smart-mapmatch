@@ -20,9 +20,10 @@ line only when routing is impossible.
    Unmatched fixes are not replaced by the input coordinate; they become raw.
 4. **Assemble** - matched runs follow the matched shape, raw runs keep the
    recorded fixes. Stationary and gap states are never routed.
-5. **Review** - contiguous state runs become clickable parts. A routed
-   connector is inserted wherever adjacent parts leave a real gap; it is shown
-   as its own coloured part and keeps the timeline continuous.
+5. **Review** - contiguous state runs become clickable parts. Long GPS
+   dropouts inside a road/walk/cycle part are filled with a route, and a
+   routed connector is inserted wherever adjacent parts leave a real gap. A
+   train seam is never routed as a footpath or road; it stays straight.
 
 When Valhalla abandons a fast road section because the fixes are sparse, a
 road route between the raw run's endpoints is used only if it explains most of

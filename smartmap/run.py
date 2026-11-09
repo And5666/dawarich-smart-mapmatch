@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from .assemble import build_track
-from .connectors import add_connectors
+from .connectors import add_connectors, repair_internal_gaps
 from .infer import infer_track
 from .metrics import track_metrics
 from .review import build as build_review
@@ -76,8 +76,9 @@ def main(argv=None) -> int:
     def work(tid: int) -> dict:
         tr = infer_track(by_id[tid])
         built = build_track(tid, tr)
-        add_connectors(built)
         built["_raw_points"] = tr["fixes"]
+        repair_internal_gaps(built)
+        add_connectors(built)
         return built
 
     with ThreadPoolExecutor(max_workers=max(1, args.workers)) as pool:
