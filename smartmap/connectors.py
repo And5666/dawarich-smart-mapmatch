@@ -45,7 +45,7 @@ def _route_points(a: dict[str, Any], b: dict[str, Any], profile: str) -> tuple[l
     # A connector is a seam, not a detour. Boundary fixes that are off-map or
     # stopped get a tighter allowance than a seam between two movement parts.
     boundary = bool({a.get("mode"), b.get("mode")} & {"raw", "stationary"})
-    cap = max(120.0, gap * (1.5 if boundary else 2.0) + (50.0 if boundary else 80.0))
+    cap = max(120.0, gap * 2.0 + 80.0)
     if poly_len > cap:
         return [p, q], "connector"
     pts: list[list[float]] = [p]

@@ -172,6 +172,24 @@ def build_track(track_id: int, matched: dict[str, Any]) -> dict[str, Any]:
                      "end_ts": int(fixes[j - 1]["timestamp"])})
         i = j
 
+    # A one-point raw/stationary run is usually a boundary artifact. Keep the
+    # point, but fold it into the adjacent part instead of emitting a zero-length
+    # part and a straight connector around it. Route endpoints are preserved.
+    if len(runs) > 1 and len(runs[0]["points"]) == 1:
+        first = runs.pop(0)
+        runs[0]["points"].insert(0, first["points"][0])
+        runs[0]["start_ts"] = first["start_ts"]
+        runs[0]["n_in"] += first["n_in"]
+    merged_runs: list[dict[str, Any]] = []
+    for r in runs:
+        if len(r["points"]) == 1 and merged_runs:
+            merged_runs[-1]["points"].append(r["points"][0])
+            merged_runs[-1]["end_ts"] = r["end_ts"]
+            merged_runs[-1]["n_in"] += r["n_in"]
+        else:
+            merged_runs.append(r)
+    runs = merged_runs
+
     out: list[dict[str, Any]] = []
     parts: list[dict[str, Any]] = []
     for k, r in enumerate(runs):
