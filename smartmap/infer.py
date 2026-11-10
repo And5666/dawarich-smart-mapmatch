@@ -364,14 +364,11 @@ def infer_section(points: list[dict[str, Any]]) -> dict[str, Any]:
                 states[k] = pick
                 if pick == "raw":
                     cands[k] = None
-        # A short rail visit is a road beside the railway, not a train leg.
-        if states[i] == "rail":
-            span = sum(haversine(a["lat"], a["lon"], b["lat"], b["lon"])
-                       for a, b in zip(points[i:j], points[i + 1:j]))
-            if j - i < 10 or span < 300.0:
-                for k in range(i, j):
-                    states[k] = "raw"
-                    cands[k] = None
+        # A rail visit shorter than five fixes is a road beside the railway.
+        if states[i] == "rail" and j - i < 5:
+            for k in range(i, j):
+                states[k] = "raw"
+                cands[k] = None
         i = j
 
     # Cycling at urban speed on roads with cycleway/path evidence is much
