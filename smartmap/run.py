@@ -12,9 +12,11 @@ from pathlib import Path
 
 from .assemble import build_track
 from .connectors import add_connectors, repair_internal_gaps
+from .geo import haversine
 from .infer import infer_track
 from .metrics import track_metrics
 from .review import build as build_review
+from .stream import from_parts
 
 
 def _load_ids(path: str | None, fallback: list[int]) -> list[int]:
@@ -79,6 +81,15 @@ def main(argv=None) -> int:
         built["_raw_points"] = tr["fixes"]
         repair_internal_gaps(built)
         add_connectors(built)
+        # Review parts are authoritative: they contain routed connectors and
+        # repaired gaps. Write the same stream to points/gen so a push is
+        # visually identical to the review.
+        built["points"] = from_parts(built)
+        built["ngen"] = len(built["points"])
+        built["gen"] = [[p["lat"], p["lon"]] for p in built["points"]]
+        built["distance"] = round(sum(
+            haversine(a["lat"], a["lon"], b["lat"], b["lon"])
+            for a, b in zip(built["points"], built["points"][1:])) / 1000.0, 2)
         return built
 
     with ThreadPoolExecutor(max_workers=max(1, args.workers)) as pool:
