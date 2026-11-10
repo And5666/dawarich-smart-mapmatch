@@ -31,10 +31,14 @@ def build(tracks):
             "nraw": t["nraw"], "ngen": t["ngen"],
             "matched_km": t.get("matched_km", 0),
             "raw_km": t.get("raw_km", 0),
+            "p95": t.get("p95", 0),
+            "p50": t.get("p50", 0),
+            "ratio": t.get("ratio", 0),
             "connections": 0,
             "parts": parts,
             "raw": _thin(t["raw"], 2200),
             "gen": _thin(t["gen"], 3500),
         })
-    out.sort(key=lambda r: (-len(r["parts"]), r["id"]))
+    out.sort(key=lambda r: (-r.get("p95", 0), -r.get("p50", 0),
+                            -r.get("ratio", 0), -len(r["parts"]), r["id"]))
     return out
