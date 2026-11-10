@@ -281,6 +281,11 @@ def infer_section(points: list[dict[str, Any]]) -> dict[str, Any]:
     profiles, shapes = match_profiles(points)
     rail_c = rail_candidates(points)
     rail_frac = sum(1 for c in rail_c if c and c["dist"] <= 60) / max(1, len(points))
+    # A handful of fixes beside a railway is a road, not a train. Short rail
+    # runs are what turned 3190 into a train and routed it onto the tracks.
+    if sum(1 for c in rail_c if c) < 10:
+        rail_c = [None] * len(points)
+        rail_frac = 0.0
     f = features(points)
     med = f["speed"]
     speeds = _smooth_speeds(points)
@@ -365,6 +370,31 @@ def infer_section(points: list[dict[str, Any]]) -> dict[str, Any]:
                 states[k] = "raw"
                 cands[k] = None
         i = j
+
+    # Cycling at urban speed on roads with cycleway/path evidence is much
+    # more likely a bicycle than a car. Prefer the bicycle hypothesis; this
+    # also lets Valhalla's bicycle costing take contraflow/cycle paths instead
+    # of looping around car one-way restrictions.
+    if 8.0 <= med <= 42.0 and f["path"] <= 10000.0:
+        auto_idx = [i for i, s in enumerate(states) if s == "auto"]
+        bike_path = 0
+        auto_motor = 0
+        for i in range(len(points)):
+            ac = profiles["auto"][i]
+            bc = profiles["bicycle"][i]
+            if ac is not None:
+                k = _edge_kind(ac)
+                if "motorway" in k or "trunk" in k:
+                    auto_motor += 1
+            if bc is not None:
+                k = _edge_kind(bc)
+                if any(x in k for x in ("cycleway", "path", "footway", "track", "bridleway")):
+                    bike_path += 1
+        if auto_idx and bike_path >= max(1, int(0.08 * len(points))) and auto_motor <= max(2, int(0.35 * len(points))):
+            for i in auto_idx:
+                if profiles["bicycle"][i] is not None:
+                    states[i] = "bicycle"
+                    cands[i] = profiles["bicycle"][i]
 
     # A matched state without a candidate cannot be written; fall back to raw.
     for i, s in enumerate(states):

@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from .assemble import build_track
-from .connectors import add_connectors, repair_internal_gaps
+from .connectors import add_connectors, repair_internal_gaps, rescue_raw_parts
 from .geo import haversine
 from .infer import infer_track
 from .metrics import track_metrics
@@ -80,6 +80,7 @@ def main(argv=None) -> int:
         built = build_track(tid, tr)
         built["_raw_points"] = tr["fixes"]
         repair_internal_gaps(built)
+        rescue_raw_parts(built)
         add_connectors(built)
         # Review parts are authoritative: they contain routed connectors and
         # repaired gaps. Write the same stream to points/gen so a push is

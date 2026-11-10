@@ -15,6 +15,9 @@ def _profile(a: dict[str, Any], b: dict[str, Any], gap: float) -> str | None:
         # There is no routed rail profile. Never turn a train seam into a
         # footpath or a road: show the straight link instead.
         return None
+    if modes & {"raw", "stationary"} and gap < 80.0:
+        # A short boundary to a stop or an off-map fix is jitter, not a road.
+        return None
     if "driving" in modes:
         return "auto"
     if "cycling" in modes:
@@ -39,9 +42,11 @@ def _route_points(a: dict[str, Any], b: dict[str, Any], profile: str) -> tuple[l
     if haversine(p[0], p[1], poly[0][0], poly[0][1]) > 120.0 or             haversine(q[0], q[1], poly[-1][0], poly[-1][1]) > 120.0:
         return [p, q], "connector"
     poly_len = sum(haversine(a[0], a[1], b[0], b[1]) for a, b in zip(poly, poly[1:]))
-    # A connector is a seam, not a detour. If the routed line is more than
-    # roughly twice the straight gap, show the honest straight link instead.
-    if poly_len > max(120.0, gap * 2.0 + 80.0):
+    # A connector is a seam, not a detour. Boundary fixes that are off-map or
+    # stopped get a tighter allowance than a seam between two movement parts.
+    boundary = bool({a.get("mode"), b.get("mode")} & {"raw", "stationary"})
+    cap = max(120.0, gap * (1.5 if boundary else 2.0) + (50.0 if boundary else 80.0))
+    if poly_len > cap:
         return [p, q], "connector"
     pts: list[list[float]] = [p]
     for lat, lon in poly:
@@ -140,6 +145,47 @@ def repair_internal_gaps(track: dict[str, Any]) -> int:
             part["label"] = f"{mode} · repaired:{profile}"
             repaired += 1
     return repaired
+
+
+def rescue_raw_parts(track: dict[str, Any]) -> int:
+    """Map a substantial raw run that sits between state boundaries.
+
+    Raw runs of only a few metres are jitter or endpoints and stay raw. A run
+    of several hundred metres or more with a plausible speed and a route that
+    explains its endpoints can be matched instead of left as a straight chord.
+    """
+    rescued = 0
+    for part in track.get("parts") or []:
+        if part.get("mode") != "raw":
+            continue
+        pts = part.get("points") or []
+        if len(pts) < 3 or float(part.get("distance") or 0) < 0.3:
+            continue
+        t0 = int(part.get("start") or 0)
+        t1 = int(part.get("end") or 0)
+        dt = max(1, t1 - t0)
+        speed = float(part.get("distance") or 0) * 1000.0 / dt * 3.6
+        if speed < 8.0 or speed > 180.0:
+            continue
+        profile = "auto" if speed >= 18.0 else "bicycle"
+        a, b = pts[0], pts[-1]
+        r = route_between({"lat": a[0], "lon": a[1]}, {"lat": b[0], "lon": b[1]}, profile)
+        if not r or len(r.get("shape") or []) < 2:
+            continue
+        poly = r["shape"]
+        if haversine(poly[0][0], poly[0][1], a[0], a[1]) > 150 or                 haversine(poly[-1][0], poly[-1][1], b[0], b[1]) > 150:
+            continue
+        path = sum(haversine(x[0], x[1], y[0], y[1]) for x, y in zip(pts, pts[1:]))
+        if not (0.65 <= r["length_m"] / max(1.0, path) <= 1.6):
+            continue
+        part["points"] = [[lat, lon] for lat, lon in poly]
+        part["mode"] = "driving" if profile == "auto" else "cycling"
+        part["engine"] = f"rescued:{profile}"
+        part["label"] = f"{part['mode']} · rescued:{profile}"
+        part["distance"] = round(_line_len(part["points"]) / 1000.0, 3)
+        part["n_out"] = len(part["points"])
+        rescued += 1
+    return rescued
 
 def add_connectors(track: dict[str, Any]) -> dict[int, int]:
     """Insert a connector part after every adjacent pair with a real gap.

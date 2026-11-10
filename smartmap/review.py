@@ -14,7 +14,7 @@ def build(tracks):
     for t in tracks:
         parts = []
         for p in t["parts"]:
-            if len(p.get("points") or []) < 2:
+            if not (p.get("points") or []):
                 continue
             parts.append({
                 "i": len(parts), "start": p["start"], "end": p["end"],

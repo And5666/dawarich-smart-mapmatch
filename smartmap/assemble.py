@@ -184,8 +184,6 @@ def build_track(track_id: int, matched: dict[str, Any]) -> dict[str, Any]:
         if not pts:
             continue
         out.extend(pts)
-        if len(pts) < 2:
-            continue
         parts.append({
             "i": len(parts), "start": r["start_ts"], "end": r["end_ts"],
             "mode": r["mode"], "engine": r["engine"],
