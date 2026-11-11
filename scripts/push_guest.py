@@ -68,11 +68,12 @@ def feature(p, device):
             "properties": props}
 
 
-def push(base, key, tracks, device, batch=500):
+def push(base, key, tracks, device, batch=500, per_track=False):
     feats = []
     for t in tracks:
+        dev = f"{device}-{t['id']}" if per_track else device
         for p in t.get("points") or []:
-            feats.append(feature(p, device))
+            feats.append(feature(p, dev))
     feats.sort(key=lambda f: f["properties"]["timestamp"])
     print(f"points to push: {len(feats)}", flush=True)
     written = 0
@@ -91,6 +92,7 @@ def main():
     ap.add_argument("--key-file", default="/data/.dawarich_test_key")
     ap.add_argument("--tracks", default="/data/all_tracks.json")
     ap.add_argument("--device", default="smartmap-v33")
+    ap.add_argument("--device-per-track", action="store_true")
     ap.add_argument("--delete-existing", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
@@ -104,7 +106,7 @@ def main():
             print("after delete", stats(args.base, key), flush=True)
     tracks = json.load(open(args.tracks))
     if not args.dry_run:
-        print("pushed", push(args.base, key, tracks, args.device), flush=True)
+        print("pushed", push(args.base, key, tracks, args.device, per_track=args.device_per_track), flush=True)
         print("after", stats(args.base, key), flush=True)
 
 
