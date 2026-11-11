@@ -64,8 +64,8 @@ def _init_db() -> None:
         CREATE TABLE IF NOT EXISTS users (
           id INTEGER PRIMARY KEY, username TEXT UNIQUE NOT NULL,
           password TEXT NOT NULL, is_admin INTEGER NOT NULL DEFAULT 0,
-          api_key TEXT DEFAULT '', auto INTEGER NOT NULL DEFAULT 0,
-          interval_minutes INTEGER NOT NULL DEFAULT 360,
+          api_key TEXT DEFAULT '', auto INTEGER NOT NULL DEFAULT 1,
+          interval_minutes INTEGER NOT NULL DEFAULT 1440,
           last_run TEXT DEFAULT '', created_at TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS sessions (
@@ -146,7 +146,8 @@ def _read_json(path: Path, default: Any) -> Any:
 def _job_start(uid: int, kind: str, fn) -> str:
     jid = uuid.uuid4().hex[:12]
     _jobs[jid] = {"id": jid, "user": uid, "kind": kind, "status": "queued",
-                  "progress": 0, "message": "queued", "created": _now()}
+                  "progress": 0, "message": "queued", "created": _now(),
+                  "cancel": False, "live": []}
 
     def work():
         _jobs[jid].update(status="running", message="starting")
@@ -164,6 +165,15 @@ def _job_start(uid: int, kind: str, fn) -> str:
 def _job(jid: str, pct: int, msg: str) -> None:
     if jid in _jobs:
         _jobs[jid].update(progress=pct, message=msg)
+        if _jobs[jid].get("cancel"):
+            raise RuntimeError("cancelled")
+
+
+def _thin(points: list[list[float]], limit: int = 200) -> list[list[float]]:
+    if len(points) <= limit:
+        return points
+    step = (len(points) - 1) / (limit - 1)
+    return [points[round(i * step)] for i in range(limit)]
 
 
 def _dawarich(method: str, path: str, key: str, **kwargs):
@@ -242,6 +252,7 @@ def _matches(points: list[dict[str, Any]], jid: str, label: str) -> tuple[list[d
         })
     items = sorted(groups.items())
     tracks = []
+    live = _jobs.setdefault(jid, {}).setdefault("live", [])
 
     def one(item):
         key, pts = item
@@ -258,13 +269,23 @@ def _matches(points: list[dict[str, Any]], jid: str, label: str) -> tuple[list[d
         built["gen"] = [[p["lat"], p["lon"]] for p in built["points"]]
         return built
 
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    # Put the original routes on the live map before matching starts.
+    for key, pts in items:
+        suffix = str(key).split("-")[-1]
+        rid = int(suffix) if suffix.isdigit() else abs(hash(key)) % 1_000_000_000
+        raw = [[x["lat"], x["lon"]] for x in pts]
+        live.append({"id": rid, "raw": _thin(raw), "gen": [], "state": "raw"})
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
         futures = {pool.submit(one, item): item[0] for item in items}
         done = 0
         for fut in as_completed(futures):
             done += 1
             try:
-                tracks.append(fut.result())
+                built = fut.result()
+                tracks.append(built)
+                live.append({"id": built["id"], "raw": _thin(built.get("raw") or []),
+                             "gen": _thin(built.get("gen") or []), "state": "matched"})
             except Exception:
                 pass
             _job(jid, min(95, int(done * 90 / max(1, len(items)))),
@@ -284,6 +305,11 @@ def _run_import(uid: int, jid: str, start: int | None, end: int | None) -> None:
     _job(jid, 3, "downloading Dawarich points")
     points = _fetch_points(user["api_key"], start, end)
     d = _udir(uid)
+    old = _read_json(d / "review.json", [])
+    if old:
+        bdir = d / "backups"
+        bdir.mkdir(exist_ok=True)
+        _write_json(bdir / f"review-{int(time.time())}.json", old)
     _write_json(d / "source.json", points)
     _job(jid, 20, f"matching {len(points)} points")
     tracks, review = _matches(points, jid, "matching")
@@ -505,6 +531,16 @@ def job(jid: str, user=Depends(_user)):
     return j
 
 
+@router.post("/api/jobs/{jid}/cancel")
+def cancel_job(jid: str, user=Depends(_user)):
+    j = _jobs.get(jid)
+    if not j or j["user"] != user["id"]:
+        raise HTTPException(404, "job not found")
+    j["cancel"] = True
+    j["message"] = "cancelling"
+    return {"ok": True}
+
+
 @router.get("/api/download/source")
 def download_source(user=Depends(_user)):
     data = _read_json(_udir(user["id"]) / "source.json", [])
@@ -638,109 +674,6 @@ def admin_valhalla(body: dict, user=Depends(_user)):
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
 def page():
-    return HTMLResponse(PAGE)
+    return HTMLResponse((Path(__file__).with_name("index.html")).read_text())
 
 
-PAGE = r"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Mapmatch</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<style>
-*{box-sizing:border-box}body{margin:0;font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;color:#1c2430;background:#f5f7fa}
-a{color:#2563eb}.hidden{display:none!important}.muted{color:#667085}.row{display:flex;gap:10px;align-items:center}.grow{flex:1}
-button,.btn{border:1px solid #d0d5dd;background:#fff;color:#1c2430;border-radius:8px;padding:8px 12px;font:inherit;cursor:pointer}
-button.primary{background:#2563eb;color:#fff;border-color:#2563eb}button.danger{background:#b42318;color:#fff;border-color:#b42318}
-button:hover{filter:brightness(.97)}input,select,textarea{border:1px solid #d0d5dd;border-radius:8px;padding:8px 10px;font:inherit;background:#fff;color:#1c2430;width:100%}
-label{font-size:12px;color:#475467;display:block;margin-bottom:4px}
-.login{min-height:100vh;display:grid;place-items:center;background:linear-gradient(135deg,#eef4ff,#f8fafc)}
-.card{background:#fff;border:1px solid #e4e7ec;border-radius:16px;padding:24px;box-shadow:0 12px 40px #10182812;width:min(420px,92vw)}
-.card h1{margin:0 0 4px;font-size:24px}.card p{margin:0 0 18px;color:#667085}.field{margin-bottom:12px}
-.app{display:grid;grid-template-columns:310px 1fr;height:100vh}.side{background:#fff;border-right:1px solid #e4e7ec;display:flex;flex-direction:column;min-height:0}
-.brand{padding:16px;border-bottom:1px solid #e4e7ec;display:flex;justify-content:space-between;align-items:center}.brand b{font-size:17px}
-.tools{padding:12px 16px;border-bottom:1px solid #e4e7ec;display:grid;gap:8px}.tools .row{gap:6px}
-.list{overflow:auto;flex:1}.item{padding:10px 16px;border-bottom:1px solid #f0f2f5;cursor:pointer}.item:hover,.item.active{background:#eff6ff}
-.item b{font-size:13px}.item .meta{font-size:11px;color:#667085}
-main{display:flex;flex-direction:column;min-width:0;min-height:0}.top{height:54px;background:#fff;border-bottom:1px solid #e4e7ec;display:flex;align-items:center;gap:12px;padding:0 16px}
-#map{flex:1;min-height:0}.panel{position:absolute;z-index:500;right:16px;top:70px;width:min(420px,calc(100% - 32px));background:#fff;border:1px solid #e4e7ec;border-radius:12px;padding:16px;box-shadow:0 12px 40px #10182820}
-.editor{position:fixed;inset:0;background:#f5f7fa;z-index:1000;display:flex;flex-direction:column}.edhead{height:56px;background:#fff;border-bottom:1px solid #e4e7ec;display:flex;align-items:center;gap:10px;padding:0 16px}
-.edmaps{display:grid;grid-template-columns:1fr 1fr;height:38vh;min-height:220px}.edmap{position:relative}.edmap .cap{position:absolute;z-index:500;top:8px;left:8px;background:#fff9;padding:2px 8px;border-radius:4px;font-size:11px}
-.edbody{flex:1;display:grid;grid-template-columns:1.2fr .8fr;gap:12px;padding:12px;overflow:auto}
-.box{background:#fff;border:1px solid #e4e7ec;border-radius:10px;padding:12px}.seg{display:grid;grid-template-columns:44px 1fr 110px 70px 44px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid #f0f2f5;font-size:12px}
-.seg:last-child{border:0}.chip{font-size:11px;padding:2px 7px;border-radius:20px;background:#eef2f6;color:#475467}.chip.c{background:#e0f2fe;color:#075985}.chip.r{background:#fff7ed;color:#9a3412}
-.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#101828;color:#fff;padding:10px 16px;border-radius:8px;z-index:2000;font-size:13px}
-.progress{height:6px;background:#e4e7ec;border-radius:99px;overflow:hidden}.progress i{display:block;height:100%;background:#2563eb;width:0}
-@media(max-width:850px){.app{grid-template-columns:1fr}.side{display:none}.edmaps{grid-template-columns:1fr;grid-template-rows:1fr 1fr}.edbody{grid-template-columns:1fr}}
-</style></head><body>
-<div id="login" class="login"><div class="card">
- <h1>Mapmatch</h1><p>Clean routes for your Dawarich account.</p>
- <div class="field"><label>Username</label><input id="lu" autocomplete="username"></div>
- <div class="field"><label>Password</label><input id="lp" type="password" autocomplete="current-password"></div>
- <div class="row"><button class="primary" onclick="login()">Sign in</button><button onclick="signup()" id="signupBtn">Create account</button></div>
- <p id="lerr" class="muted" style="margin-top:12px"></p>
-</div></div>
-
-<div id="app" class="app hidden">
- <aside class="side"><div class="brand"><b>Mapmatch</b><span id="who" class="muted"></span></div>
-  <div class="tools">
-   <div class="row"><input id="from" type="date"><input id="to" type="date"></div>
-   <div class="row"><button class="primary grow" onclick="loadMap()">Show</button><button onclick="openSettings()">Settings</button></div>
-   <div class="row"><button class="grow" onclick="startJob('import')">Sync &amp; match</button><button onclick="startJob('push')">Push</button></div>
-  </div>
-  <div id="list" class="list"></div>
- </aside>
- <main><div class="top"><b id="title">Routes</b><span class="grow"></span><span id="status" class="muted"></span>
-  <button id="adminBtn" class="hidden" onclick="openAdmin()">Admin</button><button onclick="logout()">Sign out</button></div>
-  <div id="map"></div>
- </main>
-</div>
-
-<div id="panel" class="panel hidden"></div>
-
-<div id="editor" class="editor hidden">
- <div class="edhead"><button onclick="closeEditor()">Back</button><b id="edtitle">Route</b><span class="grow"></span>
-  <button onclick="rematch()">Map match all</button><button onclick="removeRoute()" class="danger">Remove</button></div>
- <div class="edmaps"><div class="edmap"><div class="cap">Original</div><div id="mapO" style="position:absolute;inset:0"></div></div>
- <div class="edmap"><div class="cap">Matched</div><div id="mapM" style="position:absolute;inset:0"></div></div></div>
- <div class="edbody"><div class="box"><div class="row"><b>Segments</b><span class="grow"></span><span class="muted">change mode or leave raw</span></div><div id="segs"></div></div>
- <div class="box"><div class="row"><b>Original points</b><span class="grow"></span><button onclick="savePoints()">Save &amp; rerun</button></div>
-  <p class="muted" style="font-size:12px">JSON list. Keep timestamps; latitude/longitude in WGS84.</p><textarea id="pts" style="height:300px;font-family:ui-monospace,monospace;font-size:11px"></textarea></div></div>
-</div>
-<div id="jobs" class="panel hidden"></div>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script>
-const API='/review/portal/api';let ME=null,DATA=[],CUR=null,MAP=null,mapO=null,mapM=null,layers=[],sel=null;
-const $=id=>document.getElementById(id);const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-function toast(m){let t=document.createElement('div');t.className='toast';t.textContent=m;document.body.appendChild(t);setTimeout(()=>t.remove(),3000)}
-async function api(path,opt={}){let r=await fetch(API+path,{headers:{'Content-Type':'application/json'},credentials:'same-origin',...opt});if(r.status===401){showLogin();throw new Error('login')}let j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.detail||r.statusText);return j}
-function login(){api('/login',{method:'POST',body:JSON.stringify({username:$('lu').value,password:$('lp').value})}).then(init).catch(e=>$('lerr').textContent=e.message)}
-function signup(){api('/signup',{method:'POST',body:JSON.stringify({username:$('lu').value,password:$('lp').value})}).then(init).catch(e=>$('lerr').textContent=e.message)}
-function logout(){api('/logout',{method:'POST'}).then(showLogin)}
-function showLogin(){$('login').classList.remove('hidden');$('app').classList.add('hidden');$('editor').classList.add('hidden')}
-function init(){api('/me').then(m=>{ME=m;$('login').classList.add('hidden');$('app').classList.remove('hidden');$('who').textContent=m.username;if(m.is_admin)$('adminBtn').classList.remove('hidden');$('signupBtn').classList.toggle('hidden',!m.signup_enabled);let y=new Date();y.setFullYear(y.getFullYear()-1);$('from').value=y.toISOString().slice(0,10);$('to').value=new Date().toISOString().slice(0,10);if(!MAP)MAP=initMap('map');loadMap();if(!m.key_set)openSettings(true)}).catch(showLogin)}
-function initMap(id){let m=L.map(id,{preferCanvas:true}).setView([51.24,-0.59],11);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OSM'}).addTo(m);return m}
-async function loadMap(){let a=new Date($('from').value).getTime()/1000,b=new Date($('to').value).getTime()/1000+86399;let d=await api('/map?start='+Math.floor(a)+'&end='+Math.floor(b));DATA=d.routes;renderList();draw();}
-function renderList(){let el=$('list');el.innerHTML='';DATA.forEach((r,i)=>{let d=document.createElement('div');d.className='item';d.innerHTML=`<b>#${r.id} · ${r.distance} km</b><div class="meta">${new Date(r.start*1000).toLocaleDateString()} · ${r.parts} parts</div>`;d.onclick=()=>openEditor(r.id);el.appendChild(d)})}
-function draw(){layers.forEach(l=>MAP.removeLayer(l));layers=[];DATA.forEach(r=>{if(!r.gen||r.gen.length<2)return;let l=L.polyline(r.gen,{color:'#2563eb',weight:3,opacity:.65}).addTo(MAP);l.on('click',()=>openEditor(r.id));layers.push(l)});}
-function openSettings(force){let key=force?'':'Ask for your Dawarich API key.';$('panel').classList.remove('hidden');$('panel').innerHTML=`<div class="row"><b>Settings</b><span class="grow"></span><button onclick="$('panel').classList.add('hidden')">Close</button></div>
- <div class="field"><label>Dawarich API key</label><input id="key" placeholder="paste key"> </div>
- <div class="row"><label class="grow"><input id="auto" type="checkbox" style="width:auto"> Automatic matching</label><input id="interval" type="number" min="15" style="width:110px" placeholder="minutes"></div>
- <p class="muted" style="font-size:12px">The key is stored only on this server. Automatic runs check for new points, back up, match and push.</p>
- <div class="row" style="margin-top:10px"><button class="primary" onclick="saveSettings()">Save</button><a class="btn" href="/review/portal/api/download/source">Download source</a><button onclick="startJob('revert')">Revert push</button></div>`;api('/me').then(m=>{$('auto').checked=m.auto;$('interval').value=m.interval})}
-async function saveSettings(){let b={auto:$('auto').checked,interval:+$('interval').value};if($('key').value.trim())b.api_key=$('key').value.trim();await api('/settings',{method:'PUT',body:JSON.stringify(b)});toast('Settings saved');$('panel').classList.add('hidden')}
-async function startJob(kind){if(kind==='push'&&!confirm('Replace the Dawarich account points with the matched set? A backup is saved first.'))return;if(kind==='revert'&&!confirm('Restore the newest backup to Dawarich?'))return;let d=await api('/'+kind,{method:'POST'});poll(d.job)}
-async function poll(id){$('jobs').classList.remove('hidden');$('jobs').innerHTML='<b>Working…</b><div class="progress" style="margin-top:10px"><i id="bar"></i></div><p id="jmsg" class="muted"></p>';let t=setInterval(async()=>{let j=await api('/jobs/'+id);$('bar').style.width=j.progress+'%';$('jmsg').textContent=j.message;if(j.status==='done'||j.status==='failed'){clearInterval(t);setTimeout(()=>$('jobs').classList.add('hidden'),1500);if(j.status==='done')loadMap()}},900)}
-async function openEditor(id){let r=await api('/route/'+id);CUR=r;$('editor').classList.remove('hidden');$('edtitle').textContent='Route #'+id;$('pts').value=JSON.stringify(r.original_points||[],null,0);if(!mapO){mapO=initMap('mapO');mapM=initMap('mapM')}drawEditor();renderSegs()}
-function drawEditor(){mapO.eachLayer(l=>{if(l instanceof L.TileLayer)return;mapO.removeLayer(l)});mapM.eachLayer(l=>{if(l instanceof L.TileLayer)return;mapM.removeLayer(l)});
-L.polyline(CUR.raw,{color:'#98a2b3',weight:3}).addTo(mapO);L.polyline(CUR.gen,{color:'#2563eb',weight:3}).addTo(mapM);let b=L.latLngBounds(CUR.raw.length?CUR.raw:CUR.gen);mapO.fitBounds(b,{padding:[20,20]});mapM.fitBounds(b,{padding:[20,20]})}
-function renderSegs(){let el=$('segs');el.innerHTML='';CUR.parts.forEach((p,i)=>{let d=document.createElement('div');d.className='seg';d.innerHTML=`<span class="chip ${p.engine==='raw'?'r':'c'}">${i+1}</span><span>${esc(p.mode)} · ${esc(p.engine)}<br><span class="muted">${(p.distance||0).toFixed? p.distance : p.distance} km</span></span><select data-i="${i}">${['driving','cycling','walking','train','raw'].map(m=>`<option ${m===p.mode?'selected':''}>${m}</option>`).join('')}</select><label><input type="checkbox" data-m="${i}" ${p.engine!=='raw'?'checked':''}> matched</label><button data-x="${i}">Raw</button>`;el.appendChild(d)});el.querySelectorAll('select').forEach(s=>s.onchange=()=>segEdit(+s.dataset.i,{mode:s.value}));el.querySelectorAll('input[data-m]').forEach(c=>c.onchange=()=>segEdit(+c.dataset.m,{matched:c.checked}));el.querySelectorAll('button[data-x]').forEach(b=>b.onclick=()=>segEdit(+b.dataset.x,{matched:false}))}
-async function segEdit(i,b){await api('/route/'+CUR.id+'/segment/'+i,{method:'PATCH',body:JSON.stringify(b)});CUR=await api('/route/'+CUR.id);renderSegs()}
-async function rematch(){let r=await api('/route/'+CUR.id+'/rematch',{method:'POST'});CUR=r.route;drawEditor();renderSegs();toast('Rematched')}
-async function removeRoute(){if(!confirm('Remove this route from the matched set?'))return;await api('/route/'+CUR.id+'/remove',{method:'POST'});closeEditor();loadMap()}
-function closeEditor(){$('editor').classList.add('hidden');CUR=null}
-async function savePoints(){try{let pts=JSON.parse($('pts').value).map(p=>({lat:+p.lat,lon:+p.lon,timestamp:+p.timestamp}));let r=await api('/route/'+CUR.id+'/points',{method:'PUT',body:JSON.stringify({points:pts})});CUR=r.route;drawEditor();renderSegs();toast('Reran route')}catch(e){toast(e.message)}}
-async function openAdmin(){let a=await api('/admin');$('panel').classList.remove('hidden');$('panel').innerHTML=`<div class="row"><b>Admin</b><span class="grow"></span><button onclick="$('panel').classList.add('hidden')">Close</button></div><div class="box" style="margin-top:10px"><label>Signups</label><button onclick="toggleSignup(true)">Enabled</button> <button onclick="toggleSignup(false)">Disabled</button><p class="muted" style="font-size:12px">Valhalla tileset: ${esc(JSON.stringify(a.valhalla))}</p><div class="field"><label>Download more Valhalla data</label><div class="row"><input id="region" placeholder="region name"><button onclick="dlValhalla()">Download</button></div><p class="muted" style="font-size:12px">Requires a configured VALHALLA_DOWNLOAD_CMD on the host.</p></div></div>`}
-async function toggleSignup(v){await api('/admin/signup',{method:'POST',body:JSON.stringify({enabled:v})});toast('Signups '+(v?'enabled':'disabled'))}
-async function dlValhalla(){let d=await api('/admin/valhalla',{method:'POST',body:JSON.stringify({region:$('region').value})});toast(d.message)}
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeEditor();$('panel').classList.add('hidden')}});
-init();
-</script></body></html>"""

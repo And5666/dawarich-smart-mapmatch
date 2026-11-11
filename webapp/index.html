@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mapmatch</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{--bg:#0b0f14;--panel:#111821;--panel2:#151e29;--line:#263241;--text:#e6edf3;--muted:#8b9bb0;--blue:#4da3ff;--orange:#ff9f43;--green:#3ddc97;--purple:#b388ff;--red:#ff6b6b}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
+a{color:var(--blue)}.hidden{display:none!important}.muted{color:var(--muted)}.row{display:flex;gap:10px;align-items:center}.grow{flex:1}
+button,.btn{border:1px solid var(--line);background:var(--panel2);color:var(--text);border-radius:8px;padding:8px 12px;font:inherit;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+button.primary{background:var(--blue);color:#06101d;border-color:var(--blue);font-weight:600}button.danger{background:#3a1d22;color:var(--red);border-color:#5a2930}
+button:hover{filter:brightness(1.12)}button:disabled{opacity:.5;cursor:default}
+input,select,textarea{border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;background:#0d141c;color:var(--text);width:100%;outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--blue)}label{font-size:12px;color:var(--muted);display:block;margin-bottom:4px}
+.login{min-height:100vh;display:grid;place-items:center;background:radial-gradient(1000px 600px at 50% 0,#152438 0,var(--bg) 65%)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:26px;box-shadow:0 20px 60px #0008;width:min(420px,92vw)}
+.card h1{margin:0 0 4px;font-size:24px}.card p{margin:0 0 18px;color:var(--muted)}.field{margin-bottom:12px}
+.app{display:grid;grid-template-columns:310px 1fr;height:100vh}.side{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.brand{padding:16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}.brand b{font-size:18px;letter-spacing:.2px}
+.tools{padding:12px 14px;border-bottom:1px solid var(--line);display:grid;gap:8px}
+.list{overflow:auto;flex:1}.item{padding:10px 16px;border-bottom:1px solid #1b2532;cursor:pointer}.item:hover,.item.active{background:#172333}
+.item b{font-size:13px}.item .meta{font-size:11px;color:var(--muted)}
+main{display:flex;flex-direction:column;min-width:0;min-height:0}.top{height:56px;background:var(--panel);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;padding:0 16px}
+#map{flex:1;min-height:0;background:#0b0f14}
+.drawer{position:fixed;z-index:1500;right:0;top:0;bottom:0;width:min(440px,100%);background:var(--panel);border-left:1px solid var(--line);box-shadow:-20px 0 50px #0007;padding:18px;overflow:auto}
+.drawer h2{margin:0 0 14px;font-size:18px}.box{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px}
+.editor{position:fixed;inset:0;z-index:1200;background:var(--bg);display:flex;flex-direction:column}.edhead{height:56px;background:var(--panel);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;padding:0 14px;flex:0 0 auto}
+.edmaps{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px;height:60vh;min-height:300px}.mapwrap{position:relative;border:1px solid var(--line);border-radius:10px;overflow:hidden;min-height:0}.mapwrap .cap{position:absolute;z-index:500;top:8px;left:8px;background:#0b0f14cc;border:1px solid var(--line);padding:3px 8px;border-radius:5px;font-size:11px}
+.emap{position:absolute;inset:0}.edbody{flex:1;min-height:0;display:grid;grid-template-columns:1.25fr .75fr;gap:8px;padding:0 8px 8px;overflow:hidden}
+.edbox{background:var(--panel);border:1px solid var(--line);border-radius:10px;min-height:0;overflow:auto;padding:10px}
+.seg{display:grid;grid-template-columns:38px 1fr 100px 66px 44px;gap:7px;align-items:center;padding:7px 4px;border-bottom:1px solid #1b2532;font-size:12px;cursor:pointer;border-radius:6px}
+.seg:hover{background:#151e29}.seg.sel{background:#1b2d44;outline:1px solid var(--blue)}.seg:last-child{border:0}
+.dot{width:10px;height:10px;border-radius:3px;display:inline-block;margin-right:5px}.tag{font-size:10px;border:1px solid var(--line);border-radius:20px;padding:1px 6px;color:var(--muted)}
+.progress{height:5px;background:#202b39;border-radius:99px;overflow:hidden}.progress i{display:block;height:100%;background:var(--blue);width:0;transition:width .3s}
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#e6edf3;color:#08111b;padding:10px 16px;border-radius:8px;z-index:3000;font-size:13px;font-weight:600}
+.jobs{position:fixed;z-index:2000;bottom:16px;right:16px;width:min(360px,92vw);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;box-shadow:0 12px 40px #0008}
+@media(max-width:900px){.app{grid-template-columns:1fr}.side{position:absolute;z-index:1100;width:290px;height:100%;transform:translateX(-100%);transition:.2s}.side.open{transform:none}.edmaps{grid-template-columns:1fr;grid-template-rows:1fr 1fr;height:52vh}.edbody{grid-template-columns:1fr;grid-template-rows:1fr auto;overflow:auto}}
+</style></head><body>
+<div id="login" class="login"><div class="card">
+ <h1>Mapmatch</h1><p>Matched routes for your Dawarich account.</p>
+ <div class="field"><label>Username</label><input id="lu" autocomplete="username"></div>
+ <div class="field"><label>Password</label><input id="lp" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')login()"></div>
+ <div class="row"><button class="primary" onclick="login()">Sign in</button><button onclick="signup()" id="signupBtn">Create account</button></div>
+ <p id="lerr" class="muted" style="margin:14px 0 0"></p>
+</div></div>
+
+<div id="app" class="app hidden">
+ <aside id="side" class="side"><div class="brand"><b>Mapmatch</b><span id="who" class="muted"></span></div>
+  <div class="tools"><div class="row"><input id="from" type="date"><input id="to" type="date"></div>
+   <div class="row"><button class="primary grow" onclick="loadMap()">Apply range</button><button onclick="openSettings()">Settings</button></div>
+  </div><div id="list" class="list"></div></aside>
+ <main><div class="top"><button class="hidden" id="menuToggle" onclick="$('side').classList.toggle('open')">☰</button><b id="title">All routes</b><span class="grow"></span><span id="status" class="muted"></span>
+  <button id="adminBtn" class="hidden" onclick="openAdmin()">Admin</button></div><div id="map"></div></main>
+</div>
+
+<div id="drawer" class="drawer hidden"></div>
+<div id="jobs" class="jobs hidden"></div>
+
+<div id="editor" class="editor hidden">
+ <div class="edhead"><button onclick="closeEditor()">← Back</button><b id="edtitle">Route</b><span class="grow"></span>
+  <button onclick="togglePoints()" id="pointBtn">Edit points</button><button onclick="rematch()">Map match all</button><button class="danger" onclick="removeRoute()">Remove</button></div>
+ <div class="edmaps"><div class="mapwrap"><div class="cap">Original — orange</div><div id="mapO" class="emap"></div></div><div class="mapwrap"><div class="cap">Matched — click a segment</div><div id="mapM" class="emap"></div></div></div>
+ <div class="edbody"><div class="edbox"><div class="row" style="margin-bottom:6px"><b>Segments</b><span class="muted" id="segcount"></span><span class="grow"></span><span class="muted">click a line or row</span></div><div id="segs"></div></div>
+  <div class="edbox"><div class="row"><b>Points</b><span class="grow"></span><button class="hidden" id="savePts" onclick="savePoints()">Save &amp; rerun</button></div><p class="muted" id="pointHint" style="font-size:12px">Turn on Edit points to drag individual original points.</p></div></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const API='/review/portal/api';const $=id=>document.getElementById(id);const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const COLORS={driving:'#4da3ff',cycling:'#3ddc97',walking:'#ff9f43',train:'#b388ff',connector:'#8b9bb0',raw:'#8b9bb0',stationary:'#8b9bb0'};
+let ME=null,DATA=[],MAP=null,LAYERS=[],LIVE={},activeJob=null,editor=null,mapO=null,mapM=null,origLayer=null,segLayers=[],selected=-1,editPoints=false,markers=[],saveHint=false;
+function toast(m){let t=document.createElement('div');t.className='toast';t.textContent=m;document.body.appendChild(t);setTimeout(()=>t.remove(),3200)}
+async function api(path,opt={}){let r=await fetch(API+path,{credentials:'same-origin',headers:{'Content-Type':'application/json',...(opt.headers||{})},...opt});if(r.status===401){showLogin();throw new Error('login')}let j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.detail||r.statusText);return j}
+function login(){api('/login',{method:'POST',body:JSON.stringify({username:$('lu').value,password:$('lp').value})}).then(init).catch(e=>$('lerr').textContent=e.message)}
+function signup(){api('/signup',{method:'POST',body:JSON.stringify({username:$('lu').value,password:$('lp').value})}).then(init).catch(e=>$('lerr').textContent=e.message)}
+function logout(){api('/logout',{method:'POST'}).then(showLogin)}
+function showLogin(){$('login').classList.remove('hidden');$('app').classList.add('hidden');$('editor').classList.add('hidden');$('drawer').classList.add('hidden')}
+function init(){api('/me').then(m=>{ME=m;$('login').classList.add('hidden');$('app').classList.remove('hidden');$('who').textContent=m.username;if(m.is_admin)$('adminBtn').classList.remove('hidden');$('signupBtn').classList.toggle('hidden',!m.signup_enabled);let y=new Date();y.setFullYear(y.getFullYear()-1);$('from').value=y.toISOString().slice(0,10);$('to').value=new Date().toISOString().slice(0,10);if(!MAP){MAP=L.map('map',{preferCanvas:true,zoomControl:true}).setView([51.24,-0.59],10);L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:19,subdomains:'abcd',attribution:'&copy; OSM &copy; CARTO'}).addTo(MAP)}loadMap();if(!m.key_set)openSettings(true)}).catch(showLogin)}
+function routeLine(pts,opt={}){return L.polyline(pts,{color:opt.color||'#4da3ff',weight:opt.weight||4,opacity:opt.opacity??1,...opt})}
+function drawList(){let el=$('list');el.innerHTML='';DATA.forEach(r=>{let d=document.createElement('div');d.className='item';d.innerHTML=`<b>#${r.id} · ${r.distance} km</b><div class="meta">${new Date(r.start*1000).toLocaleDateString()} · ${r.parts} parts</div>`;d.onclick=()=>openEditor(r.id);el.appendChild(d)})}
+function drawRoutes(){LAYERS.forEach(l=>MAP.removeLayer(l));LAYERS=[];DATA.forEach(r=>{if(!r.gen||r.gen.length<2)return;let l=routeLine(r.gen,{opacity:1,weight:4});l.on('click',()=>openEditor(r.id));l.addTo(MAP);LAYERS.push(l)})}
+async function loadMap(){let a=Math.floor(new Date($('from').value).getTime()/1000),b=Math.floor(new Date($('to').value).getTime()/1000)+86399;if(!a||!b)return;let d=await api('/map?start='+a+'&end='+b);DATA=d.routes;drawList();drawRoutes()}
+function mergeLive(routes){routes.forEach(r=>{if(LIVE[r.id]){if(r.gen&&r.gen.length>1){MAP.removeLayer(LIVE[r.id]);let l=routeLine(r.gen,{opacity:1,weight:4});l.on('click',()=>openEditor(r.id));l.addTo(MAP);LIVE[r.id]=l}return}if(r.gen&&r.gen.length>1){let l=routeLine(r.gen,{opacity:1,weight:4});l.on('click',()=>openEditor(r.id));l.addTo(MAP);LIVE[r.id]=l}else if(r.raw&&r.raw.length>1){let l=routeLine(r.raw,{opacity:.55,weight:3});l.addTo(MAP);LIVE[r.id]=l}})}
+async function startJob(kind){if(kind==='import'&&!confirm('Sync and match replaces the current matched set. A review backup is saved first. Continue?'))return;if(kind==='push'&&!confirm('Replace the Dawarich account points with the matched set? A source backup is saved first.'))return;if(kind==='revert'&&!confirm('Restore the newest backup to Dawarich?'))return;let d=await api('/'+kind,{method:'POST'});poll(d.job)}
+async function poll(id){activeJob=id;$('jobs').classList.remove('hidden');$('jobs').innerHTML=`<div class="row"><b id="jkind">Working</b><span class="grow"></span><button id="jcancel" onclick="cancelJob()">Cancel</button></div><div class="progress" style="margin:9px 0"><i id="bar"></i></div><p id="jmsg" class="muted" style="font-size:12px;margin:0"></p>`;let t=setInterval(async()=>{try{let j=await api('/jobs/'+id);$('bar').style.width=j.progress+'%';$('jmsg').textContent=j.message;if(j.live&&j.live.length)mergeLive(j.live);if(j.status==='done'||j.status==='failed'){clearInterval(t);activeJob=null;setTimeout(()=>$('jobs').classList.add('hidden'),1200);if(j.status==='done'){LIVE={};loadMap()}}}catch(e){clearInterval(t)}},700)}
+async function cancelJob(){if(activeJob){await api('/jobs/'+activeJob+'/cancel',{method:'POST'});toast('Cancelling…')}}
+function openSettings(force){$('drawer').classList.remove('hidden');$('drawer').innerHTML=`<div class="row"><h2 class="grow">Settings</h2><button onclick="$('drawer').classList.add('hidden')">Close</button></div>
+ <div class="box"><label>Dawarich API key</label><input id="key" placeholder="${force?'Paste the API key for this account':''}"><p class="muted" style="font-size:12px">Stored on this server. Use a key for the account you want to match.</p></div>
+ <div class="box"><label>Automatic matching</label><div class="row"><input type="checkbox" id="auto" style="width:auto"><span>Enabled</span><input id="interval" type="number" min="15" style="width:100px"><span class="muted">minutes</span></div><p class="muted" style="font-size:12px">Default is every 24 hours. Each run backs up before replacing anything.</p></div>
+ <div class="row"><button class="primary" onclick="saveSettings()">Save</button><button onclick="startJob('import')">Sync &amp; match</button><button onclick="startJob('push')">Push</button><button onclick="startJob('revert')">Revert push</button></div>
+ <div class="box" style="margin-top:12px"><b>Backups</b><p class="muted" style="font-size:12px">Push saves the current account before replacing it. Revert restores the newest backup. Download the source used for the last sync below.</p><a class="btn" href="${API}/download/source">Download source JSON</a></div>`;api('/me').then(m=>{$('auto').checked=m.auto;$('interval').value=m.interval})}
+async function saveSettings(){let b={auto:$('auto').checked,interval:+$('interval').value};if($('key').value.trim())b.api_key=$('key').value.trim();await api('/settings',{method:'PUT',body:JSON.stringify(b)});toast('Saved');$('drawer').classList.add('hidden')}
+async function openAdmin(){let a=await api('/admin');$('drawer').classList.remove('hidden');$('drawer').innerHTML=`<div class="row"><h2 class="grow">Admin</h2><button onclick="$('drawer').classList.add('hidden')">Close</button></div>
+ <div class="box"><b>Signups</b><div class="row" style="margin-top:8px"><button onclick="toggleSignup(true)">Enabled</button><button onclick="toggleSignup(false)">Disabled</button></div><p class="muted" style="font-size:12px">Current: ${a.signup_enabled?'enabled':'disabled'}</p></div>
+ <div class="box"><b>Valhalla tiles</b><pre style="white-space:pre-wrap;font-size:11px;color:#9fb0c5">${esc(JSON.stringify(a.valhalla,null,2))}</pre>
+ <label>Download more map data</label><div class="row"><input id="region" placeholder="region name"><button onclick="dlValhalla()">Download</button></div><p class="muted" style="font-size:12px">Only runs when VALHALLA_DOWNLOAD_CMD is configured on the host.</p></div>`}
+async function toggleSignup(v){await api('/admin/signup',{method:'POST',body:JSON.stringify({enabled:v})});toast('Signups '+(v?'enabled':'disabled'))}
+async function dlValhalla(){let d=await api('/admin/valhalla',{method:'POST',body:JSON.stringify({region:$('region').value})});toast(d.message)}
+function clearMap(map){map.eachLayer(l=>{if(!(l instanceof L.TileLayer))map.removeLayer(l)})}
+async function openEditor(id){editor=await api('/route/'+id);$('editor').classList.remove('hidden');$('edtitle').textContent='Route #'+id;$('pointBtn').textContent='Edit points';editPoints=false;markers=[];$('savePts').classList.add('hidden');$('pointHint').textContent='Turn on Edit points to drag individual original points.';if(!mapO){mapO=L.map('mapO',{preferCanvas:true}).setView([51.24,-0.59],11);mapM=L.map('mapM',{preferCanvas:true}).setView([51.24,-0.59],11);L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:19,subdomains:'abcd'}).addTo(mapO);L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:19,subdomains:'abcd'}).addTo(mapM)}drawEditor();renderSegs()}
+function drawEditor(){clearMap(mapO);clearMap(mapM);origLayer=routeLine(editor.raw||[],{color:'#ff9f43',weight:5,opacity:1}).addTo(mapO);segLayers=[];(editor.parts||[]).forEach((p,i)=>{if(!p.points||p.points.length<2)return;let l=routeLine(p.points,{color:COLORS[p.mode]||'#8b9bb0',weight:4,opacity:1}).addTo(mapM);l.on('click',()=>selectSeg(i));segLayers.push(l)});if(selected>=0&&segLayers[selected])segLayers[selected].setStyle({weight:8,color:'#ffffff'});let b=L.latLngBounds(editor.raw&&editor.raw.length?editor.raw:editor.gen);mapO.fitBounds(b,{padding:[20,20]});mapM.fitBounds(b,{padding:[20,20]});if(editPoints)showMarkers()}
+function renderSegs(){let el=$('segs');el.innerHTML='';$('segcount').textContent=(editor.parts||[]).length+' segments';(editor.parts||[]).forEach((p,i)=>{let d=document.createElement('div');d.className='seg'+(i===selected?' sel':'');d.dataset.i=i;d.innerHTML=`<span><span class="dot" style="background:${COLORS[p.mode]||'#8b9bb0'}"></span>${i+1}</span><span>${esc(p.mode)}<br><span class="muted">${esc(p.engine)} · ${p.distance} km</span></span><select data-mode="${i}">${['driving','cycling','walking','train','raw'].map(m=>`<option ${m===p.mode?'selected':''}>${m}</option>`).join('')}</select><label><input type="checkbox" data-match="${i}" ${p.engine!=='raw'?'checked':''}> map</label><button data-raw="${i}">Raw</button>`;d.onclick=e=>{if(e.target.tagName==='SELECT'||e.target.tagName==='INPUT'||e.target.tagName==='BUTTON')return;selectSeg(i)};el.appendChild(d)});el.querySelectorAll('select').forEach(s=>s.onchange=()=>segEdit(+s.dataset.mode,{mode:s.value}));el.querySelectorAll('input[data-match]').forEach(c=>c.onchange=()=>segEdit(+c.dataset.match,{matched:c.checked}));el.querySelectorAll('button[data-raw]').forEach(b=>b.onclick=()=>segEdit(+b.dataset.raw,{matched:false}))}
+function selectSeg(i){selected=i;segLayers.forEach((l,j)=>l.setStyle({weight:j===i?8:4,color:j===i?'#ffffff':(COLORS[editor.parts[j].mode]||'#8b9bb0')}));renderSegs();let row=$('segs').querySelector(`[data-i="${i}"]`);row?.scrollIntoView({block:'nearest'})}
+async function segEdit(i,b){await api('/route/'+editor.id+'/segment/'+i,{method:'PATCH',body:JSON.stringify(b)});editor=await api('/route/'+editor.id);drawEditor();renderSegs();toast('Segment updated')}
+async function rematch(){toast('Rematching route…');let r=await api('/route/'+editor.id+'/rematch',{method:'POST'});editor=r.route;selected=-1;drawEditor();renderSegs();toast('Route rematched')}
+async function removeRoute(){if(!confirm('Remove this route from the matched set?'))return;await api('/route/'+editor.id+'/remove',{method:'POST'});closeEditor();toast('Route removed')}
+function closeEditor(){$('editor').classList.add('hidden');selected=-1;editPoints=false;markers=[];editor=null;if(ME)loadMap()}
+function togglePoints(){editPoints=!editPoints;$('pointBtn').textContent=editPoints?'Stop editing':'Edit points';$('savePts').classList.toggle('hidden',!editPoints);$('pointHint').textContent=editPoints?'Drag a marker. Then save and rerun the route.':'Turn on Edit points to drag individual original points.';if(editPoints)showMarkers();else{markers.forEach(m=>mapO.removeLayer(m));markers=[]}}
+function showMarkers(){markers.forEach(m=>mapO.removeLayer(m));markers=[];(editor.original_points||[]).forEach((p,i)=>{let m=L.circleMarker([p.lat,p.lon],{radius:4,color:'#08111b',weight:1,fillColor:'#ff9f43',fillOpacity:1,draggable:true}).addTo(mapO);m.on('dragend',()=>{let ll=m.getLatLng();editor.original_points[i].lat=ll.lat;editor.original_points[i].lon=ll.lng;drawEditor()});markers.push(m)})}
+async function savePoints(){if(!editor)return;let pts=editor.original_points;let r=await api('/route/'+editor.id+'/points',{method:'PUT',body:JSON.stringify({points:pts})});editor=r.route;editPoints=false;$('pointBtn').textContent='Edit points';$('savePts').classList.add('hidden');markers=[];drawEditor();renderSegs();toast('Reran route')}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(!$('editor').classList.contains('hidden'))closeEditor();else $('drawer').classList.add('hidden')}});
+init();
+</script></body></html>
