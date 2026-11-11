@@ -154,9 +154,13 @@ def _job_start(uid: int, kind: str, fn) -> str:
         try:
             fn(jid)
             _jobs[jid].update(status="done", progress=100, message="done")
+        except RuntimeError as exc:
+            if str(exc) == "cancelled":
+                _jobs[jid].update(status="cancelled", message="cancelled")
+                return
+            _jobs[jid].update(status="failed", message=f"{type(exc).__name__}: {exc}")
         except Exception as exc:  # noqa: BLE001
             _jobs[jid].update(status="failed", message=f"{type(exc).__name__}: {exc}")
-            raise
 
     threading.Thread(target=work, daemon=True).start()
     return jid

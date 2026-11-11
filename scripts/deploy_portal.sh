@@ -8,6 +8,7 @@ tar -C "$REPO" -cf - smartmap | docker exec -i dawarich-cleaner tar -xf - -C /da
 docker cp "$REPO/data/rail_shapes.json.gz" dawarich-cleaner:/data/rail_shapes.json.gz
 docker cp "$REPO/data/rail_stations.json.gz" dawarich-cleaner:/data/rail_stations.json.gz
 docker cp "$REPO/webapp/portal.py" dawarich-cleaner:/app/app/portal.py
+docker cp "$REPO/webapp/index.html" dawarich-cleaner:/app/app/index.html
 docker exec -i dawarich-cleaner python3 - <<'PY'
 from pathlib import Path
 p = Path('/app/app/main.py')
