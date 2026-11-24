@@ -37,15 +37,25 @@ def speeds(fixes: list[dict[str, Any]]) -> list[float]:
         return [float(v) * 3.6 if v and v > 0 else 0.0] * n
     raw = []
     for i in range(n):
-        dv = fixes[i].get("velocity")
-        if dv is not None and dv > 0:
-            raw.append(float(dv) * 3.6)
-            continue
         a = fixes[max(0, i - 1)]
         b = fixes[min(n - 1, i + 1)]
         dt = b["timestamp"] - a["timestamp"]
         d = haversine(a["lat"], a["lon"], b["lat"], b["lon"])
-        raw.append(d / dt * 3.6 if dt > 0 else 0.0)
+        pos = d / dt * 3.6 if dt > 0 else 0.0
+        dv = fixes[i].get("velocity")
+        if dv is not None and dv > 0:
+            dev = float(dv) * 3.6
+            # A stale phone reading (seen on trains: 20 km/h reported while
+            # accurate fixes move 3 km every half minute) loses to positions,
+            # but only at train-like speeds: a single GPS jump must not turn a
+            # bike ride into a drive.
+            acc = max(a.get("accuracy") or 50.0, b.get("accuracy") or 50.0)
+            if acc <= 30 and dt >= 20 and pos > 100 and pos > 3 * dev:
+                raw.append(pos)
+            else:
+                raw.append(dev)
+            continue
+        raw.append(pos)
     out = []
     for i in range(n):
         w = sorted(raw[max(0, i - 2): i + 3])
@@ -88,6 +98,8 @@ def _cost(mode: str, v: float, on_rail: bool) -> float:
             return 1.2
         if v < 25:
             return 0.5
+        if v > 180:
+            return min(40.0, ((v - 180) / 15.0) ** 2)   # no car does 300 km/h; a train can
         return 0.0
     # train: being on a railway at speed is strong evidence. Roads that run
     # beside a railway are settled later by comparing rail and road fits.
@@ -145,10 +157,16 @@ def _merge_short(fixes: list[dict[str, Any]], labels: list[str], forced: list[bo
             dur = fixes[j - 1]["timestamp"] - fixes[i]["timestamp"]
             if j - i >= MIN_RUN_FIXES and dur >= MIN_RUN_S:
                 continue
+            # Only merge into a mode that could physically cover this stretch:
+            # a short fast burst before a walk is a ride, not a fast walk.
+            v = sorted(speeds(fixes[max(0, i - 1):min(len(fixes), j + 1)]))
+            fast = v[len(v) // 2] if v else 0.0
             cands = []
             for kk in (k - 1, k + 1):
                 if 0 <= kk < len(rs) and rs[kk][0] != "stay":
                     nm, ni, nj = rs[kk]
+                    if fast > VMAX_KMH.get(nm, 200.0):
+                        continue
                     cands.append((fixes[nj - 1]["timestamp"] - fixes[ni]["timestamp"], nm))
             if not cands:
                 continue

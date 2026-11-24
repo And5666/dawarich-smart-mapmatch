@@ -4,11 +4,12 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from .fill import VMAX_KMH, fill
+from .fill import TRAIL_DEV_M, TRAIL_MODES, VMAX_KMH, fill, max_deviation
 from .geo import haversine, point_at, subline
 from .stays import centroid
 
 SIMPLIFY_M = 2.0
+TRAIL_ANCHOR_M = 15.0
 SYNTH_MAX_KMH = 260.0
 
 
@@ -44,6 +45,68 @@ def simplify(coords: list[tuple[float, float]], tol: float = SIMPLIFY_M) -> list
             stack.append((i, bk))
             stack.append((bk, j))
     return [c for c, k in zip(coords, keep) if k]
+
+
+SPUR_MIN_M = 15.0     # shallower out-and-backs are just a wobble
+SPUR_MAX_M = 300.0
+SPUR_CLOSE_M = 12.0   # out and back legs this close count as the same road
+SPUR_KEEP_ACC_M = 15.0
+
+
+def remove_spurs(coords: list[list[float]], acc_by_ts: dict[int, float]) -> list[list[float]]:
+    """Cut out-and-back excursions from a timed line.
+
+    A poor fix that lands on a side road makes the matched line run down it
+    and straight back. Where the line turns round sharply and retraces itself
+    for 15-300 m, the excursion is removed, unless two or more accurate fixes
+    (≤15 m) lie on it: then it was a real detour and is kept.
+    """
+    while len(coords) >= 3:
+        lat0 = coords[0][0]
+        xy = [_xy(c[0], c[1], lat0) for c in coords]
+        cum = [0.0]
+        for a, b in zip(xy, xy[1:]):
+            cum.append(cum[-1] + math.hypot(b[0] - a[0], b[1] - a[1]))
+        total = cum[-1]
+
+        def pos(arc: float) -> tuple[float, float, int]:
+            k = max(0, min(len(cum) - 2, next((i for i in range(1, len(cum)) if cum[i] >= arc), len(cum) - 1) - 1))
+            span = cum[k + 1] - cum[k] or 1e-9
+            f = max(0.0, min(1.0, (arc - cum[k]) / span))
+            return xy[k][0] + (xy[k + 1][0] - xy[k][0]) * f, xy[k][1] + (xy[k + 1][1] - xy[k][1]) * f, k
+
+        cut = None
+        for i in range(1, len(xy) - 1):
+            ux, uy = xy[i][0] - xy[i - 1][0], xy[i][1] - xy[i - 1][1]
+            vx, vy = xy[i + 1][0] - xy[i][0], xy[i + 1][1] - xy[i][1]
+            nu, nv = math.hypot(ux, uy), math.hypot(vx, vy)
+            if nu < 1e-6 or nv < 1e-6 or (ux * vx + uy * vy) / (nu * nv) > -0.85:
+                continue
+            apex, depth, r = cum[i], 0.0, 3.0
+            while r <= SPUR_MAX_M and apex - r >= 0 and apex + r <= total:
+                ax, ay, _ = pos(apex - r)
+                bx, by, _ = pos(apex + r)
+                if math.hypot(ax - bx, ay - by) > SPUR_CLOSE_M:
+                    break
+                depth, r = r, r + 3.0
+            if depth < SPUR_MIN_M:
+                continue
+            lo, hi = apex - depth, apex + depth
+            inside = [c for c, a in zip(coords, cum) if c[3] and lo < a < hi]
+            if sum(1 for c in inside if acc_by_ts.get(int(c[2]), 99.0) <= SPUR_KEEP_ACC_M) >= 2:
+                continue
+            cut = (lo, hi)
+            break
+        if cut is None:
+            return coords
+        lo, hi = cut
+        i0 = max(k for k, a in enumerate(cum) if a <= lo)
+        i1 = min(k for k, a in enumerate(cum) if a >= hi)
+        f = (lo - cum[i0]) / ((cum[i0 + 1] - cum[i0]) or 1e-9)
+        a, b = coords[i0], coords[i0 + 1]
+        joint = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f, 0]
+        coords = coords[:i0 + 1] + [joint] + coords[i1:]
+    return coords
 
 
 def length_m(coords: list[Any]) -> float:
@@ -103,7 +166,17 @@ def road_pieces(fixes: list[dict[str, Any]], mode: str, m: dict[str, Any],
         return [_piece("raw", [[fixes[0]["lat"], fixes[0]["lon"], fixes[0]["timestamp"], 1]], 1)]
     anchors = m["anchors"]
     geo = m["pieces"]
-    A = [k for k, a in enumerate(anchors) if a]
+    trail = mode in TRAIL_MODES
+
+    def trusted(k: int) -> bool:
+        # On foot or by bike, a fix snapped much further away than its own
+        # accuracy usually landed on the wrong path.
+        if not trail:
+            return True
+        acc = fixes[k].get("accuracy") or 20.0
+        return anchors[k]["dist"] <= max(TRAIL_ANCHOR_M, min(1.5 * acc, 40.0))
+
+    A = [k for k, a in enumerate(anchors) if a and trusted(k)]
     if not A:
         return [_filled(_fixpt(fixes[0]), fixes[1:-1], _fixpt(fixes[-1]), mode, strength, n)]
 
@@ -130,18 +203,31 @@ def road_pieces(fixes: list[dict[str, Any]], mode: str, m: dict[str, Any],
             raw_path = length_m([(p["lat"], p["lon"]) for p in span])
             chord = haversine(fixes[k1]["lat"], fixes[k1]["lon"], fixes[k2]["lat"], fixes[k2]["lon"])
             dt = fixes[k2]["timestamp"] - fixes[k1]["timestamp"]
+            # Train fixes often arrive with batched timestamps; the rail shape
+            # itself is the evidence there, so no speed check.
             ok = along <= max(2.0 * raw_path + 100.0, 1.5 * chord + 200.0) and \
-                (dt <= 0 or along / dt * 3.6 <= vmax * 1.3 + 10.0)
+                (mode == "train" or dt <= 0 or along / dt * 3.6 <= vmax * 1.3 + 10.0)
             if ok:
                 seg = subline(pc["poly"], pc["cum"], a1["arc"], a2["arc"]) if along > 0.5 else \
                     [point_at(pc["poly"], pc["cum"], a1["arc"])[:2], point_at(pc["poly"], pc["cum"], a2["arc"])[:2]]
+                if trail:
+                    ref = [(p["lat"], p["lon"]) for p in span]
+                    slack = min(max(p.get("accuracy") or 15.0 for p in span), 30.0)
+                    ok = along <= 1.4 * raw_path + 40.0 and max_deviation(seg, ref) <= TRAIL_DEV_M + slack
+            if ok:
                 out.append(_piece("matched", timed(seg, fixes[k1]["timestamp"], fixes[k2]["timestamp"]), k2 - k1))
         if not ok:
             out.append(_filled(snapped(k1), fixes[k1 + 1:k2], snapped(k2), mode, strength, k2 - k1))
     if A[-1] < n - 1:
         out.append(_filled(snapped(A[-1]), fixes[A[-1] + 1:-1], _fixpt(fixes[-1]), edge_mode, strength,
                            n - 1 - A[-1], vmax))
-    return merge_pieces(out)
+    out = merge_pieces(out)
+    acc = {int(p["timestamp"]): (p.get("accuracy") or 99.0) for p in fixes}
+    for pc in out:
+        if pc["kind"] in ("matched", "filled") and len(pc["coords"]) >= 3:
+            pc["coords"] = remove_spurs(pc["coords"], acc)
+            pc["km"] = round(length_m(pc["coords"]) / 1000.0, 4)
+    return out
 
 
 def raw_pieces(fixes: list[dict[str, Any]]) -> list[dict[str, Any]]:

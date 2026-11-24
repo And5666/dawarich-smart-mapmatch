@@ -32,17 +32,23 @@ PROFILES: dict[str, dict[str, Any]] = {
     "bicycle": {
         "costing": "bicycle",
         "trace_options": {"gps_accuracy": 25, "search_radius": 80, "breakage_distance": 2000},
+        # Bikes are not held to car rules: contraflow and one-way streets are
+        # common for cyclists, so one-ways and turn restrictions are ignored.
         "costing_options": {"bicycle": {
             "use_trails": 1.0, "avoid_bad_surfaces": 0.0,
             "bicycle_type": "Mountain", "use_roads": 0.4, "use_hills": 1.0,
+            "ignore_oneways": True, "ignore_restrictions": True,
         }},
     },
     "pedestrian": {
         "costing": "pedestrian",
         "trace_options": {"gps_accuracy": 25, "search_radius": 80, "breakage_distance": 2000},
+        # Valhalla's default only allows easy hiking paths (sac_scale 1), which
+        # left mountain paths such as Snowdon's unmatched; allow all grades.
         "costing_options": {"pedestrian": {
             "use_tracks": 1.0, "walkway_factor": 0.8,
-            "sidewalk_factor": 1.0, "max_grade": 40,
+            "sidewalk_factor": 1.0, "max_hiking_difficulty": 6,
+            "ignore_oneways": True,
         }},
     },
 }

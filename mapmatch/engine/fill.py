@@ -19,6 +19,11 @@ VMAX_KMH = {"walk": 16.0, "cycle": 50.0, "drive": 200.0, "train": 260.0}
 # that a detour at this pace fits, a longer route is believable.
 TYPICAL_KMH = {"walk": 5.0, "cycle": 18.0, "drive": 60.0, "train": 100.0}
 JOIN_M = 25.0         # shorter seams are drawn directly
+# Walks and rides can be off-road (MTB trails, hill paths). A route there is
+# only believed when it stays this close to the recorded fixes; otherwise the
+# original GPS is kept rather than snapping to the wrong path.
+TRAIL_MODES = ("walk", "cycle")
+TRAIL_DEV_M = 30.0
 MAX_THROUGH = 12
 END_SNAP_M = 150.0
 
@@ -36,9 +41,22 @@ def _near_line(p: dict[str, Any], shape: list[tuple[float, float]]) -> float:
     return best
 
 
+def max_deviation(line: list[tuple[float, float]], ref: list[tuple[float, float]]) -> float:
+    """Largest distance from `line` (its vertices and edge midpoints) to `ref`."""
+    if len(ref) < 2:
+        return 0.0 if not ref else max(haversine(p[0], p[1], ref[0][0], ref[0][1]) for p in line)
+    pts = list(line)
+    pts += [((a[0] + b[0]) / 2, (a[1] + b[1]) / 2) for a, b in zip(line, line[1:])]
+    worst = 0.0
+    for p in pts:
+        best = min(dist_point_segment(p[0], p[1], a[0], a[1], b[0], b[1]) for a, b in zip(ref, ref[1:]))
+        worst = max(worst, best)
+    return worst
+
+
 def _plausible(shape: list[tuple[float, float]], a: dict[str, Any], b: dict[str, Any],
                mids: list[dict[str, Any]], vmax: float, typical: float, raw_path: float,
-               chord: float, check_mids: bool) -> str:
+               chord: float, check_mids: bool, trail: bool = False) -> str:
     """Empty string when the route is acceptable, else the reason it is not."""
     if len(shape) < 2:
         return "no_shape"
@@ -56,6 +74,15 @@ def _plausible(shape: list[tuple[float, float]], a: dict[str, Any], b: dict[str,
         return "too_short"
     if dt > 0 and length / dt * 3.6 > vmax * 1.3 + 10.0:
         return "too_fast"
+    if trail:
+        ref = [(p["lat"], p["lon"]) for p in (a, *mids, b)]
+        if mids:
+            if max_deviation(shape, ref) > TRAIL_DEV_M + max(min(p.get("accuracy") or 15.0, 30.0) for p in mids):
+                return "off_trail"
+        elif length > (2.0 * chord + 40.0 if chord < 150.0 else 1.25 * chord + 30.0):
+            # A gap with no fixes: a short one may go round a corner; a long
+            # one is only believable as a nearly direct route.
+            return "off_trail"
     if check_mids and mids:
         close = sum(1 for p in mids if _near_line(p, shape) <= max(60.0, 1.5 * (p.get("accuracy") or 0.0)))
         if close < 0.6 * len(mids):
@@ -107,7 +134,7 @@ def fill(a: dict[str, Any], mids: list[dict[str, Any]], b: dict[str, Any], mode:
             why.append("no_route")
             continue
         shape = r["shape"]
-        bad = _plausible(shape, a, b, mids, vmax, typical, raw_path, chord, check)
+        bad = _plausible(shape, a, b, mids, vmax, typical, raw_path, chord, check, mode in TRAIL_MODES)
         if not bad:
             coords = [(a["lat"], a["lon"]), *shape, (b["lat"], b["lon"])]
             return {"kind": "filled", "coords": coords}

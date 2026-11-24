@@ -203,3 +203,60 @@ def test_override_raw_keeps_original_fixes(fake_valhalla):
     coords = out["segments"][0]["pieces"][0]["coords"]
     assert [(c[0], c[1]) for c in coords] == [(p["lat"], p["lon"]) for p in pts]
     assert "/trace_attributes" not in fake_valhalla.calls
+
+
+# ---------------------------------------------------------------- v2.1 rules
+from mapmatch.engine.assemble import remove_spurs  # noqa: E402
+from conftest import offset, LAT0, LON0  # noqa: E402
+
+
+def _line(steps, t0=T0):
+    lat, lon, t = LAT0, LON0, t0
+    out = [[lat, lon, t, 1]]
+    for e, n in steps:
+        lat, lon = offset(lat, lon, e, n)
+        t += 10
+        out.append([lat, lon, t, 1])
+    return out
+
+
+def test_spur_with_one_poor_fix_is_cut():
+    # along a road, 60 m down a side road and straight back, then on
+    line = _line([(50, 0), (50, 0), (0, 60), (0, -60), (50, 0), (50, 0)])
+    acc = {int(c[2]): 25.0 for c in line}
+    out = remove_spurs(line, acc)
+    assert max(abs(c[0] - LAT0) for c in out) * 111_320 < 5     # the side road is gone
+    assert [c[2] for c in out] == sorted(c[2] for c in out)
+
+
+def test_spur_with_two_accurate_fixes_is_kept():
+    line = _line([(50, 0), (50, 0), (0, 40), (0, 40), (0, -40), (0, -40), (50, 0)])
+    acc = {int(c[2]): 6.0 for c in line}
+    assert len(remove_spurs(line, acc)) == len(line)
+
+
+def test_stale_phone_speed_loses_only_at_train_speeds():
+    train = track([(3000, 0)] * 6, velocity=5.0, accuracy=5.0)    # 360 km/h by position
+    assert min(speeds(train)) > 300
+    jump = track([(40, 0), (40, 0), (900, 0), (40, 0), (40, 0)], velocity=4.5, accuracy=10.0)
+    assert max(speeds(jump)) < 20                               # one GPS jump is not a drive
+
+
+def test_fast_burst_is_not_merged_into_a_walk():
+    pts = track([(350, 0)] * 2 + WALK)        # two fixes at 42 km/h, then walking
+    labels, _, _ = label(pts)
+    assert labels[0] != "walk" and labels[-1] == "walk"
+
+
+def test_train_beats_drive_at_impossible_car_speed():
+    from mapmatch.engine.modes import _cost
+    assert _cost("drive", 350, False) > 30 and _cost("drive", 120, False) == 0.0
+
+
+def test_trail_fill_keeps_gps_when_route_strays(fake_valhalla):
+    a, m1, m2, b = track([(100, 0), (100, 0), (100, 0)])
+    fake_valhalla.route_detour = 1.6          # a plausible length, but 60 m off the fixes
+    out = fill(a, [m1, m2], b, "walk")
+    assert out["kind"] == "raw" and "off_trail" in out["why"]
+    fake_valhalla.route_detour = 1.0
+    assert fill(a, [m1, m2], b, "walk")["kind"] == "filled"
