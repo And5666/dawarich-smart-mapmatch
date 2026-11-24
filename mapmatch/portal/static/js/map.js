@@ -15,6 +15,7 @@ export function createMap(el, theme, { center = [-0.9, 51.35], zoom = 9 } = {}) 
   map.touchZoomRotate.disableRotation();
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
   map._mm = { overlays: new Map(), theme };
+  el.__map = map; // reachable from devtools / browser tests
   map.on("style.load", () => applyAll(map));
   map.on("error", (e) => {
     if (!map._mm.fellBack && e?.error && /style|Failed to fetch/i.test(String(e.error.message || e.error))) {

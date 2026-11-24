@@ -68,7 +68,7 @@ def test_sync_only_stores_raw_points(env, fake_valhalla):
     trips = client.get("/api/trips").json()
     assert len(trips["trips"]) == 2 and trips["counts"] == {"new": 2, "push_original": 2}
     t = trips["trips"][0]
-    assert t["modes"] == [] and len(t["preview"]) > 2 and t["km"] > 1   # raw line and distance
+    assert t["modes"] == [] and len(t["preview"]) >= 2 and t["km"] > 1   # raw line and distance
     d = client.get(f"/api/trips/{t['id']}").json()
     assert d["segments"] == [] and len(d["raw"]) == t["n_points"]
     assert client.post(f"/api/trips/{t['id']}/push", headers=H).status_code == 400   # nothing to push yet

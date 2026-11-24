@@ -6,13 +6,15 @@ import time
 from typing import Any
 
 from ..engine.api import ENGINE_VERSION, MODES, match_trip
+from ..engine.assemble import simplify
 from ..engine.quality import path_km
 from ..engine.trips import split_trips
 from . import archive
 from .db import Database, now, pack, unpack
 
 KEEP_RESULTS = 15
-PREVIEW_POINTS = 100
+PREVIEW_TOLERANCE_M = 4.0
+PREVIEW_VERSION = "2"
 
 
 # ---------------------------------------------------------------- segmentation
@@ -118,12 +120,30 @@ def _summary(result: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _preview(stream: list[dict[str, Any]]) -> list[list[float]]:
-    if len(stream) <= PREVIEW_POINTS:
-        pts = stream
-    else:
-        step = (len(stream) - 1) / (PREVIEW_POINTS - 1)
-        pts = [stream[round(i * step)] for i in range(PREVIEW_POINTS)]
-    return [[round(p["lat"], 5), round(p["lon"], 5)] for p in pts]
+    """The trip's line for the overview map: simplified by shape (every point
+    within PREVIEW_TOLERANCE_M of the real route), never by count, so a
+    matched route still follows the roads when zoomed in."""
+    pts = simplify([(p["lat"], p["lon"]) for p in stream], PREVIEW_TOLERANCE_M)
+    return [[round(lat, 6), round(lon, 6)] for lat, lon in pts]
+
+
+def refresh_previews(db: Database) -> int:
+    """Recompute stored previews after the preview format changes."""
+    row = db.one("SELECT value FROM site WHERE key='preview_version'")
+    if row and row["value"] == PREVIEW_VERSION:
+        return 0
+    n = 0
+    for t in db.all("SELECT * FROM trips"):
+        t = dict(t)
+        res = result(db, t)
+        pts = res["stream"] if res else archive.window(db, t["user_id"], t["start_ts"], t["end_ts"])
+        with db.tx() as c:
+            c.execute("UPDATE trips SET preview=? WHERE id=?", (json.dumps(_preview(pts)), t["id"]))
+        n += 1
+    with db.tx() as c:
+        c.execute("INSERT INTO site(key, value) VALUES ('preview_version', ?)"
+                  " ON CONFLICT(key) DO UPDATE SET value=excluded.value", (PREVIEW_VERSION,))
+    return n
 
 
 def store(db: Database, trip: dict[str, Any], result: dict[str, Any], overrides: list[dict[str, Any]],
