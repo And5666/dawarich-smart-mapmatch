@@ -27,7 +27,7 @@ function Gate() {
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-  useEffect(() => { api("/public").then(setInfo).catch(() => setInfo({})); }, []);
+  useEffect(() => { api("/public").then((x) => { setInfo(x); if (x.first_run) setMode("register"); }).catch(() => setInfo({})); }, []);
   const open = !!(info?.signup || info?.first_run);
   const register = mode === "register";
   async function submit(e) {
@@ -42,33 +42,40 @@ function Gate() {
     } catch (x) { setErr(x.message); }
     finally { setBusy(false); }
   }
-  return html`<div class="connect"><form onSubmit=${submit}>
+  return html`<div class="connect"><div class="panel">
     <div class="mark"><${Mark} /> mapmatch</div>
-    <h1>${register ? "Make an account" : "Sign in"}</h1>
-    <p>mapmatch reads the GPS points in your Dawarich account, turns them into trips and snaps them to roads, paths and railways. Nothing in Dawarich changes until you push a trip.</p>
-    <label class="field"><span>Username</span>
-      <input value=${u} onInput=${(e) => setU(e.target.value)} autocomplete="username" spellcheck="false" required autofocus /></label>
-    <label class="field"><span>Password</span>
-      <input type="password" value=${p} onInput=${(e) => setP(e.target.value)} autocomplete=${register ? "new-password" : "current-password"} required /></label>
-    ${register && html`<label class="field"><span>Name <span class="faint">(optional)</span></span>
-      <input value=${name} onInput=${(e) => setName(e.target.value)} autocomplete="nickname" /></label>`}
-    ${err && html`<p class="err" role="alert">${err}</p>`}
-    <div class="row"><button class="go" type="submit" disabled=${busy || !u.trim() || !p}>${busy ? "Checking…" : register ? "Create account" : "Sign in"}</button>
-      <span class="grow"></span></div>
-    ${info?.first_run && html`<p class="help">This is a fresh install, so whichever account you make now is the admin.</p>`}
-    ${open && !info?.first_run && html`<p class="help"><button class="bare" type="button" onClick=${() => { setMode(register ? "login" : "register"); setErr(""); }}>${register ? "I already have an account" : "Create an account"}</button></p>`}
-    ${!open && !info?.first_run && html`<p class="help">Accounts are made by an admin — ask them for a username and password.</p>`}
-  </form></div>`;
+    <div class="stack" style="gap:6px">
+      <h1>${register ? (info?.first_run ? "Set up mapmatch" : "Make an account") : "Sign in"}</h1>
+      <p>${info?.first_run ? "This is a fresh install. The account you make now runs it: you'll set the map server and can add other people."
+        : "Your Dawarich trips, snapped to the roads, paths and railways you actually used."}</p>
+    </div>
+    <form onSubmit=${submit}>
+      <label class="field"><span>Username</span>
+        <input value=${u} onInput=${(e) => setU(e.target.value)} autocomplete="username" spellcheck="false" required autofocus /></label>
+      <label class="field"><span>Password</span>
+        <input type="password" value=${p} onInput=${(e) => setP(e.target.value)} autocomplete=${register ? "new-password" : "current-password"} required /></label>
+      ${register && html`<label class="field"><span>Name <span class="faint">(optional)</span></span>
+        <input value=${name} onInput=${(e) => setName(e.target.value)} autocomplete="nickname" /></label>`}
+      ${err && html`<p class="err" role="alert">${err}</p>`}
+      <button class="go" type="submit" disabled=${busy || !u.trim() || !p}>${busy ? "Checking…" : register ? "Create account" : "Sign in"}</button>
+    </form>
+    ${open && !info?.first_run && html`<p class="help">${register ? "Already have an account? " : "New here? "}<button class="link" type="button"
+      onClick=${() => { setMode(register ? "login" : "register"); setErr(""); }}>${register ? "Sign in" : "Create an account"}</button></p>`}
+    ${!open && !info?.first_run && html`<p class="help">Accounts are made by whoever runs this server. Ask them for a username and password.</p>`}
+  </div></div>`;
 }
 
 function ConnectDawarich() {
   const me = useStore((s) => s.me);
-  return html`<div class="connect"><div class="link-wrap">
+  return html`<div class="connect"><div class="panel">
     <div class="mark"><${Mark} /> mapmatch</div>
-    <h1>Connect your Dawarich</h1>
-    <${LinkDawarich} onDone=${() => { location.hash = "#/"; }} />
-    <div class="row" style="margin-top:16px;gap:10px;flex-wrap:wrap">
-      ${me?.is_admin && html`<button onClick=${() => { location.hash = "#/admin"; }}>Admin settings</button>`}
+    <div class="stack" style="gap:6px">
+      <h1>Connect your Dawarich</h1>
+      <p>Paste the API key from your Dawarich account page. mapmatch then downloads your GPS points; nothing in Dawarich changes until you push a trip.</p>
+    </div>
+    <${LinkDawarich} intro=${false} onDone=${() => { location.hash = "#/"; }} />
+    <div class="row" style="gap:10px;flex-wrap:wrap">
+      ${me?.is_admin && html`<button class="sm" onClick=${() => { location.hash = "#/admin"; }}>Admin settings</button>`}
       <span class="grow"></span>
       <button class="sm bare" onClick=${async () => { await api("/logout", { method: "POST" }).catch(() => {}); store.set({ me: null }); }}>Sign out</button>
     </div>
@@ -110,6 +117,15 @@ function Bar({ route }) {
   </header>`;
 }
 
+function Banner() {
+  const me = useStore((s) => s.me);
+  const job = useStore((s) => s.job);
+  if (!me?.dawarich_needs_repair || job?.kind === "repair") return null;
+  return html`<div class="banner bad" role="alert">
+    <span class="grow">A change to Dawarich stopped halfway, so some of your points are missing there. Every one of them is safe here.</span>
+    <button class="sm go" onClick=${() => startJob("repair")}>Put them back</button></div>`;
+}
+
 function Toasts() {
   const toasts = useStore((s) => s.toasts);
   return html`<div class="toasts" aria-live="polite">${toasts.map((t) => html`<div class=${`toast ${t.kind}`} key=${t.id}>${t.message}</div>`)}</div>`;
@@ -134,7 +150,7 @@ function App() {
   else if (page === "settings") view = html`<${Settings} />`;
   else if (page === "admin") view = html`<${Admin} />`;
   else view = html`<${Trips} />`;
-  return html`<div class="shell"><${Bar} route=${route} /><main class="page">${view}</main></div><${Toasts} />`;
+  return html`<div class="shell"><div><${Bar} route=${route} /><${Banner} /></div><main class="page">${view}</main></div><${Toasts} />`;
 }
 
 render(html`<${App} />`, document.getElementById("app"));

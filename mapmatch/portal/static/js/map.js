@@ -89,3 +89,36 @@ export function fitCoords(map, coords, padding = 48, animate = true) {
   const pad = Math.max(8, Math.min(padding, el.clientWidth / 6, el.clientHeight / 6));
   map.fitBounds([[a, b], [c, d]], { padding: pad, animate, maxZoom: 16, duration: animate ? 500 : 0 });
 }
+
+// "south,west,north,east" <-> numbers; null when the text is not four numbers.
+export function parseBounds(text) {
+  const v = String(text || "").split(/[,\s]+/).filter(Boolean).map(Number);
+  if (v.length !== 4 || v.some((x) => !Number.isFinite(x))) return null;
+  const [s, w, n, e] = v;
+  return s < n && w < e ? { s, w, n, e } : null;
+}
+export const boundsText = (b) => [b.s, b.w, b.n, b.e].map((x) => x.toFixed(2)).join(",");
+export const boundsFeature = (b) => ({ type: "Feature", properties: {}, geometry: { type: "Polygon",
+  coordinates: [[[b.w, b.s], [b.e, b.s], [b.e, b.n], [b.w, b.n], [b.w, b.s]]] } });
+
+// A small map showing one region's outline: static, or pannable for editing.
+export function regionMap(el, theme, bounds, { interactive = false } = {}) {
+  const map = new maplibregl.Map({ container: el, style: STYLES[theme] || STYLES.light, interactive,
+    center: [-2, 54], zoom: 3, attributionControl: false, dragRotate: false });
+  map._mm = { overlays: new Map(), theme };
+  map.on("style.load", () => applyAll(map));
+  if (interactive) map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+  const draw = (b) => {
+    const o = { data: fc(b ? [boundsFeature(b)] : []), layers: () => [
+      { id: "rb-fill", type: "fill", paint: { "fill-color": "#2f6ae0", "fill-opacity": 0.12 } },
+      { id: "rb-line", type: "line", paint: { "line-color": "#2f6ae0", "line-width": 2 } },
+    ] };
+    if (map._mm.overlays.has("rb")) setData(map, "rb", o.data); else setOverlay(map, "rb", o);
+  };
+  map.showBounds = (b, fit = true) => {
+    draw(b);
+    if (b && fit) map.fitBounds([[b.w, b.s], [b.e, b.n]], { padding: interactive ? 30 : 12, animate: false, maxZoom: 9 });
+  };
+  map.once("load", () => map.showBounds(bounds));
+  return map;
+}

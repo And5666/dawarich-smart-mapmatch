@@ -1,8 +1,20 @@
-// Admin: the one Valhalla for the whole instance, the region catalogue that goes
-// with it, who may register, and the accounts themselves.
-import { html, useState, useEffect, api, apiUrl, toast, Icon, Menu, Confirm, ago, full, plural } from "../lib.js";
+// Admin: the people on this server, the one map server everyone matches
+// against, and the regions its map data covers.
+import { html, useState, useEffect, useRef, api, apiUrl, useStore, toast, Icon, Menu, Confirm, ago, full, plural } from "../lib.js";
+import { regionMap, parseBounds, boundsText } from "../map.js";
 
 const bytes = (n) => n == null ? "" : n > 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n > 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1e3))} kB`;
+const initials = (u) => (u.display_name || u.username).split(/[\s@._-]+/).filter(Boolean).slice(0, 2).map((x) => x[0].toUpperCase()).join("");
+const hue = (s) => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 360, 7);
+
+// A password someone can read out or paste: four short words' worth of letters and digits.
+function generatePassword() {
+  const abc = "abcdefghjkmnpqrstuvwxyz23456789";
+  const a = new Uint32Array(16);
+  crypto.getRandomValues(a);
+  const s = [...a].map((x) => abc[x % abc.length]).join("");
+  return `${s.slice(0, 4)}-${s.slice(4, 8)}-${s.slice(8, 12)}-${s.slice(12, 16)}`;
+}
 
 export function Admin() {
   const [s, setS] = useState(null);
@@ -13,35 +25,108 @@ export function Admin() {
   if (!s) return html`<div class="doc faint">Loading…</div>`;
   return html`<div class="doc">
     <h1>Admin</h1>
-    <p class="lede">Settings that apply to everyone on this server.</p>
-    <${SignUp} s=${s} reload=${load} />
+    <p class="lede">Settings for everyone on this server.</p>
+    <${People} s=${s} reload=${load} />
     <${Valhalla} s=${s} reload=${load} />
-    <${MapData} s=${s} />
     <${Regions} s=${s} reload=${load} />
-    <${Users} s=${s} reload=${load} />
+    <${MapData} />
   </div>`;
 }
 
-function SignUp({ s, reload }) {
+// ------------------------------------------------------------------ people
+function PasswordField({ value, onInput, label = "Password" }) {
+  const [shown, setShown] = useState(false);
+  return html`<label class="field"><span>${label}</span>
+    <div class="row">
+      <input type=${shown ? "text" : "password"} value=${value} onInput=${(e) => onInput(e.target.value)} autocomplete="new-password" class=${shown ? "mono" : ""} />
+      <button type="button" class="sm" onClick=${() => { onInput(generatePassword()); setShown(true); }}>Generate</button>
+      <button type="button" class="sm bare" onClick=${() => setShown(!shown)}>${shown ? "Hide" : "Show"}</button>
+    </div>
+    <span class="help">At least 8 characters. Copy it now; it isn't shown again.</span></label>`;
+}
+
+function People({ s, reload }) {
+  const me = useStore((x) => x.me);
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ username: "", password: "", display_name: "", is_admin: false });
+  const [resetFor, setResetFor] = useState(null);
+  const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false);
-  async function toggle(on) {
+
+  async function run(fn, ok) {
     setBusy(true);
-    try { await api("/admin/site", { method: "PUT", body: { signup: on } }); await reload(); toast(on ? "Sign-up is open" : "Sign-up is closed"); }
-    catch (e) { toast(e.message, "bad"); }
+    try { await fn(); await reload(); if (ok) toast(ok); return true; }
+    catch (x) { toast(x.message, "bad"); return false; }
     finally { setBusy(false); }
   }
+  const patch = (u, body, ok) => run(() => api(`/admin/users/${u.id}`, { method: "PATCH", body }), ok);
+  async function add(e) {
+    e.preventDefault();
+    if (await run(() => api("/admin/users", { method: "POST", body: form }), `Account made for ${form.username}`)) {
+      setForm({ username: "", password: "", display_name: "", is_admin: false }); setAdding(false);
+    }
+  }
+  const admins = s.users.filter((u) => u.is_admin && !u.disabled).length;
+
   return html`<section>
-    <header><h2>Accounts</h2><p>Who can make an account here.</p></header>
+    <header><h2>People</h2><p>${plural(s.users.length, "account")} on this server. Each person connects their own Dawarich.</p></header>
     <div class="body">
-      <label class="check"><input type="checkbox" checked=${s.signup} disabled=${busy} onChange=${(e) => toggle(e.target.checked)} />
-        Let people create their own accounts</label>
-      <p class="help">${s.signup
-        ? "Anyone who can reach this page can sign up, then connect their own Dawarich key."
-        : "Only accounts you create below can sign in. People sign in with a username and password you give them, then paste their own Dawarich key."}</p>
+      <label class="check"><input type="checkbox" class="switch" checked=${s.signup} disabled=${busy}
+        onChange=${(e) => run(() => api("/admin/site", { method: "PUT", body: { signup: e.target.checked } }), e.target.checked ? "Anyone can sign up now" : "Sign-up is closed")} />
+        Let people make their own accounts</label>
+      <p class="help" style="margin-top:-8px">${s.signup ? "Anyone who can reach this page can sign up." : "Only the accounts you make here can sign in."}</p>
+
+      <div class="people">${s.users.map((u) => {
+        const self = me?.username === u.username;
+        const lastAdmin = u.is_admin && admins <= 1;
+        return html`<div key=${u.id} class=${`person ${u.disabled ? "off" : ""}`}>
+          <span class="avatar" style=${`background:hsl(${hue(u.username)} 32% 42%)`}>${initials(u)}</span>
+          <div class="who">
+            <div class="row wrap" style="gap:6px"><b class="ell">${u.display_name || u.username}</b>
+              ${self && html`<span class="chip">you</span>`}
+              ${!!u.is_admin && html`<span class="chip ink">admin</span>`}
+              ${!!u.disabled && html`<span class="chip bad">disabled</span>`}</div>
+            <div class="meta num"><span>@${u.username}</span>
+              <span>${u.dawarich_linked ? `Dawarich key ${u.api_key_hint}` : "no Dawarich yet"}</span>
+              <span>${plural(u.trips, "trip")}</span>
+              ${u.created_at && html`<span title=${full(u.created_at)}>joined ${ago(u.created_at)}</span>`}</div>
+          </div>
+          <${Menu} cls="icon sm" title="Manage" label=${html`<${Icon} name="more" small />`}>
+            <button onClick=${() => { setResetFor(u.id); setPw(""); }}>Set a new password…</button>
+            <button disabled=${self || (u.is_admin && lastAdmin)} onClick=${() => patch(u, { is_admin: !u.is_admin }, u.is_admin ? `${u.username} is a member now` : `${u.username} is an admin now`)}>
+              ${u.is_admin ? "Make a member" : "Make an admin"}</button>
+            <div class="sep"></div>
+            <button disabled=${self || (!u.disabled && lastAdmin)} onClick=${() => patch(u, { disabled: !u.disabled }, u.disabled ? `${u.username} can sign in again` : `${u.username} can't sign in now`)}>
+              ${u.disabled ? "Let them sign in again" : "Stop them signing in"}</button>
+          <//>
+          ${resetFor === u.id && html`<div class="edit">
+            <${PasswordField} label=${`New password for ${u.username}`} value=${pw} onInput=${setPw} />
+            <div class="actions">
+              <button class="go sm" disabled=${busy || pw.length < 8} onClick=${async () => { if (await patch(u, { password: pw }, "Password changed")) setResetFor(null); }}>Save password</button>
+              <button class="sm" onClick=${() => setResetFor(null)}>Cancel</button></div>
+          </div>`}
+        </div>`;
+      })}</div>
+
+      ${!adding ? html`<div class="actions"><button onClick=${() => setAdding(true)}>Add a person</button></div>`
+        : html`<form class="inline-form" onSubmit=${add}>
+          <b>New account</b>
+          <div class="formgrid">
+            <label class="field"><span>Username</span><input value=${form.username} onInput=${(e) => setForm({ ...form, username: e.target.value })} autocomplete="off" spellcheck="false" required autofocus /></label>
+            <label class="field"><span>Name <span class="faint">(optional)</span></span><input value=${form.display_name} onInput=${(e) => setForm({ ...form, display_name: e.target.value })} /></label>
+          </div>
+          <${PasswordField} value=${form.password} onInput=${(v) => setForm({ ...form, password: v })} />
+          <label class="check"><input type="checkbox" checked=${form.is_admin} onChange=${(e) => setForm({ ...form, is_admin: e.target.checked })} />Admin: can change everything on this page</label>
+          <div class="actions">
+            <button class="go" disabled=${busy || !form.username.trim() || form.password.length < 8}>Make account</button>
+            <button type="button" onClick=${() => setAdding(false)}>Cancel</button>
+            <span class="help">Give them the username and password; they connect their own Dawarich after signing in.</span></div>
+        </form>`}
     </div>
   </section>`;
 }
 
+// ------------------------------------------------------------------ valhalla
 function Valhalla({ s, reload }) {
   const [url, setUrl] = useState(s.valhalla_url || "");
   const [busy, setBusy] = useState("");
@@ -49,10 +134,8 @@ function Valhalla({ s, reload }) {
   const v = s.valhalla || {};
   async function save() {
     setBusy("save");
-    try {
-      await api("/admin/site", { method: "PUT", body: { valhalla_url: url.trim() } });
-      await reload(); toast("Saved. Every account matches against this server now.");
-    } catch (e) { toast(e.message, "bad"); }
+    try { await api("/admin/site", { method: "PUT", body: { valhalla_url: url.trim() } }); await reload(); setHit(null); toast("Saved. Everyone matches against this server now."); }
+    catch (e) { toast(e.message, "bad"); }
     finally { setBusy(""); }
   }
   async function test() {
@@ -61,40 +144,157 @@ function Valhalla({ s, reload }) {
     catch (e) { toast(e.message, "bad"); }
     finally { setBusy(""); }
   }
+  const date = (x) => new Date(x * 1000).toLocaleDateString();
   return html`<section>
-    <header><h2>Map matching</h2><p>One Valhalla for everyone here.</p></header>
+    <header><h2>Map server</h2><p>The Valhalla server every account matches against.</p></header>
     <div class="body">
       <label class="field"><span>Valhalla address</span>
-        <input value=${url} onInput=${(e) => setUrl(e.target.value)} placeholder="http://valhalla:8002" spellcheck="false"
-          style="font-family: ui-monospace, SFMono-Regular, Menlo, monospace" />
-        <p class="help">Mapmatch asks this server to snap trips to roads, paths and railways. It needs tiles for the regions below; nothing is matched until it is set.</p></label>
-      <div class="actions">
-        <button class="go" disabled=${busy === "save" || url.trim() === (s.valhalla_url || "")} onClick=${save}>Save</button>
-        <button disabled=${busy === "test" || !url.trim()} onClick=${test}>${busy === "test" ? "Testing…" : "Test"}</button>
-      </div>
-      ${hit && !hit.error && html`<div class="note good">Valhalla ${hit.version} answered${hit.tileset_last_modified ? `; map data from ${new Date(hit.tileset_last_modified * 1000).toLocaleDateString()}` : ""}.</div>`}
-      ${hit?.error && html`<div class="note bad">${hit.url || url} did not answer: ${hit.error}</div>`}
+        <div class="row"><input value=${url} onInput=${(e) => setUrl(e.target.value)} placeholder="http://valhalla:8002" spellcheck="false" class="mono" />
+          <button disabled=${busy === "test" || !url.trim()} onClick=${test}>${busy === "test" ? "Testing…" : "Test"}</button></div></label>
+      ${hit && !hit.error && html`<div class="note good">Valhalla ${hit.version} answered${hit.tileset_last_modified ? `, map data from ${date(hit.tileset_last_modified)}` : ""}.</div>`}
+      ${hit?.error && html`<div class="note bad">${hit.url || url} didn't answer: ${hit.error}</div>`}
       ${!hit && s.configured && (v.error
-        ? html`<div class="note bad">${s.valhalla_url} is unreachable: ${v.error}</div>`
-        : html`<div class="note good">Using <b>${s.valhalla_url}</b>${v.version ? `, Valhalla ${v.version}` : ""}${v.tileset_last_modified ? `, map data from ${new Date(v.tileset_last_modified * 1000).toLocaleDateString()}` : ""}.</div>`)}
-      ${!s.configured && html`<div class="note warn">No map-matching server yet. Matching will fail until an address is saved here.</div>`}
+        ? html`<div class="note bad">${s.valhalla_url} isn't answering: ${v.error}</div>`
+        : html`<div class="note good">In use: Valhalla ${v.version || ""}${v.tileset_last_modified ? `, map data from ${date(v.tileset_last_modified)}` : ""}.</div>`)}
+      ${!s.configured && html`<div class="note warn">No map server yet. Nothing can be matched until one is saved here.</div>`}
+      <div class="actions"><button class="go" disabled=${busy === "save" || url.trim() === (s.valhalla_url || "")} onClick=${save}>Save</button></div>
     </div>
   </section>`;
 }
 
-function MapData({ s }) {
+// ------------------------------------------------------------------ regions
+// Common Geofabrik extracts, so a region can be added without looking anything up.
+const PRESETS = [
+  ["Great Britain", "europe/great-britain", "49.80,-8.70,60.90,1.80"],
+  ["England", "europe/united-kingdom/england", "49.80,-6.50,55.90,1.80"],
+  ["Wales", "europe/united-kingdom/wales", "51.30,-5.40,53.50,-2.60"],
+  ["Scotland", "europe/united-kingdom/scotland", "54.60,-8.70,60.90,-0.70"],
+  ["Ireland and Northern Ireland", "europe/ireland-and-northern-ireland", "51.20,-10.70,55.50,-5.30"],
+  ["France", "europe/france", "41.30,-5.20,51.10,9.60"],
+  ["Germany", "europe/germany", "47.20,5.80,55.10,15.10"],
+  ["Netherlands", "europe/netherlands", "50.70,3.30,53.60,7.30"],
+  ["Belgium", "europe/belgium", "49.40,2.50,51.60,6.50"],
+  ["Spain", "europe/spain", "35.90,-9.40,43.80,4.40"],
+  ["Italy", "europe/italy", "36.60,6.60,47.10,18.60"],
+  ["Switzerland", "europe/switzerland", "45.80,5.90,47.90,10.60"],
+].map(([name, path, bounds]) => ({ name, pbf_url: `https://download.geofabrik.de/${path}-latest.osm.pbf`, bounds }));
+
+function MiniMap({ bounds }) {
+  const el = useRef(null);
+  const theme = useStore((x) => x.theme);
+  useEffect(() => {
+    const b = parseBounds(bounds);
+    if (!b) return;
+    const map = regionMap(el.current, theme, b);
+    return () => map.remove();
+  }, [bounds, theme]);
+  return html`<div class="mini" ref=${el}>${!parseBounds(bounds) && html`<div class="empty small faint">No area set</div>`}</div>`;
+}
+
+function RegionEditor({ start, onSave, onCancel, busy }) {
+  const [r, setR] = useState({ name: "", pbf_url: "", bounds: "", built_at: "", notes: "", ...start });
+  const el = useRef(null);
+  const mapRef = useRef(null);
+  const theme = useStore((x) => x.theme);
+  useEffect(() => {
+    const map = regionMap(el.current, theme, parseBounds(r.bounds), { interactive: true });
+    mapRef.current = map;
+    return () => map.remove();
+  }, []);
+  useEffect(() => { mapRef.current?.loaded() && mapRef.current.showBounds(parseBounds(r.bounds), false); }, [r.bounds]);
+  const upd = (k) => (e) => setR({ ...r, [k]: e.target.value });
+  const fromView = () => {
+    const m = mapRef.current;
+    if (!m) return;
+    const b = m.getBounds();
+    setR({ ...r, bounds: boundsText({ s: b.getSouth(), w: b.getWest(), n: b.getNorth(), e: b.getEast() }) });
+  };
+  const preset = (name) => {
+    const p = PRESETS.find((x) => x.name === name);
+    if (!p) return;
+    setR({ ...r, name: r.name || p.name, pbf_url: p.pbf_url, bounds: p.bounds });
+    const b = parseBounds(p.bounds);
+    if (b && mapRef.current) mapRef.current.showBounds(b, true);
+  };
+  const valid = !r.bounds.trim() || parseBounds(r.bounds);
+  return html`<div class="region-edit">
+    <div class="fields">
+      ${!start.id && html`<label class="field"><span>Start from a common extract</span>
+        <select onChange=${(e) => preset(e.target.value)} style="width:100%"><option value="">Choose…</option>
+          ${PRESETS.map((p) => html`<option value=${p.name}>${p.name}</option>`)}</select></label>`}
+      <label class="field"><span>Name</span><input value=${r.name} onInput=${upd("name")} placeholder="England" required /></label>
+      <label class="field"><span>OSM extract it was built from</span><input value=${r.pbf_url} onInput=${upd("pbf_url")} class="mono" placeholder="https://download.geofabrik.de/…-latest.osm.pbf" /></label>
+      <label class="field"><span>Area (south, west, north, east)</span><input value=${r.bounds} onInput=${upd("bounds")} class="mono" placeholder="Pan the map, then Use this view" />
+        ${!valid && html`<span class="help" style="color:var(--bad)">Four numbers: south, west, north, east.</span>`}</label>
+      <div class="formgrid">
+        <label class="field"><span>Built on</span><input type="date" value=${r.built_at} onInput=${upd("built_at")} /></label>
+      </div>
+      <label class="field"><span>Note <span class="faint">(optional)</span></span><input value=${r.notes} onInput=${upd("notes")} placeholder="Rebuilt monthly" /></label>
+      <div class="actions">
+        <button class="go" disabled=${busy || !r.name.trim() || !valid} onClick=${() => onSave(r)}>${start.id ? "Save region" : "Add region"}</button>
+        <button onClick=${onCancel}>Cancel</button></div>
+    </div>
+    <div class="stack">
+      <div class="mapbox"><div class="map" ref=${el}></div></div>
+      <div class="row"><button class="sm" onClick=${fromView}>Use this view</button><span class="help">Pan and zoom to the area the tiles cover.</span></div>
+    </div>
+  </div>`;
+}
+
+function Regions({ s, reload }) {
+  const [edit, setEdit] = useState(null);   // a region, or {} for a new one
+  const [busy, setBusy] = useState(false);
+  async function save(r) {
+    setBusy(true);
+    try {
+      const body = { name: r.name, pbf_url: r.pbf_url, bounds: r.bounds, built_at: r.built_at, notes: r.notes };
+      if (r.id) await api(`/admin/regions/${r.id}`, { method: "PATCH", body });
+      else await api("/admin/regions", { method: "POST", body });
+      await reload(); setEdit(null); toast(r.id ? "Region saved" : "Region added");
+    } catch (x) { toast(x.message, "bad"); }
+    finally { setBusy(false); }
+  }
+  return html`<section>
+    <header><h2>Regions</h2><p>Where the map server has data. Everyone sees this list, so they know where matching works.</p></header>
+    <div class="body">
+      ${!s.regions.length && !edit && html`<p class="help">No regions listed yet.</p>`}
+      <div class="regions">${s.regions.map((reg) => edit?.id === reg.id
+        ? html`<${RegionEditor} key=${reg.id} start=${reg} busy=${busy} onSave=${save} onCancel=${() => setEdit(null)} />`
+        : html`<div class="region" key=${reg.id}>
+          <${MiniMap} bounds=${reg.bounds} />
+          <div class="info">
+            <div class="row"><b class="grow ell">${reg.name}</b>
+              <button class="sm" onClick=${() => setEdit({ ...reg })}>Edit</button>
+              <${Confirm} cls="sm danger" armedLabel="Remove?" onConfirm=${async () => {
+                try { await api(`/admin/regions/${reg.id}`, { method: "DELETE" }); await reload(); toast("Region removed"); }
+                catch (x) { toast(x.message, "bad"); }
+              }}>Remove<//></div>
+            <div class="meta num">
+              <span>${reg.built_at ? `built ${new Date(reg.built_at).toLocaleDateString()}` : "build date not set"}</span>
+              ${reg.pbf_url && html`<a href=${reg.pbf_url} target="_blank" rel="noreferrer">extract</a>`}
+            </div>
+            ${reg.notes && html`<p class="small dim">${reg.notes}</p>`}
+          </div>
+        </div>`)}</div>
+      ${edit && !edit.id && html`<${RegionEditor} start=${{}} busy=${busy} onSave=${save} onCancel=${() => setEdit(null)} />`}
+      ${!edit && html`<div class="actions"><button onClick=${() => setEdit({})}>Add a region</button></div>`}
+    </div>
+  </section>`;
+}
+
+// ------------------------------------------------------------------ map data
+function MapData() {
   const [data, setData] = useState(null);
   useEffect(() => { api("/admin/valhalla/data").then(setData).catch(() => setData({ mounted: false, files: [] })); }, []);
   return html`<section>
-    <header><h2>Map data</h2><p>The files behind the Valhalla server.</p></header>
+    <header><h2>Map files</h2><p>The extracts and tiles behind the map server, if you mounted them.</p></header>
     <div class="body">
       ${!data ? html`<p class="help">Checking…</p>` : !data.mounted ? html`
-        <div class="note warn">The Valhalla data directory is not mounted in this container, so its files cannot be listed or downloaded from here.</div>
-        <p class="help">Mount it read-only at <code>VALHALLA_DATA_DIR</code> (for example
-          <code>- /var/lib/docker/volumes/valhalla/_data:/valhalla:ro</code> with <code>VALHALLA_DATA_DIR=/valhalla</code>) to see the extracts and built tiles behind this server, and to download them.</p>
-        <p class="help">Building or replacing regions needs the Valhalla toolchain on the machine that runs it, not in this container.</p>`
+        <p class="help">Mount the Valhalla data directory read-only and set <code>VALHALLA_DATA_DIR</code> to list and download its files here, for example
+          <code>/var/lib/docker/volumes/valhalla/_data:/valhalla:ro</code> with <code>VALHALLA_DATA_DIR=/valhalla</code>.
+          Building tiles happens on the Valhalla side, not in this container.</p>`
       : html`
-        <p class="help">${data.root} — ${plural(data.files.length, "file")}.</p>
+        <p class="help">${data.root}: ${plural(data.files.length, "file")}.</p>
         <div class="scroll-x"><table class="t"><thead><tr><th>File</th><th>Size</th><th>Changed</th><th></th></tr></thead><tbody>
         ${data.files.map((f) => html`<tr key=${f.name}>
           <td>${f.dir ? "▸ " : ""}${f.name}</td>
@@ -102,120 +302,6 @@ function MapData({ s }) {
           <td class="num dim">${ago(f.modified)}</td>
           <td>${!f.dir && html`<a href=${apiUrl("/admin/valhalla/data/" + encodeURIComponent(f.name))}>Download</a>`}</td>
         </tr>`)}</tbody></table></div>`}
-    </div>
-  </section>`;
-}
-
-const blank = { name: "", pbf_url: "", bounds: "", built_at: "", notes: "" };
-
-function Regions({ s, reload }) {
-  const [form, setForm] = useState(blank);
-  const [edit, setEdit] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const upd = (k) => (e) => setForm({ ...form, [k]: e.target.value });
-  async function add(e) {
-    e.preventDefault();
-    setBusy(true);
-    try { await api("/admin/regions", { method: "POST", body: form }); setForm(blank); await reload(); toast("Region added"); }
-    catch (x) { toast(x.message, "bad"); }
-    finally { setBusy(false); }
-  }
-  async function saveEdit() {
-    try { await api(`/admin/regions/${edit.id}`, { method: "PATCH", body: edit }); setEdit(null); await reload(); toast("Region saved"); }
-    catch (x) { toast(x.message, "bad"); }
-  }
-  return html`<section>
-    <header><h2>Regions</h2><p>Which areas the map data covers.</p></header>
-    <div class="body">
-      <p class="help">Everyone here sees this list, so they know where matching works. A trip outside these areas matches only as far as the tiles go.</p>
-      ${!s.regions.length ? html`<p class="help">No regions yet.</p>` : html`
-        <div class="scroll-x"><table class="t"><thead><tr><th>Region</th><th>Covers</th><th>Built</th><th></th></tr></thead><tbody>
-        ${s.regions.map((reg) => edit?.id === reg.id ? html`<tr key=${reg.id}>
-          <td><input value=${edit.name} onInput=${(e) => setEdit({ ...edit, name: e.target.value })} style="width:100%" /></td>
-          <td><input value=${edit.bounds} onInput=${(e) => setEdit({ ...edit, bounds: e.target.value })} placeholder="south,west,north,east" style="width:100%" /></td>
-          <td><input type="date" value=${edit.built_at} onInput=${(e) => setEdit({ ...edit, built_at: e.target.value })} /></td>
-          <td class="row" style="gap:6px"><button class="sm go" onClick=${saveEdit}>Save</button><button class="sm" onClick=${() => setEdit(null)}>Cancel</button></td>
-        </tr>` : html`<tr key=${reg.id}>
-          <td>${reg.name}${reg.pbf_url && html`<div class="faint small"><a href=${reg.pbf_url} target="_blank" rel="noreferrer">extract</a></div>`}</td>
-          <td class="dim num">${reg.bounds || "–"}</td>
-          <td class="num dim">${reg.built_at || "not built"}</td>
-          <td class="row" style="gap:6px"><button class="sm" onClick=${() => setEdit({ ...reg })}>Edit</button>
-            <${Confirm} cls="sm danger" armedLabel="Delete?" onConfirm=${async () => {
-              try { await api(`/admin/regions/${reg.id}`, { method: "DELETE" }); await reload(); toast("Region removed"); }
-              catch (x) { toast(x.message, "bad"); }
-            }}>Delete<//></td>
-        </tr>`)}</tbody></table></div>`}
-      <form onSubmit=${add} class="region-add">
-        <div class="row" style="flex-wrap:wrap;gap:10px">
-          <label class="field"><span>Name</span><input value=${form.name} onInput=${upd("name")} placeholder="England and Wales" required /></label>
-          <label class="field"><span>Covers</span><input value=${form.bounds} onInput=${upd("bounds")} placeholder="50.0,-5.8,55.8,1.8" /></label>
-          <label class="field"><span>Built</span><input type="date" value=${form.built_at} onInput=${upd("built_at")} /></label>
-        </div>
-        <label class="field"><span>OSM extract</span><input value=${form.pbf_url} onInput=${upd("pbf_url")} placeholder="https://download.geofabrik.de/europe/great-britain-latest.osm.pbf" /></label>
-        <label class="field"><span>Note</span><input value=${form.notes} onInput=${upd("notes")} placeholder="Optional" /></label>
-        <div class="actions"><button disabled=${busy || !form.name.trim()}>Add region</button></div>
-      </form>
-    </div>
-  </section>`;
-}
-
-const newUser = { username: "", password: "", display_name: "", is_admin: false };
-
-function Users({ s, reload }) {
-  const [form, setForm] = useState(newUser);
-  const [busy, setBusy] = useState(false);
-  const [reset, setReset] = useState(null);   // {id, password}
-  const upd = (k) => (e) => setForm({ ...form, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value });
-  async function add(e) {
-    e.preventDefault();
-    setBusy(true);
-    try { await api("/admin/users", { method: "POST", body: form }); setForm(newUser); await reload(); toast("Account created"); }
-    catch (x) { toast(x.message, "bad"); }
-    finally { setBusy(false); }
-  }
-  async function patch(u, body) {
-    try { await api(`/admin/users/${u.id}`, { method: "PATCH", body }); await reload(); toast("Saved"); }
-    catch (x) { toast(x.message, "bad"); }
-  }
-  async function saveReset() {
-    try { await api(`/admin/users/${reset.id}`, { method: "PATCH", body: { password: reset.password } }); setReset(null); toast("Password set"); }
-    catch (x) { toast(x.message, "bad"); }
-  }
-  return html`<section>
-    <header><h2>People</h2><p>Accounts on this server.</p></header>
-    <div class="body">
-      <div class="scroll-x"><table class="t"><thead><tr><th>Account</th><th>Role</th><th>Dawarich</th><th>Trips</th><th>Since</th><th></th></tr></thead><tbody>
-      ${s.users.map((u) => html`<tr key=${u.id} class=${u.disabled ? "off" : ""}>
-        <td>${u.display_name || u.username}<div class="faint small">${u.username}</div></td>
-        <td>${u.is_admin ? "Admin" : "Member"}${u.disabled ? html` <span class="flag bad">disabled</span>` : ""}</td>
-        <td class="dim">${u.dawarich_linked ? `key ${u.api_key_hint}` : html`<span class="faint">not linked</span>`}</td>
-        <td class="num dim">${u.trips.toLocaleString()}</td>
-        <td class="num dim">${u.created_at ? full(u.created_at) : ""}</td>
-        <td class="row" style="gap:6px">
-          <${Menu} cls="sm" label=${html`…`}>
-            <button onClick=${() => setReset({ id: u.id, password: "" })}>Set a password…</button>
-            <button onClick=${() => patch(u, { is_admin: !u.is_admin })}>${u.is_admin ? "Make a member" : "Make an admin"}</button>
-            <div class="sep"></div>
-            <button onClick=${() => patch(u, { disabled: !u.disabled })}>${u.disabled ? "Enable" : "Disable"}</button>
-          <//>
-        </td>
-      </tr>`)}</tbody></table></div>
-      ${reset && html`<div class="row" style="gap:8px;flex-wrap:wrap">
-        <label class="field"><span>New password (8+ characters)</span>
-          <input type="password" value=${reset.password} autocomplete="new-password" onInput=${(e) => setReset({ ...reset, password: e.target.value })} /></label>
-        <div class="actions" style="align-self:end"><button class="go" disabled=${reset.password.length < 8} onClick=${saveReset}>Set</button>
-          <button onClick=${() => setReset(null)}>Cancel</button></div>
-      </div>`}
-      <form onSubmit=${add}>
-        <p class="help" style="margin:0 0 8px">Make an account, then hand over the username and password. They paste their own Dawarich key after signing in.</p>
-        <div class="row" style="flex-wrap:wrap;gap:10px">
-          <label class="field"><span>Username</span><input value=${form.username} onInput=${upd("username")} autocomplete="off" required /></label>
-          <label class="field"><span>Password</span><input type="password" value=${form.password} onInput=${upd("password")} autocomplete="new-password" required /></label>
-          <label class="field"><span>Name</span><input value=${form.display_name} onInput=${upd("display_name")} placeholder="Optional" /></label>
-        </div>
-        <label class="check"><input type="checkbox" checked=${form.is_admin} onChange=${upd("is_admin")} />Admin</label>
-        <div class="actions"><button disabled=${busy || !form.username.trim() || form.password.length < 8}>Create account</button></div>
-      </form>
     </div>
   </section>`;
 }

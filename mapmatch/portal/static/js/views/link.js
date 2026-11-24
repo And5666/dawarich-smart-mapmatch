@@ -33,23 +33,24 @@ export function LinkDawarich({ onDone, intro = true }) {
         placeholder="https://dawarich.example.com" /></label>
     <label class="field"><span>API key</span>
       <input value=${key} onInput=${(e) => setKey(e.target.value)} autocomplete="off" spellcheck="false" required
-        placeholder="Paste your key" style="font-family: ui-monospace, SFMono-Regular, Menlo, monospace" /></label>
+        placeholder="Paste your key" class="mono" /></label>
     ${err && html`<p class="err" role="alert">${err}</p>`}
     <div class="actions">
       <button class="go" type="submit" disabled=${busy || !key.trim()}>${busy ? "Checking…" : "Connect"}</button>
-      <span class="help" style="align-self:center">You only have to do this once; the key is kept with your account.</span>
     </div>
+    <p class="help">You do this once. The key stays with your account here and is only used for your own points.</p>
   </form>`;
 }
 
 export function LinkedAccount({ settings }) {
-  return html`<div class="row" style="flex-wrap:wrap;gap:10px">
-    <span class="note good">Linked to ${settings.dawarich_url ? settings.dawarich_url.replace(/^https?:\/\//, "") : "Dawarich"}
-      with key <b>${settings.api_key_hint}</b>.</span>
+  const host = settings.dawarich_url ? settings.dawarich_url.replace(/^https?:\/\//, "") : "Dawarich";
+  return html`<div class="row wrap" style="gap:10px">
+    <span class="chip good"><span class="d"></span>Connected</span>
+    <span><b>${host}</b> <span class="faint">· key ${settings.api_key_hint}</span></span>
     <span class="grow"></span>
     <${Confirm} cls="sm danger" armedLabel="Remove the key?" onConfirm=${async () => {
       try { await api("/unlink", { method: "POST" }); await loadMe(); toast("Dawarich key removed"); }
       catch (e) { toast(e.message, "bad"); }
-    }}>Unlink<//>
+    }}>Disconnect<//>
   </div>`;
 }

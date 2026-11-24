@@ -1,4 +1,5 @@
-// One trip: the map, a timeline to pick any stretch and set its mode, segments, points, history.
+// One trip: the map, a timeline to pick any stretch and set its mode, and tabs
+// for the route, its gaps, the GPS points and every earlier version.
 import {
   html, useState, useEffect, useRef, useMemo, api, apiUrl, useStore, toast, refreshData, Icon, Menu, Confirm,
   MODES, PICKABLE, modeVar, cssVar, colorExpr, km, duration, time, day, full, ago, pct, plural, navigate,
@@ -48,6 +49,23 @@ function between(segments, t0, t1) {
   return out;
 }
 
+// Every hole the filler bridged (or kept), one entry per stretch of time.
+function listGaps(segs) {
+  const out = [];
+  const gate = (why) => (why || []).filter((w) => w === "too_fast" || w === "too_long");
+  for (const s of segs) for (const p of s.pieces || []) {
+    if (!p.gap) continue;
+    const [g0, g1] = p.gap;
+    let g = out.find((x) => x.t0 <= g1 && g0 <= x.t1);
+    if (!g) { g = { t0: g0, t1: g1, km: 0, routed: false, overrode: false, kept: false, why: [], mode: s.mode }; out.push(g); }
+    g.km += p.km || 0;
+    if (p.kind === "filled") { g.routed = true; g.overrode = g.overrode || !!p.overrode_gate; }
+    if (p.kept) g.kept = true;
+    g.why = [...new Set([...g.why, ...gate(p.why)])];
+  }
+  return out.sort((a, b) => a.t0 - b.t0);
+}
+
 // Click or drag on the timeline / speed chart to choose a stretch of time.
 function useScrub(t0, t1, onPick, onHover) {
   const drag = useRef(null);
@@ -73,12 +91,17 @@ function useScrub(t0, t1, onPick, onHover) {
 function Chooser({ range, segments, onChoose, onCancel, left }) {
   const t0 = Math.round(Math.min(range.a, range.b)), t1 = Math.round(Math.max(range.a, range.b));
   const len = between(segments, t0, t1).reduce((s, cs) => s + cs.slice(1).reduce((a, c, i) => a + dist({ lat: cs[i][0], lon: cs[i][1] }, { lat: c[0], lon: c[1] }), 0), 0);
-  return html`<div class="chooser" style=${`left:${Math.max(160, Math.min(left, innerWidth - 180))}px`} role="dialog" aria-label="Set mode">
+  return html`<div class="chooser" style=${`left:${Math.max(170, Math.min(left, innerWidth - 190))}px`} role="dialog" aria-label="Set mode">
     <div class="row small"><b class="num">${time(t0)}–${time(t1)}</b><span class="faint">${duration(t1 - t0)}${len ? ` · ${km(len / 1000)}` : ""}</span>
-      <span class="grow"></span><button class="sm bare" onClick=${onCancel} title="Cancel (Esc)"><${Icon} name="x" small /></button></div>
+      <span class="grow"></span><button class="icon sm bare" onClick=${onCancel} title="Cancel (Esc)"><${Icon} name="x" small /></button></div>
     <div class="modes">${PICKABLE.map((m) => html`<button style=${modeVar(m)} onClick=${() => onChoose(t0, t1, m)}>
       <${Icon} name=${m} />${MODES[m].label}</button>`)}</div>
   </div>`;
+}
+
+function Toggle({ on, onChange, disabled, children }) {
+  return html`<label class=${`toggle ${on ? "on" : ""}`} style=${disabled ? "opacity:.45;pointer-events:none" : ""}>
+    <input type="checkbox" checked=${on} onChange=${(e) => onChange(e.target.checked)} />${children}</label>`;
 }
 
 export function TripView({ id }) {
@@ -92,6 +115,9 @@ export function TripView({ id }) {
   const [layers, setLayers] = useState({ matched: true, track: false, points: true, ignored: false });
   const [editing, setEditing] = useState(false);
   const [pending, setPending] = useState({});     // point id -> [lat, lon] | "x" | null (undo a correction)
+  const [tab, setTab] = useState("route");
+  const [preview, setPreview] = useState(null);   // an earlier version being looked at
+  const [focusGap, setFocusGap] = useState(null);
   const mapEl = useRef(null);
   const mapRef = useRef(null);
   const stripRef = useRef(null);
@@ -105,9 +131,13 @@ export function TripView({ id }) {
     setBusy(label);
     try {
       const x = await api(`/trips/${id}${path}`, { method, body });
-      setD(x); setSel(null); refreshData();
+      setD(x); setSel(null); setPreview(null); refreshData();
       const r = x.result;
-      if (r) toast(r.dry_run ? "Dry run: Dawarich was not changed" : r.post != null ? `Pushed to Dawarich (${plural(r.post, "point")})` : `Original GPS restored in Dawarich (${plural(r.restore, "point")})`);
+      if (r) {
+        if (r.dry_run) toast("Dry run: Dawarich was not changed");
+        else if (path === "/push") toast(`In Dawarich now: ${plural(r.matched_points, "matched point")}`);
+        else toast(`Original GPS is back in Dawarich (${plural(r.original_points, "point")})`);
+      }
       return x;
     } catch (e) { toast(e.message, "bad"); }
     finally { setBusy(""); }
@@ -115,16 +145,18 @@ export function TripView({ id }) {
 
   const t = d?.trip;
   const segs = d?.segments || [];
+  const shown = preview ? preview.segments : segs;
+  const raw = d?.raw || [];
   const T0 = d ? Math.min(t.start, ...segs.map((s) => s.t0)) : 0;
   const T1 = d ? Math.max(t.end, ...segs.map((s) => s.t1)) : 1;
   const span = Math.max(1, T1 - T0);
-  const raw = d?.raw || [];
   const edits = useMemo(() => {
     const e = {};
     for (const p of raw) if (p.edit != null) e[p.id] = p.edit;
     for (const [k, v] of Object.entries(pending)) { if (v == null) delete e[k]; else e[k] = v; }
     return e;
   }, [raw, pending]);
+  const gaps = useMemo(() => listGaps(shown), [shown]);
   const pendingCount = Object.keys(pending).length;
   editRef.current = { editing, raw, edits };
 
@@ -134,8 +166,13 @@ export function TripView({ id }) {
     const map = createMap(mapEl.current, theme);
     mapRef.current = map;
     const pop = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 });
-    for (const lid of ["m-solid", "m-dash", "m-dot"]) {
-      map.on("click", lid, (e) => { if (!editRef.current.editing) { const s = e.features[0].properties; setSel({ a: s.t0, b: s.t1, seg: s.sid }); } });
+    for (const lid of ["m-solid", "m-dash", "m-dot", "m-kept"]) {
+      map.on("click", lid, (e) => {
+        if (editRef.current.editing) return;
+        const s = e.features[0].properties;
+        if (s.gap) { gapRef.current?.(s.gap); return; }
+        setSel({ a: s.t0, b: s.t1, seg: s.sid });
+      });
       map.on("mouseenter", lid, () => { if (!editRef.current.editing) map.getCanvas().style.cursor = "pointer"; });
       map.on("mouseleave", lid, () => { map.getCanvas().style.cursor = ""; });
     }
@@ -185,21 +222,21 @@ export function TripView({ id }) {
     const map = mapRef.current;
     if (!map || !d) return;
     const vis = (on) => ({ visibility: on ? "visible" : "none" });
+    const showTrack = layers.track || !shown.length;
     // the original track, exactly as recorded
     setOverlay(map, "track", { data: fc(raw.length > 1 ? [line(raw.map((p) => [p.lat, p.lon]), {})] : []), layers: () => [
-      { id: "track-case", type: "line", layout: { ...vis(layers.track || !segs.length), "line-join": "round", "line-cap": "round" },
+      { id: "track-case", type: "line", layout: { ...vis(showTrack), "line-join": "round", "line-cap": "round" },
         paint: { "line-color": cssVar("--casing"), "line-width": 5.5, "line-opacity": 0.9 } },
-      { id: "track", type: "line", layout: { ...vis(layers.track || !segs.length), "line-join": "round", "line-cap": "round" },
+      { id: "track", type: "line", layout: { ...vis(showTrack), "line-join": "round", "line-cap": "round" },
         paint: { "line-color": cssVar("--m-none"), "line-width": 2.6, "line-dasharray": [2.2, 1.4] } },
     ] });
     const parts = [];
-    for (const s of segs) {
+    for (const s of shown) {
       if (s.mode === "stay") continue;
       for (const p of s.pieces) if (p.coords.length > 1) parts.push(line(p.coords,
-        { sid: s.id, m: s.mode, k: p.kind, kept: p.kept === true, t0: s.t0, t1: s.t1,
-          gap: p.gap ? `${p.gap[0]}-${p.gap[1]}` : null }));
+        { sid: s.id, m: s.mode, k: p.kind, kept: p.kept === true, t0: s.t0, t1: s.t1, gap: p.gap ? p.gap[0] : null }));
     }
-    const kinds = (lid, ks, dash, w = 4) => ({ id: lid, type: "line", filter: ["in", ["get", "k"], ["literal", ks]],
+    const kinds = (lid, ks, dash, w = 4) => ({ id: lid, type: "line", filter: ["all", ["in", ["get", "k"], ["literal", ks]], ["!=", ["get", "kept"], true]],
       layout: { ...vis(layers.matched), "line-cap": dash ? "butt" : "round", "line-join": "round" },
       paint: { "line-color": colorExpr(), "line-width": w, ...(dash ? { "line-dasharray": dash } : {}) } });
     setOverlay(map, "matched", { data: fc(parts), layers: () => [
@@ -207,30 +244,14 @@ export function TripView({ id }) {
         paint: { "line-color": cssVar("--casing"), "line-width": 7, "line-opacity": 0.85 } },
       kinds("m-solid", ["matched", "join"], null), kinds("m-dash", ["filled"], [2, 1.4]), kinds("m-dot", ["raw", "straight"], [0.6, 1.7], 3.5),
       // A gap you chose to keep looks different from one nothing could route.
-      { id: "m-kept", type: "line", filter: ["all", ["in", ["get", "k"], ["literal", ["raw", "straight"]]], ["==", ["get", "kept"], true]],
+      { id: "m-kept", type: "line", filter: ["==", ["get", "kept"], true],
         layout: { ...vis(layers.matched), "line-cap": "butt", "line-join": "round" },
         paint: { "line-color": cssVar("--warn"), "line-width": 4, "line-dasharray": [0.6, 1.7] } },
     ] });
-    if (!map._mmGapClick) {
-      // Clicking a dashed (routed) or dotted (kept) gap switches just that hole.
-      map._mmGapClick = (e) => {
-        const f = e.features && e.features[0];
-        const g = f && f.properties && f.properties.gap;
-        if (!g) return;
-        const [g0, g1] = String(g).split("-").map(Number);
-        if (!g0 || !g1) return;
-        gapRef.current?.({ t0: g0, t1: g1, routed: f.properties.k === "filled" });
-      };
-      for (const lid of ["m-dash", "m-dot", "m-kept"]) {
-        map.on("click", lid, map._mmGapClick);
-        map.on("mouseenter", lid, () => { map.getCanvas().style.cursor = "pointer"; });
-        map.on("mouseleave", lid, () => { map.getCanvas().style.cursor = ""; });
-      }
-    }
     setOverlay(map, "selected", { data: fc([]), layers: () => [
-      { id: "selected", type: "line", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": cssVar("--ink"), "line-width": 9, "line-opacity": 0.3 } },
+      { id: "selected", type: "line", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": cssVar("--ink"), "line-width": 10, "line-opacity": 0.28 } },
     ] });
-    const stays = segs.filter((s) => s.mode === "stay" && s.pieces[0]?.coords[0]).map((s) => point(s.pieces[0].coords[0][0], s.pieces[0].coords[0][1], {}));
+    const stays = shown.filter((s) => s.mode === "stay" && s.pieces[0]?.coords[0]).map((s) => point(s.pieces[0].coords[0][0], s.pieces[0].coords[0][1], {}));
     setOverlay(map, "stays", { data: fc(stays), layers: () => [
       { id: "stays", type: "circle", layout: vis(layers.matched), paint: { "circle-radius": 6, "circle-color": cssVar("--panel"), "circle-stroke-color": cssVar("--m-stay"), "circle-stroke-width": 3 } },
     ] });
@@ -249,7 +270,7 @@ export function TripView({ id }) {
         paint: {
           "circle-radius": editing ? ["interpolate", ["linear"], ["zoom"], 10, 4, 17, 7] : ["interpolate", ["linear"], ["zoom"], 9, 1.8, 17, 4],
           "circle-color": ["case", ["get", "out"], "rgba(0,0,0,0)", ["get", "moved"], cssVar("--warn"), cssVar("--ink")],
-          "circle-opacity": editing ? 0.95 : (segs.length ? 0.5 : 0.85),
+          "circle-opacity": editing ? 0.95 : (shown.length ? 0.5 : 0.85),
           "circle-stroke-color": ["case", ["get", "out"], cssVar("--bad"), cssVar("--panel")],
           "circle-stroke-width": ["case", ["get", "out"], 2, editing ? 1.5 : 0.8],
         } },
@@ -260,46 +281,49 @@ export function TripView({ id }) {
     setOverlay(map, "cursor", { data: fc([]), layers: () => [
       { id: "cursor", type: "circle", paint: { "circle-radius": 6, "circle-color": cssVar("--ink"), "circle-stroke-color": cssVar("--panel"), "circle-stroke-width": 2.5 } },
     ] });
-  }, [d, layers, editing, edits]);
+  }, [d, layers, editing, edits, preview]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !d) return;
     const lo = sel ? Math.min(sel.a, sel.b) : 0, hi = sel ? Math.max(sel.a, sel.b) : -1;
-    setData(map, "selected", fc(sel ? between(segs, lo, hi).map((cs) => line(cs, {})) : []));
-  }, [sel, d]);
+    setData(map, "selected", fc(sel ? between(shown, lo, hi).map((cs) => line(cs, {})) : []));
+  }, [sel, d, preview]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !d) return;
     let pos = null;
     if (cursor != null) {
-      if (segs.length) pos = positionAt(segs, cursor);
+      if (shown.length) pos = positionAt(shown, cursor);
       else if (raw.length) { const p = raw.reduce((b, x) => (Math.abs(x.timestamp - cursor) < Math.abs(b.timestamp - cursor) ? x : b), raw[0]); pos = [p.lat, p.lon]; }
     }
     setData(map, "cursor", fc(pos ? [point(pos[0], pos[1], {})] : []));
-  }, [cursor, d]);
+  }, [cursor, d, preview]);
 
   useEffect(() => {
     const onKey = (e) => {
       if (e.target.closest("input, select, textarea")) return;
-      if (e.key === "Escape") { if (sel) setSel(null); else if (editing) { setEditing(false); setPending({}); } else navigate("#/"); }
+      if (e.key === "Escape") {
+        if (sel) setSel(null); else if (preview) setPreview(null);
+        else if (editing) { setEditing(false); setPending({}); } else navigate("#/");
+      }
       if (e.key === "j" && d?.next) navigate(`#/trip/${d.next}`);
       if (e.key === "k" && d?.prev) navigate(`#/trip/${d.prev}`);
     };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
-  }, [d, sel, editing]);
+  }, [d, sel, editing, preview]);
 
-  // ---------------------------------------------------------------- timeline
+  // ---------------------------------------------------------------- actions
   const zoomTo = (a, b) => {
-    const cs = between(segs, a, b).flat();
+    const cs = between(shown, a, b).flat();
     if (mapRef.current && cs.length) fitCoords(mapRef.current, cs, 80);
   };
   const pick = (p) => {
-    if (!d || !segs.length) return;
+    if (!d || !shown.length) return;
     if (p.click != null) {
-      const s = segs.find((x) => p.click >= x.t0 && p.click <= x.t1);
+      const s = shown.find((x) => p.click >= x.t0 && p.click <= x.t1);
       if (s) { setSel({ a: s.t0, b: s.t1, seg: s.id }); zoomTo(s.t0, s.t1); } else setSel(null);
       return;
     }
@@ -307,32 +331,26 @@ export function TripView({ id }) {
   };
   const scrub = useScrub(T0, T1, pick, setCursor);
   const choose = (a, b, mode) => act("Rematching", "/range", { t0: a, t1: b, mode });
-  // null = follow the account's setting again
-  const allGaps = async (route) => {
-    const x = await act(route === null ? "Rematching" : route ? "Routing gaps" : "Keeping GPS", "/gaps", { route });
-    if (x) toast(route === null ? "This trip follows your setting again" : route ? "Gaps are routed" : "Gaps keep the recorded GPS");
+  const showGap = (g) => { setFocusGap(g.t0); setSel({ a: g.t0, b: g.t1 }); zoomTo(g.t0 - 30, g.t1 + 30); };
+  gapRef.current = (t0) => {
+    const g = gaps.find((x) => x.t0 === t0);
+    setTab("gaps");
+    if (g) showGap(g);
   };
-  // One hole at a time: keep this one as recorded, or route it.
-  const toggleGap = async (g) => {
-    const x = await act(g.routed ? "Keeping that gap" : "Routing that gap", "/gaps",
-      { t0: g.t0, t1: g.t1, route: !g.routed });
-    if (x) toast(g.routed ? "That gap keeps the recorded GPS" : "That gap is routed");
-  };
-  // The explicit "match it anyway": route past the speed and length checks.
-  const forceGap = async (g) => {
-    const x = await act("Routing anyway", "/gaps", { t0: g.t0, t1: g.t1, route: true, force: true });
-    if (x) toast("Routed anyway, over the speed cap");
-  };
-  const forceAll = async () => {
-    const x = await act("Routing anyway", "/gaps", { route: true, force: true });
-    if (x) toast("Every gap routed, over the speed cap");
-  };
-  gapRef.current = toggleGap;
+  const setGap = (g, route, force = false) => act(route ? "Routing that gap" : "Keeping that gap", "/gaps", { t0: g.t0, t1: g.t1, route, force });
+  const setAllGaps = (route, force = false) => act("Rematching", "/gaps", { route, force });
+  async function openVersion(v) {
+    if (v === t.version) { setPreview(null); return; }
+    try {
+      const x = await api(`/trips/${id}/versions/${v}`);
+      setPreview(x); setSel(null);
+    } catch (e) { toast(e.message, "bad"); }
+  }
 
   if (err) return html`<div class="doc"><div class="note bad">${err}</div><p><a href="#/">Back to trips</a></p></div>`;
   if (!d) return html`<div class="doc faint">Loading…</div>`;
 
-  const q = t.quality || {};
+  const q = (preview ? preview.quality : t.quality) || {};
   const sp = speeds(raw);
   const vmax = Math.max(20, Math.ceil(([...sp].sort((x, y) => x - y)[Math.floor(sp.length * 0.98)] || 20) / 10) * 10);
   const X = (ts) => ((ts - T0) / span) * 100;
@@ -340,29 +358,13 @@ export function TripView({ id }) {
   const selLeft = sel ? 14 + (X((sel.a + sel.b) / 2) / 100) * (stripW - 28) : 0;
   const state = t.state === "new" ? ["", "Not matched yet"] : t.state === "failed" ? ["bad", "Couldn't be matched"]
     : t.state === "review" ? ["warn", "Needs a look"] : t.state === "locked" ? ["", "Locked"] : ["good", "Matched"];
-  const pushState = t.push === "pushed" ? "in Dawarich" : t.push === "outdated" ? "changed since pushed" : "not in Dawarich yet";
-  // This trip's own choice, or the account's when it has not made one.
-  const gapMode = t.gap_mode || me?.settings?.strength || "fill";
-  const hasGapInfo = segs.some((s) => (s.pieces || []).some((p) => p.gap));
-  // Every hole the filler bridged, as one entry per stretch of time.
-  const gaps = useMemo(() => {
-    const out = [];
-    const gate = (why) => (why || []).filter((w) => w === "too_fast" || w === "too_long");
-    for (const s of segs) for (const p of s.pieces || []) {
-      if (!p.gap) continue;
-      const [g0, g1] = p.gap;
-      const hit = out.find((g) => g.t0 <= g1 && g0 <= g.t1);
-      if (hit) {
-        hit.km += p.km;
-        if (p.kind === "filled") { hit.routed = true; hit.overrode = !!p.overrode_gate; }
-        hit.why = [...new Set([...hit.why, ...gate(p.why)])];
-        continue;
-      }
-      out.push({ t0: g0, t1: g1, km: p.km, routed: p.kind === "filled",
-                 overrode: !!p.overrode_gate, why: gate(p.why) });
-    }
-    return out.sort((a, b) => a.t0 - b.t0);
-  }, [segs]);
+  const pushChip = t.push === "pushed" ? html`<span class="chip good"><span class="d"></span>In Dawarich</span>`
+    : t.push === "outdated" ? html`<span class="chip warn"><span class="d"></span>Changed since push</span>` : null;
+  const gapMode = t.gap_mode || "";
+  const accountGaps = me?.settings?.strength === "strict" ? "keep" : "route";
+  const refused = gaps.filter((g) => !g.routed && !g.kept && g.why.length);
+  const canEdit = !busy && !preview;
+  const area = `0,72 ${raw.map((p, i) => `${(X(p.timestamp) * 10).toFixed(1)},${(70 - (Math.min(sp[i], vmax) / vmax) * 60).toFixed(1)}`).join(" ")} 1000,72`;
 
   return html`<div class="tripv">
     <header class="tv-head">
@@ -371,17 +373,20 @@ export function TripView({ id }) {
         <h1>${day(t.start)}, ${time(t.start)}–${time(t.end)}</h1>
         <div class="num">${km(t.km)} · ${duration(t.end - t.start)} · ${plural(t.n_points, "GPS point")}</div>
       </div>
-      <div class="tv-state"><span class=${`dot ${state[0]}`}></span>${state[1]}${t.version ? html`<span class="faint">· ${pushState}</span>` : ""}</div>
-      <button class="icon" title="Earlier trip (k)" disabled=${!d.prev} onClick=${() => navigate(`#/trip/${d.prev}`)}><${Icon} name="back" small /></button>
-      <button class="icon" title="Later trip (j)" disabled=${!d.next} onClick=${() => navigate(`#/trip/${d.next}`)}><${Icon} name="next" small /></button>
+      <span class=${`chip ${state[0]}`}><span class="d"></span>${state[1]}</span>
+      ${pushChip}
+      <div class="row" style="gap:4px">
+        <button class="icon" title="Earlier trip (k)" disabled=${!d.prev} onClick=${() => navigate(`#/trip/${d.prev}`)}><${Icon} name="back" small /></button>
+        <button class="icon" title="Later trip (j)" disabled=${!d.next} onClick=${() => navigate(`#/trip/${d.next}`)}><${Icon} name="next" small /></button>
+      </div>
       ${!t.version ? html`<button class="go" disabled=${!!busy} onClick=${() => act("Matching", "/recalculate")}>Match this trip</button>`
         : t.push === "pushed" ? html`<${Confirm} disabled=${!!busy} armedLabel="Put the original GPS back?" onConfirm=${() => act("Reverting", "/revert")}>Revert in Dawarich<//>`
         : html`<button class="go" disabled=${!!busy || !t.closed || t.locked} onClick=${() => act("Pushing", "/push")}
             title=${!t.closed ? "This trip is still going" : t.locked ? "Unlock the trip first" : "Replace this trip's points in Dawarich with the matched route"}>
-            ${t.push === "outdated" ? "Push changes" : "Push to Dawarich"}</button>`}
+            ${busy === "Pushing" ? "Pushing…" : t.push === "outdated" ? "Push changes" : "Push to Dawarich"}</button>`}
       <${Menu} cls="icon" title="More" label=${html`<${Icon} name="more" />`}>
-        <button disabled=${!t.version || d.history.length < 2} onClick=${() => act("Undoing", "/undo")}>Undo last change</button>
-        <button onClick=${() => act("Rematching", "/recalculate")}>Rematch from scratch${t.overrides.length ? " (drops your mode choices)" : ""}</button>
+        <button disabled=${!t.version || d.history.length < 2} onClick=${() => act("Undoing", "/undo")}><${Icon} name="undo" small />Undo last change</button>
+        <button onClick=${() => act("Rematching", "/recalculate")}><${Icon} name="sync" small />Match again from scratch</button>
         <button onClick=${() => act(t.locked ? "Unlocking" : "Locking", "/lock", { locked: !t.locked })}>${t.locked ? "Unlock trip" : "Lock trip (skip automatic runs)"}</button>
         ${t.push === "outdated" && html`<button onClick=${() => act("Reverting", "/revert")}>Revert in Dawarich</button>`}
         ${t.version > 0 && html`<div class="sep"></div>
@@ -393,17 +398,17 @@ export function TripView({ id }) {
       <div class="tv-main">
         <div class="tv-map">
           <div class="map" ref=${mapEl}></div>
-          <div class="float tl layers">
-            <label class="check"><input type="checkbox" checked=${layers.matched} disabled=${!segs.length} onChange=${(e) => setLayers({ ...layers, matched: e.target.checked })} />Matched route</label>
-            <label class="check"><input type="checkbox" checked=${layers.track || !segs.length} disabled=${!segs.length} onChange=${(e) => setLayers({ ...layers, track: e.target.checked })} />Original track</label>
-            <label class="check"><input type="checkbox" checked=${layers.points || editing} disabled=${editing} onChange=${(e) => setLayers({ ...layers, points: e.target.checked })} />GPS points</label>
-            ${d.dropped?.length > 0 && html`<label class="check opt"><input type="checkbox" checked=${layers.ignored} onChange=${(e) => setLayers({ ...layers, ignored: e.target.checked })} />Ignored points (${d.dropped.length})</label>`}
-            ${segs.length > 0 && html`<div class="opt small faint row" style="gap:10px;padding-top:2px">
-              <span class="row" style="gap:4px"><i class="k"></i>on map</span><span class="row" style="gap:4px"><i class="k dash"></i>routed gap</span>
-              <span class="row" style="gap:4px"><i class="k dot"></i>GPS kept</span></div>`}
+          <div class="float tl">
+            <${Toggle} on=${layers.matched} disabled=${!shown.length} onChange=${(v) => setLayers({ ...layers, matched: v })}><i class="k"></i>Matched</${Toggle}>
+            <${Toggle} on=${layers.track || !shown.length} disabled=${!shown.length} onChange=${(v) => setLayers({ ...layers, track: v })}><i class="k dash"></i>Original</${Toggle}>
+            <${Toggle} on=${layers.points || editing} disabled=${editing} onChange=${(v) => setLayers({ ...layers, points: v })}><i class="k pt"></i>Points</${Toggle}>
           </div>
+          ${preview && html`<div class="float tc" role="status">
+            <span><b>Version ${preview.version}</b> <span class="dim">· ${preview.reason} · ${ago(preview.created_at)}</span></span>
+            <button class="sm go" disabled=${!!busy} onClick=${() => act("Restoring", "/restore", { version: preview.version })}>Go back to this</button>
+            <button class="sm" onClick=${() => setPreview(null)}>Show current</button></div>`}
           ${editing && html`<div class="float bc">
-            <span class="small">${pendingCount ? plural(pendingCount, "change") : "Drag a point to move it · click one to leave it out"}</span>
+            <span class="small">${pendingCount ? plural(pendingCount, "change") : "Drag a point to move it, click one to leave it out"}</span>
             <button class="go sm" disabled=${!pendingCount} onClick=${async () => {
               const x = await act("Rematching", "/points", { edits }, "PUT");
               if (x) { setPending({}); setEditing(false); }
@@ -411,13 +416,13 @@ export function TripView({ id }) {
             <button class="sm" onClick=${() => { setPending({}); setEditing(false); }}>${pendingCount ? "Discard" : "Done"}</button></div>`}
         </div>
         <div class="strip" ref=${stripRef}>
-          ${sel && !sel.live && html`<${Chooser} range=${sel} segments=${segs} left=${selLeft} onChoose=${choose} onCancel=${() => setSel(null)} />`}
+          ${sel && !sel.live && canEdit && tab !== "gaps" && html`<${Chooser} range=${sel} segments=${shown} left=${selLeft} onChoose=${choose} onCancel=${() => setSel(null)} />`}
           <div class="track" ...${scrub} role="group" aria-label="Trip timeline: click a part, or drag across a stretch, to change its mode">
-            ${segs.map((s) => html`<div class=${`s ${s.mode === "stay" ? "stay" : ""} ${sel?.seg === s.id ? "on" : ""}`}
+            ${shown.map((s) => html`<div class=${`s ${s.mode === "stay" ? "stay" : ""} ${sel?.seg === s.id ? "on" : ""}`}
               style=${`${modeVar(s.mode)};left:${X(s.t0)}%;width:${Math.max(0.2, X(s.t1) - X(s.t0))}%`}
               title=${`${MODES[s.mode]?.label} ${time(s.t0)}–${time(s.t1)} · ${km(s.km)}`}>
               ${(s.t1 - s.t0) / span > 0.05 && html`<${Icon} name=${s.mode} />`}</div>`)}
-            ${!segs.length && html`<div class="s small" style=${`${modeVar("none")};left:0;width:100%`}>Not matched yet</div>`}
+            ${!shown.length && html`<div class="s small" style=${`${modeVar("none")};left:0;width:100%`}>Not matched yet</div>`}
             ${sel && html`<div class="band" style=${`left:${X(Math.min(sel.a, sel.b))}%;width:${Math.abs(X(sel.b) - X(sel.a))}%`}></div>`}
             ${cursor != null && html`<div class="cur" style=${`left:${X(cursor)}%`}></div>`}
           </div>
@@ -425,89 +430,113 @@ export function TripView({ id }) {
             <span class="max num">${vmax} km/h</span>
             <svg viewBox="0 0 1000 72" preserveAspectRatio="none" aria-hidden="true">
               <line class="grid" x1="0" x2="1000" y1="36" y2="36" vector-effect="non-scaling-stroke" />
+              <polygon class="area" points=${area} />
               <polyline class="ln" vector-effect="non-scaling-stroke" points=${raw.map((p, i) => `${(X(p.timestamp) * 10).toFixed(1)},${(70 - (Math.min(sp[i], vmax) / vmax) * 60).toFixed(1)}`).join(" ")} />
             </svg>
-            ${sel && html`<div style=${`position:absolute;top:0;bottom:0;left:${X(Math.min(sel.a, sel.b))}%;width:${Math.abs(X(sel.b) - X(sel.a))}%;background:color-mix(in srgb, var(--ink) 10%, transparent);pointer-events:none`}></div>`}
+            ${sel && html`<div style=${`position:absolute;top:0;bottom:0;left:${X(Math.min(sel.a, sel.b))}%;width:${Math.abs(X(sel.b) - X(sel.a))}%;background:color-mix(in srgb, var(--ink) 9%, transparent);pointer-events:none`}></div>`}
             ${cursor != null && html`<div class="cur" style=${`left:${X(cursor)}%`}></div>`}
           </div>
-          <div class="axis num"><span>${time(T0)}</span><span>${cursor != null ? time(cursor) : segs.length ? "Click a part, or drag across a stretch, to change its mode" : ""}</span><span>${time(T1)}</span></div>
+          <div class="axis num"><span>${time(T0)}</span><span>${cursor != null ? time(cursor) : preview ? "Looking at an earlier version" : shown.length ? "Click a part, or drag across a stretch, to change its mode" : ""}</span><span>${time(T1)}</span></div>
         </div>
       </div>
       <aside class="side2">
-        ${me?.dry_run && html`<section><div class="note warn">Dry run is on: pushing shows what would change but leaves Dawarich alone.</div></section>`}
-        ${t.error && html`<section><div class="note bad">${t.error}</div></section>`}
-        <section>
-          <h2>Segments</h2>
-          ${!segs.length && html`<p class="small dim" style="margin:0">Still raw GPS. Matching snaps it to roads, paths and railways; you can change any part afterwards.</p>`}
-          <div class="segs">${segs.map((s) => html`<div class=${`sg ${s.mode === "stay" ? "stay" : ""} ${sel?.seg === s.id ? "on" : ""}`} style=${modeVar(s.mode)}
-              onClick=${() => { setSel({ a: s.t0, b: s.t1, seg: s.id }); zoomTo(s.t0, s.t1); }}>
-            <span class="bar4"></span>
-            <div><div class="t"><b>${MODES[s.mode]?.label}</b> <span class="num dim">${time(s.t0)}–${time(s.t1)}</span></div>
-              <div class="m num">${duration(s.t1 - s.t0)}${s.km > 0 ? ` · ${km(s.km)}` : ""}${s.km > 0 && s.t1 > s.t0 ? ` · ${Math.round((s.km * 3600) / (s.t1 - s.t0))} km/h` : ""}${s.forced ? " · set by you" : ""}</div></div>
-            <select aria-label="Mode" value=${s.mode} onClick=${(e) => e.stopPropagation()} onChange=${(e) => choose(s.t0, s.t1, e.target.value)}>
-              ${PICKABLE.map((m) => html`<option value=${m}>${MODES[m].label}</option>`)}</select>
-          </div>`)}</div>
-        </section>
-        <section>
-          <h2>Gaps</h2>
-          <div class="seg" role="radiogroup" aria-label="What to do with the gaps in this trip">
-            <button class=${gapMode === "fill" ? "on" : ""} role="radio" aria-checked=${gapMode === "fill"}
-              disabled=${!!busy || !t.closed} onClick=${() => allGaps(true)}>Route them all</button>
-            <button class=${gapMode === "strict" ? "on" : ""} role="radio" aria-checked=${gapMode === "strict"}
-              disabled=${!!busy || !t.closed} onClick=${() => allGaps(false)}>Keep them all</button>
-          </div>
-          <p class="small dim" style="margin:0">${gapMode === "strict"
-            ? "A gap keeps your recorded GPS: the line runs straight between the points either side of the hole, even where a road would join them."
-            : "A gap follows the road or path when the timing and the points either side agree; where they don't, your GPS is kept."}</p>
-          ${t.version && !hasGapInfo ? html`<p class="small faint" style="margin:0">This trip was matched before gaps could be listed one by one.</p>
-            <button class="sm" disabled=${!!busy} onClick=${() => act("Rematching", "/recalculate")}>Match again to list them</button>`
-            : !gaps.length ? html`<p class="small faint" style="margin:0">${t.version
-              ? "No gaps in this trip: the signal never dropped long enough to leave one."
-              : "Match the trip to see where its gaps are."}</p>`
-            : html`<div class="gaplist">${gaps.map((g) => html`<div class="gaprow" key=${`${g.t0}-${g.t1}`}>
-                <span class="num">${time(g.t0)}–${time(g.t1)}</span>
-                <span class="faint num">${km(g.km)}</span>
-                <span class="grow"></span>
-                ${g.routed && g.overrode && html`<span class="flag" title="Routed on your say-so: the timestamps make it faster than the cap">over the cap</span>`}
-                <button class=${`sm ${g.routed ? "" : "go"}`} disabled=${!!busy || !t.closed}
-                  title=${g.routed ? "Keep your recorded GPS across this gap" : "Route across this gap"}
-                  onClick=${() => toggleGap(g)}>${g.routed ? "Routed" : "Kept"}</button>
-                ${!g.routed && g.why.length > 0 && html`<button class="sm" disabled=${!!busy || !t.closed}
-                  title=${`The router's answer is refused because the timestamps would make it ${g.why.includes("too_fast") ? "too fast" : "too long"}. This routs it regardless.`}
-                  onClick=${() => forceGap(g)}>Route anyway</button>`}
+        <nav class="tabs" role="tablist">
+          ${[["route", "Route", shown.filter((s) => s.mode !== "stay").length], ["gaps", "Gaps", gaps.length], ["points", "Points", raw.length], ["history", "History", d.history.length]]
+            .map(([k, l, n]) => html`<button role="tab" aria-selected=${tab === k} class=${tab === k ? "on" : ""} onClick=${() => setTab(k)}>${l}${n ? html` <span class="n num">${n}</span>` : ""}</button>`)}
+        </nav>
+        <div class="pane">
+          ${me?.dry_run && html`<section><div class="note warn">Dry run is on: pushing shows what would change but leaves Dawarich alone.</div></section>`}
+          ${t.error && html`<section><div class="note bad">${t.error}</div></section>`}
+          ${tab === "route" && html`
+            ${(preview ? preview.version : t.version) > 0 && html`<section>
+              <div class="quality" title="on the map · routed across a gap · kept as recorded">
+                <i class="matched" style=${`width:${pct(q.matched_frac)}`}></i><i class="filled" style=${`width:${pct(q.filled_frac)}`}></i><i class="raw" style=${`width:${pct(q.raw_frac)}`}></i></div>
+              <div class="qlegend num">
+                <span><i style="background:var(--good)"></i>${pct(q.matched_frac)} on the map</span>
+                <span><i style="background:color-mix(in srgb, var(--good) 45%, var(--sunk))"></i>${pct(q.filled_frac)} routed gaps</span>
+                <span><i style="background:var(--m-raw)"></i>${pct(q.raw_frac)} GPS kept</span>
+              </div>
+              <p class="small faint">Your GPS sits ${Math.round(q.p50 || 0)} m from the line on average.</p>
+              ${t.state === "review" && !preview && html`<div class="note warn">Usually one part has the wrong mode, or a few points are off. Drag across that part on the timeline to fix it.</div>`}
+            </section>`}
+            <section>
+              ${!shown.length && html`<p class="small dim">Still raw GPS. Matching snaps it to roads, paths and railways; you can change any part afterwards.</p>`}
+              <div class="segs">${shown.map((s) => html`<div class=${`sg ${s.mode === "stay" ? "stay" : ""} ${sel?.seg === s.id ? "on" : ""}`} style=${modeVar(s.mode)}
+                  onClick=${() => { setSel({ a: s.t0, b: s.t1, seg: s.id }); zoomTo(s.t0, s.t1); }}>
+                <span class="bar4"></span>
+                <div><div class="t"><b>${MODES[s.mode]?.label}</b> <span class="num dim">${time(s.t0)}–${time(s.t1)}</span></div>
+                  <div class="m num">${duration(s.t1 - s.t0)}${s.km > 0 ? ` · ${km(s.km)}` : ""}${s.km > 0 && s.t1 > s.t0 ? ` · ${Math.round((s.km * 3600) / (s.t1 - s.t0))} km/h` : ""}${s.forced ? " · set by you" : ""}</div></div>
+                <select aria-label="Mode" value=${s.mode} disabled=${!canEdit} onClick=${(e) => e.stopPropagation()} onChange=${(e) => choose(s.t0, s.t1, e.target.value)}>
+                  ${PICKABLE.map((m) => html`<option value=${m}>${MODES[m].label}</option>`)}</select>
               </div>`)}</div>
-              <p class="small faint" style="margin:0">${plural(gaps.length, "gap")}: click one, or its dashed line on the map, to switch that one only.${
-                gaps.some((g) => !g.routed && g.why.length)
-                  ? " A kept gap marked for the speed or length check can still be routed with Route anyway, or all of them at once below." : ""}</p>`}
-          ${gaps.some((g) => !g.routed && g.why.length) && html`<button class="sm" disabled=${!!busy || !t.closed}
-            onClick=${forceAll}>Route the refused ${plural(gaps.filter((g) => !g.routed && g.why.length).length, "gap")} anyway</button>`}
-          ${t.gap_mode
-            ? html`<button class="sm bare" onClick=${() => allGaps(null)}>Follow my setting instead (${me?.settings?.strength === "strict" ? "keep them all" : "route them all"})</button>`
-            : html`<p class="small faint" style="margin:0">The whole-trip buttons are your account's setting; a single gap you switch stays switched.</p>`}
-        </section>
-        ${t.version > 0 && html`<section>
-          <h2>How well it fits</h2>
-          <div class="quality" title="green: on the map · pale green: routed across a gap · red: original GPS kept">
-            <i class="matched" style=${`width:${pct(q.matched_frac)}`}></i><i class="filled" style=${`width:${pct(q.filled_frac)}`}></i><i class="raw" style=${`width:${pct(q.raw_frac)}`}></i></div>
-          <p class="small dim" style="margin:0">${pct(q.matched_frac)} on the map, ${pct(q.filled_frac)} routed across gaps, ${pct(q.raw_frac)} kept as recorded.
-            Your GPS sits ${Math.round(q.p50 || 0)} m from the line on average.</p>
-          ${t.state === "review" && html`<p class="small" style="margin:0;color:var(--warn)">Worth a look: usually one part has the wrong mode, or a few points are off. Drag across that part on the timeline, or move the points.</p>`}
-        </section>`}
-        <section>
-          <h2>GPS points</h2>
-          <p class="small dim" style="margin:0">${plural(raw.length, "point")} recorded${t.point_edits ? `, ${plural(t.point_edits, "correction")} by you` : ""}. The originals are always kept; corrections only change the match.</p>
-          <div class="row">
-            <button class=${editing ? "go" : ""} onClick=${() => { setEditing(!editing); setPending({}); }}><${Icon} name="move" small />${editing ? "Stop moving points" : "Move points"}</button>
-            ${t.point_edits > 0 && !editing && html`<${Confirm} armedLabel="Drop all corrections?" onConfirm=${() => act("Rematching", "/points", { edits: {} }, "PUT")}>Reset corrections<//>`}
-          </div>
-        </section>
-        ${d.history.length > 0 && html`<section>
-          <h2>History</h2>
-          <div class="hist">${d.history.slice(0, 8).map((h) => html`<div key=${h.version}>
-            <span class=${`num ${h.version === t.version ? "" : "faint"}`}>v${h.version}</span><span class="grow ell" title=${h.reason}>${h.reason}</span>
-            <span class="faint" title=${full(h.created_at)}>${ago(h.created_at)}</span></div>`)}</div>
-          ${t.pushed_at && html`<p class="small faint" style="margin:0">Pushed v${t.pushed_version} ${ago(t.pushed_at)}.</p>`}
-        </section>`}
+              ${shown.length > 0 && html`<p class="help">Pick a mode per part here, or drag across the timeline to set one for any stretch.</p>`}
+            </section>`}
+          ${tab === "gaps" && html`
+            <section>
+              <div class="row wrap" style="justify-content:space-between">
+                <span class="small dim">Gaps in this trip</span>
+                <div class="seg sm" role="radiogroup" aria-label="Every gap in this trip">
+                  <button class=${gapMode === "fill" ? "on" : ""} disabled=${!canEdit || !t.closed} onClick=${() => setAllGaps(true)}>Route all</button>
+                  <button class=${gapMode === "strict" ? "on" : ""} disabled=${!canEdit || !t.closed} onClick=${() => setAllGaps(false)}>Keep all</button>
+                  <button class=${gapMode === "" ? "on" : ""} disabled=${!canEdit || !t.closed} onClick=${() => setAllGaps(null)} title="Your account setting">Default (${accountGaps})</button>
+                </div>
+              </div>
+              <p class="help">Where the GPS dropped out, mapmatch either routes along the road or path, or keeps the line as recorded. A gap is only routed when the timing fits; you can overrule that.</p>
+            </section>
+            <section>
+              ${!t.version ? html`<p class="small faint">Match the trip to see where its gaps are.</p>`
+                : !gaps.length ? html`<p class="small faint">No gaps: the signal never dropped long enough to leave one.</p>`
+                : html`<div class="gaplist">${gaps.map((g) => html`<div key=${g.t0} class=${`gaprow ${focusGap === g.t0 ? "on" : ""}`} onClick=${() => showGap(g)}>
+                    <span class="num"><b>${time(g.t0)}–${time(g.t1)}</b></span>
+                    <div class="seg sm" onClick=${(e) => e.stopPropagation()}>
+                      <button class=${g.routed ? "on" : ""} disabled=${!canEdit || !t.closed}
+                        title=${!g.routed && g.why.length ? "The timing says this is faster or longer than the mode allows; route it anyway" : "Route along the road or path"}
+                        onClick=${() => !g.routed && setGap(g, true, g.why.length > 0)}>${!g.routed && g.why.length ? "Route anyway" : "Route"}</button>
+                      <button class=${!g.routed ? "on" : ""} disabled=${!canEdit || !t.closed} onClick=${() => g.routed && setGap(g, false)}>Keep GPS</button>
+                    </div>
+                    <div class="meta num">
+                      <span>${duration(g.t1 - g.t0)} · ${km(g.km)}</span>
+                      ${g.routed && g.overrode && html`<span class="chip warn">routed over the speed check</span>`}
+                      ${g.kept && html`<span class="chip">kept by you</span>`}
+                      ${!g.routed && !g.kept && g.why.length > 0 && html`<span class="chip warn">${g.why.includes("too_fast") ? "too fast to route" : "route too long"}</span>`}
+                    </div>
+                  </div>`)}</div>
+                  ${refused.length > 1 && html`<button class="sm" disabled=${!canEdit || !t.closed} onClick=${() => setAllGaps(true, true)}>Route all ${refused.length} refused gaps anyway</button>`}
+                  <p class="help">Click a gap, or its dashed line on the map, to see it.</p>`}
+            </section>`}
+          ${tab === "points" && html`
+            <section>
+              <p class="small dim">${plural(raw.length, "point")} recorded${t.point_edits ? `, ${plural(t.point_edits, "correction")} by you` : ""}. Your originals are always kept; corrections only change the match.</p>
+              <div class="row wrap">
+                <button class=${editing ? "go" : ""} disabled=${!!preview} onClick=${() => { setEditing(!editing); setPending({}); }}><${Icon} name="move" small />${editing ? "Stop moving points" : "Move points"}</button>
+                ${t.point_edits > 0 && !editing && html`<${Confirm} armedLabel="Drop all corrections?" onConfirm=${() => act("Rematching", "/points", { edits: {} }, "PUT")}>Reset corrections<//>`}
+              </div>
+            </section>
+            ${d.dropped?.length > 0 && html`<section>
+              <label class="check small"><input type="checkbox" checked=${layers.ignored} onChange=${(e) => setLayers({ ...layers, ignored: e.target.checked })} />
+                Show the ${plural(d.dropped.length, "point")} the matcher ignored</label>
+              <p class="help">Duplicates, jumps and fixes too inaccurate to use. They stay in your archive.</p>
+            </section>`}`}
+          ${tab === "history" && html`
+            <section>
+              <p class="help">Every change makes a new version. Click one to see it on the map, then go back to it if you prefer it.</p>
+              <div class="hist">${d.history.map((h) => {
+                const cur = h.version === t.version;
+                return html`<div key=${h.version} class=${`hrow ${(preview?.version ?? t.version) === h.version ? "on" : ""}`} onClick=${() => openVersion(h.version)}>
+                  <span class="v num">v${h.version}</span>
+                  <span class="ell" title=${h.reason}>${h.reason}</span>
+                  <span class="faint small" title=${full(h.created_at)}>${ago(h.created_at)}</span>
+                  <div class="meta num">
+                    ${cur && html`<span class="chip ink">current</span>`}
+                    ${t.pushed_version === h.version && html`<span class="chip good">in Dawarich</span>`}
+                    <span>${pct(h.quality?.matched_frac + (h.quality?.filled_frac || 0))} on roads and paths</span>
+                    ${h.overrides?.length > 0 && html`<span>· ${plural(h.overrides.length, "mode choice")}</span>`}
+                  </div>
+                </div>`;
+              })}</div>
+              ${t.pushed_at && html`<p class="small faint">Pushed v${t.pushed_version} ${ago(t.pushed_at)}.</p>`}
+            </section>`}
+        </div>
       </aside>
     </div>
   </div>`;

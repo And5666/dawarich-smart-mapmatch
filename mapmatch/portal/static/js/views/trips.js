@@ -272,9 +272,9 @@ export function Trips() {
               Everything in ${periodLabel} <span class="faint num">${pushing.length}</span></button>
             <button disabled=${!pushing.length} onClick=${() => setSelecting(true)}>Choose trips…</button>
           <//>
-          <button class=${selecting ? "go" : ""} onClick=${() => { setSelecting(!selecting); setPicked(new Set()); }}>${selecting ? "Done" : "Select"}</button>
+          <button class=${selecting ? "go" : "bare"} onClick=${() => { setSelecting(!selecting); setPicked(new Set()); }}>${selecting ? "Done" : "Select"}</button>
           <span class="grow"></span>
-          <label class="check small"><input type="checkbox" checked=${allPts} onChange=${(e) => setAllPts(e.target.checked)} />GPS points</label>
+          <label class=${`toggle ${allPts ? "on" : ""}`}><input type="checkbox" checked=${allPts} onChange=${(e) => setAllPts(e.target.checked)} />GPS points</label>
         </div>
       </div>
       <div class="list">
@@ -290,12 +290,12 @@ export function Trips() {
             <span class="picker"><input type="checkbox" tabindex="-1" checked=${picked.has(t.id)} /></span>
             <div class="when num">${time(t.start)}<span>${duration(t.end - t.start)}</span></div>
             <div class="what"><${Ribbon} modes=${t.modes} />
-              <div class="modes ell">${t.modes.length ? t.modes.map((m) => MODES[m.mode]?.label).join(" → ")
-                : html`<span class="faint">Not matched yet</span>`}
-                ${t.state === "review" ? html` · <span class="flag">needs a look</span>` : ""}
-                ${t.state === "failed" ? html` · <span class="flag bad">couldn't match</span>` : ""}
-                ${t.push === "pushed" ? html` · <span class="faint">in Dawarich</span>` : ""}
-                ${t.push === "outdated" ? html` · <span class="flag">changed since push</span>` : ""}</div></div>
+              <div class="modes"><span class="ell">${t.modes.length ? t.modes.map((m) => MODES[m.mode]?.label).join(" → ")
+                : html`<span class="faint">Not matched yet</span>`}</span>
+                ${t.state === "review" && html`<span class="chip warn">needs a look</span>`}
+                ${t.state === "failed" && html`<span class="chip bad">couldn't match</span>`}
+                ${t.push === "pushed" && html`<span class="chip good">in Dawarich</span>`}
+                ${t.push === "outdated" && html`<span class="chip warn">changed</span>`}</div></div>
             <div class="dist num">${km(t.km)}</div>
           </div>`)}
         </div>`)}
