@@ -157,6 +157,15 @@ Dawarich draws every one, so a stop would otherwise show as a star of spikes.
 Each place you stopped becomes one point at its centre, at arrival, at departure
 and every half hour between; a lone fix worse than 100 m is left out. A stop
 between two trips that both show their original GPS is left exactly as it was.
+The links from a stop to the trips either side are routed along the road too,
+and matched lines get a point at least every 150 m, even along straight
+stretches.
+
+That last part is what lets Dawarich hide the gaps you didn't record. In
+Dawarich's settings, set **Meters between routes** to **300** and
+**Minutes between routes** to **30**. Dawarich then breaks a line wherever two
+points are further apart than that, which after a push only happens where your
+phone genuinely stopped recording.
 
 Every point in the window is in the archive before anything is deleted. If
 Dawarich stops answering between the delete and the write, the portal says so

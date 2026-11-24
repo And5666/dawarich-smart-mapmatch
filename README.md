@@ -97,7 +97,11 @@ journeys elsewhere come out less cleanly.
 5. Connect Dawarich by pasting your API key. mapmatch downloads your points and
    splits them into trips. Nothing is matched or changed yet.
 
-6. Press **Match**, look through a few trips, and push one. With dry run on,
+6. In Dawarich's settings, set **Meters between routes** to `300` and
+   **Minutes between routes** to `30`, so Dawarich doesn't draw straight lines
+   across stretches your phone didn't record.
+
+7. Press **Match**, look through a few trips, and push one. With dry run on,
    you see what would change. When you're happy, set `PUSH_DRY_RUN: "0"`,
    restart, and push for real.
 
