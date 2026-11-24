@@ -76,3 +76,38 @@ def contains(db: Database, user_id: int, p: dict[str, Any]) -> bool:
 def stats(db: Database, user_id: int) -> dict[str, Any]:
     r = db.one("SELECT COUNT(*) n, MIN(ts) a, MAX(ts) b FROM points WHERE user_id=?", (user_id,))
     return {"points": r["n"], "first": r["a"], "last": r["b"]}
+
+
+def remember_written(db: Database, user_id: int, points: Iterable[dict[str, Any]]) -> None:
+    """Note points the portal wrote to Dawarich, so a later sync never archives them."""
+    rows = [(user_id, int(p["timestamp"]), *key(p["lat"], p["lon"])) for p in points]
+    if rows:
+        with db.tx() as c:
+            c.executemany("INSERT OR IGNORE INTO written(user_id, ts, lat_e6, lon_e6) VALUES (?,?,?,?)", rows)
+
+
+def split_remote(db: Database, user_id: int, raw: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """(original GPS, points this portal wrote) among raw Dawarich points.
+
+    Ours are recognised by their mark, or by being a point the portal wrote
+    that is not also an archived original (a raw stretch of a matched trip
+    can repeat a recorded fix exactly)."""
+    from .dawarich import is_mapmatch
+    if not raw:
+        return [], []
+    ts = [int(p["timestamp"]) for p in raw if p.get("timestamp") is not None]
+    lo, hi = (min(ts), max(ts)) if ts else (0, 0)
+    wrote = {(r["ts"], r["lat_e6"], r["lon_e6"]) for r in db.all(
+        "SELECT ts, lat_e6, lon_e6 FROM written WHERE user_id=? AND ts BETWEEN ? AND ?", (user_id, lo, hi))}
+    kept = set()
+    if wrote:
+        kept = {(r["ts"], r["lat_e6"], r["lon_e6"]) for r in db.all(
+            "SELECT ts, lat_e6, lon_e6 FROM points WHERE user_id=? AND ts BETWEEN ? AND ?", (user_id, lo, hi))}
+    originals, ours = [], []
+    for p in raw:
+        if is_mapmatch(p):
+            ours.append(p)
+            continue
+        k = (int(p["timestamp"]), *key(p.get("latitude", p.get("lat")), p.get("longitude", p.get("lon"))))
+        (ours if k in wrote and k not in kept else originals).append(p)
+    return originals, ours

@@ -161,6 +161,16 @@ MIGRATIONS: list[str] = [
     ALTER TABLE trips ADD COLUMN force_route INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE trips ADD COLUMN force_gaps TEXT NOT NULL DEFAULT '[]';
     """,
+    # 7: every point the portal wrote to Dawarich, so none is ever taken for GPS
+    """
+    CREATE TABLE written (
+      user_id INTEGER NOT NULL,
+      ts INTEGER NOT NULL,
+      lat_e6 INTEGER NOT NULL,
+      lon_e6 INTEGER NOT NULL,
+      PRIMARY KEY(user_id, ts, lat_e6, lon_e6)
+    ) WITHOUT ROWID;
+    """,
 ]
 
 

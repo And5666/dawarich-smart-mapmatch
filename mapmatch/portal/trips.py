@@ -12,7 +12,7 @@ from ..engine.trips import split_trips
 from . import archive
 from .db import Database, now, pack, unpack
 
-KEEP_RESULTS = 15
+KEEP_RESULTS = 30
 PREVIEW_TOLERANCE_M = 4.0
 PREVIEW_VERSION = "3"
 
@@ -200,7 +200,10 @@ def store(db: Database, trip: dict[str, Any], result: dict[str, Any], overrides:
                   " result_gz, created_at) VALUES (?,?,?,?,?,?,?,?)",
                   (trip["id"], version, reason, result["engine_version"], json.dumps(overrides),
                    json.dumps(result["quality"]), pack(result), now()))
-        c.execute("DELETE FROM trip_results WHERE trip_id=? AND version <= ?", (trip["id"], version - KEEP_RESULTS))
+        # Old versions go, except the one Dawarich holds: a later push of a
+        # neighbouring trip re-posts it.
+        c.execute("DELETE FROM trip_results WHERE trip_id=? AND version <= ? AND version IS NOT"
+                  " (SELECT pushed_version FROM trips WHERE id=?)", (trip["id"], version - KEEP_RESULTS, trip["id"]))
         c.execute("UPDATE trips SET status='matched', dirty=0, error='', engine_version=?, result_version=?,"
                   " overrides=?, km=?, modes=?, quality=?, preview=?, updated_at=? WHERE id=?",
                   (result["engine_version"], version, json.dumps(overrides), result["quality"].get("km", 0.0),

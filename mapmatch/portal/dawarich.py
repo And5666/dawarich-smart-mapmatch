@@ -7,6 +7,11 @@ from typing import Any, Callable
 import httpx
 
 MAPMATCH_DEVICE = "mapmatch"
+# Every point the portal writes carries this as its Wi-Fi name (Dawarich keeps
+# the Overland `wifi` property as the point's ssid). The device is left alone:
+# Dawarich builds tracks per device, so matched points must sit on the same
+# device as the GPS around them or its tracks jump across the gap.
+MARK = "mapmatch"
 PAGE = 1000
 BATCH = 500
 
@@ -60,7 +65,10 @@ class Client:
         out: list[dict[str, Any]] = []
         page = 1
         while True:
-            params: dict[str, Any] = {"page": page, "per_page": PAGE, "order": "asc"}
+            # Dawarich hides points its anomaly filter flagged unless asked; the
+            # archive has to hold those too, or a push leaves them behind.
+            params: dict[str, Any] = {"page": page, "per_page": PAGE, "order": "asc",
+                                      "include_anomalies": "true"}
             if start is not None:
                 params["start_at"] = _iso(start)
             if end is not None:
@@ -100,14 +108,48 @@ class Client:
             self._req("DELETE", "/api/v1/points/bulk_destroy", json={"point_ids": ids[i:i + BATCH]})
         return len(ids)
 
-    def post(self, points: list[dict[str, Any]], device: str = MAPMATCH_DEVICE) -> int:
-        """Write points as Overland-style GeoJSON features. A point may carry
-        its own `device` (used when restoring originals)."""
+    def tracks(self, start: int, end: int) -> list[tuple[int, int]]:
+        """(start, end) of every Dawarich track overlapping [start, end].
+
+        Empty when this Dawarich has no tracks API; callers then work on the
+        trip windows alone."""
+        out: list[tuple[int, int]] = []
+        page = 1
+        try:
+            while True:
+                r = self._req("GET", "/api/v1/tracks", params={"start_at": _iso(start), "end_at": _iso(end),
+                                                               "page": page, "per_page": 500})
+                body = r.json()
+                feats = body.get("features") if isinstance(body, dict) else None
+                if not feats:
+                    break
+                for f in feats:
+                    pr = f.get("properties") or {}
+                    try:
+                        a = int(datetime.fromisoformat(str(pr["start_at"])).timestamp())
+                        b = int(datetime.fromisoformat(str(pr["end_at"])).timestamp())
+                    except (KeyError, ValueError):
+                        continue
+                    out.append((min(a, b), max(a, b)))
+                if page >= int(r.headers.get("x-total-pages") or 1):
+                    break
+                page += 1
+        except DawarichError:
+            return out
+        return out
+
+    def post(self, points: list[dict[str, Any]]) -> int:
+        """Write points as Overland-style GeoJSON features.
+
+        Each point may carry `tracker` (the Dawarich device; empty means none)
+        and `ours` (mark it as written by the portal)."""
         feats = []
         for p in sorted(points, key=lambda p: int(p["timestamp"])):
-            # Integer epoch seconds: the format the previous push tooling used
-            # successfully against this Dawarich.
-            props: dict[str, Any] = {"timestamp": int(p["timestamp"]), "device_id": p.get("device") or device}
+            props: dict[str, Any] = {"timestamp": int(p["timestamp"])}
+            if p.get("tracker"):
+                props["device_id"] = str(p["tracker"])
+            if p.get("ours"):
+                props["wifi"] = MARK
             for src, dst in (("accuracy", "horizontal_accuracy"), ("velocity", "speed"),
                              ("altitude", "altitude")):
                 if p.get(src) is not None:
@@ -123,4 +165,5 @@ class Client:
 
 
 def is_mapmatch(p: dict[str, Any]) -> bool:
-    return str(p.get("tracker_id") or "").startswith(MAPMATCH_DEVICE)
+    """Written by this portal: marked by Wi-Fi name, or (older pushes) by device."""
+    return p.get("ssid") == MARK or str(p.get("tracker_id") or "").startswith(MAPMATCH_DEVICE)

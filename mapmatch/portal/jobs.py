@@ -15,7 +15,7 @@ from . import archive, push, trips
 from .db import Database, now
 
 log = logging.getLogger("mapmatch.jobs")
-KINDS = ("sync", "auto", "import_csv", "rematch", "push_all", "revert_all")
+KINDS = ("sync", "auto", "import_csv", "rematch", "push_all", "revert_all", "repair")
 
 
 class Cancelled(Exception):
@@ -157,7 +157,6 @@ class Jobs:
         synced_to = int(s.get("synced_to") or 0)
         frm = max(synced_to - 48 * 3600, start or 0) if synced_to else start
         progress(2, "downloading points from Dawarich")
-        from .dawarich import is_mapmatch
         gap = int(s.get("trip_gap_min") or 30)
         totals = {"new_points": 0, "created": 0, "updated": 0, "removed": 0, "dirtied": 0}
         latest = synced_to
@@ -166,7 +165,7 @@ class Jobs:
             # Archive and split each page as it arrives, so trips appear on the
             # map while a long first download is still running.
             nonlocal latest
-            originals = [x for x in batch if not is_mapmatch(x)]
+            originals, _ = archive.split_remote(self.db, uid, batch)
             new = archive.add_api(self.db, uid, originals)
             latest = max([latest] + [int(x["timestamp"]) for x in batch])
             seg = trips.segment(self.db, uid, gap, [int(x["timestamp"]) for x in originals] if new else [])
@@ -214,17 +213,13 @@ class Jobs:
         start = self._start_ts(uid) or 0
         ids = [t for t in push.pending_push(self.db, uid)
                if (trips.get(self.db, uid, t) or {}).get("start_ts", 0) >= start and (only is None or t in only)]
-        ok = bad = 0
-        for k, tid in enumerate(ids, 1):
-            try:
-                push.push_trip(self.db, self.cfg, uid, tid, self.transport)
-                ok += 1
-            except Exception as exc:  # noqa: BLE001
-                bad += 1
-                with self.db.tx() as c:
-                    c.execute("UPDATE trips SET error=? WHERE id=?", (f"push: {exc}"[:500], tid))
-            progress(lo + int((hi - lo) * k / max(1, len(ids))), f"pushed {k}/{len(ids)} trips")
-        return {"pushed": ok, "push_failed": bad}
+        if not ids:
+            return {"pushed": 0}
+        push.apply(self.db, self.cfg, uid, {t: True for t in ids}, self.transport, keep_going=True,
+                   progress=lambda p, m: progress(lo + int((hi - lo) * p / 100), m))
+        failed = self.db.one(f"SELECT COUNT(*) n FROM trips WHERE id IN ({','.join('?' * len(ids))})"
+                             " AND (pushed_version IS NULL OR pushed_version != result_version)", tuple(ids))["n"]
+        return {"pushed": len(ids) - failed, "push_failed": failed}
 
     def _finish(self, uid: int, progress: Callable[[int, str], None], summary: dict[str, Any]) -> None:
         with self.db.tx() as c:
@@ -289,13 +284,14 @@ class Jobs:
 
     def _job_revert_all(self, uid: int, params: dict[str, Any], progress: Any, jid: str) -> None:
         rows = self.db.all("SELECT id FROM trips WHERE user_id=? AND pushed_version IS NOT NULL ORDER BY start_ts", (uid,))
-        ok = bad = 0
-        for k, r in enumerate(rows, 1):
-            try:
-                push.revert_trip(self.db, self.cfg, uid, r["id"], self.transport)
-                ok += 1
-            except Exception:  # noqa: BLE001
-                bad += 1
-                log.warning("revert of trip %s failed: %s", r["id"], traceback.format_exc(limit=2))
-            progress(2 + int(97 * k / max(1, len(rows))), f"reverted {k}/{len(rows)} trips")
-        self._finish(uid, progress, {"reverted": ok, "revert_failed": bad})
+        ids = [r["id"] for r in rows]
+        out = push.apply(self.db, self.cfg, uid, {t: False for t in ids}, self.transport, keep_going=True,
+                         progress=lambda p, m: progress(2 + int(97 * p / 100), m))
+        left = self.db.one("SELECT COUNT(*) n FROM trips WHERE user_id=? AND pushed_version IS NOT NULL", (uid,))["n"]
+        self._finish(uid, progress, {"reverted": len(ids) - left, "revert_failed": left,
+                                     "points_restored": out["original_points"]})
+
+    def _job_repair(self, uid: int, params: dict[str, Any], progress: Any, jid: str) -> None:
+        out = push.repair(self.db, self.cfg, uid, self.transport, progress)
+        self._finish(uid, progress, {"spans": out["spans"], "points_rewritten": out["posted"],
+                                     "archived_new": out["archived_new"]})

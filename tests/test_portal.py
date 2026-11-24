@@ -162,19 +162,51 @@ def test_dry_run_changes_nothing(env, tmp_path):
     before = {k: dict(v) for k, v in dw.points.items()}
     tid = client.get("/api/trips").json()["trips"][0]["id"]
     r = client.post(f"/api/trips/{tid}/push", headers=H).json()
-    assert r["result"]["dry_run"] and r["result"]["post"] > 0
+    assert r["result"]["dry_run"] and r["result"]["posted"] > 0
     assert dw.points == before
     assert r["trip"]["push"] == "original"
 
 
-def test_failed_post_leaves_originals(env):
+def test_failed_post_is_repaired_from_the_archive(env, monkeypatch):
     client, dw, jobs, db = env
+    monkeypatch.setattr("mapmatch.portal.push.time.sleep", lambda s: None)
     sync(client, jobs)
     originals = dw.originals()
     dw.fail_post = True
     tid = client.get("/api/trips").json()["trips"][0]["id"]
     assert client.post(f"/api/trips/{tid}/push", headers=H).status_code == 400
+    assert client.get("/api/me").json()["dawarich_needs_repair"]
+    dw.fail_post = False
+    run_job(client, jobs, "repair")
     assert dw.originals() == originals and not dw.ours()
+    assert not client.get("/api/me").json()["dawarich_needs_repair"]
+
+
+def test_push_keeps_devices_so_tracks_do_not_bridge(env):
+    """Matched points go on the device of the GPS they replace, and a revert puts
+    every original back on its own device, so Dawarich's per-device tracks never
+    join the fixes either side of a trip with a straight line."""
+    client, dw, jobs, db = env
+    devices = dw.devices()
+    sync(client, jobs)
+    tid = client.get("/api/trips").json()["trips"][-1]["id"]
+    assert client.post(f"/api/trips/{tid}/push", headers=H).status_code == 200
+    assert dw.ours() and {p["tracker_id"] for p in dw.points.values()} == {"phone"}
+    assert client.post(f"/api/trips/{tid}/revert", headers=H).status_code == 200
+    assert dw.devices() == devices
+
+
+def test_hidden_anomalies_are_archived_and_cleared(env):
+    """Dawarich hides points its anomaly filter flagged; they must still be
+    archived and replaced, or they sit under the matched line as spikes."""
+    client, dw, jobs, db = env
+    sync(client, jobs)
+    trip = client.get("/api/trips").json()["trips"][-1]
+    mid = (trip["start"] + trip["end"]) // 2 + 1
+    dw.seed([{"lat": 52.0, "lon": 1.0, "timestamp": mid}], anomaly=True)
+    assert client.post(f"/api/trips/{trip['id']}/push", headers=H).status_code == 200
+    assert not [p for p in dw.points.values() if p["timestamp"] == mid and p.get("ssid") != "mapmatch"]
+    assert db.one("SELECT COUNT(*) n FROM points WHERE ts=?", (mid,))["n"] == 1
 
 
 def test_late_point_marks_trip_dirty_and_rematches(env):

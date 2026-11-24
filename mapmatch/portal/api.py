@@ -251,7 +251,7 @@ def build(app_state: Any) -> APIRouter:
         return {"name": u.get("display_name") or u["username"], "username": u["username"],
                 "is_admin": bool(u["is_admin"]), "dawarich_linked": bool(s.get("api_key")),
                 "settings": _public_settings(s, cfg), "archive": archive.stats(db, u["id"]),
-                "dry_run": cfg.push_dry_run, "engine": ENGINE_VERSION, "modes": list(MODES)}
+                "dry_run": cfg.push_dry_run, "dawarich_needs_repair": push.needs_repair(db, u["id"]), "engine": ENGINE_VERSION, "modes": list(MODES)}
 
     # ------------------------------------------------------------ settings
 
@@ -541,9 +541,9 @@ def build(app_state: Any) -> APIRouter:
 
     @r.post("/jobs")
     def start_job(body: JobIn, u: dict[str, Any] = Depends(user)) -> dict[str, Any]:
-        if body.kind not in ("sync", "rematch", "push_all", "revert_all"):
+        if body.kind not in ("sync", "rematch", "push_all", "revert_all", "repair"):
             raise HTTPException(400, "unknown job")
-        if body.kind in ("sync", "push_all", "revert_all") and not trips.settings(db, u["id"]).get("api_key"):
+        if body.kind in ("sync", "push_all", "revert_all", "repair") and not trips.settings(db, u["id"]).get("api_key"):
             raise HTTPException(400, "add your Dawarich API key in Settings first")
         return {"job": jobs.enqueue(u["id"], body.kind, body.params)}
 
