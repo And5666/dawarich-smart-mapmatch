@@ -12,7 +12,7 @@ when one instance serves several people.
    original GPS points). No database server, no queue, no front-end build.
 
 Valhalla is deliberately **not** in the compose file. The container starts, an
-admin signs in, and the address is set in the portal: **Admin → Map matching**.
+admin signs in, and the address is set in the portal: **Admin → Map server**.
 It is stored in the portal's database and applies to every account at once, so
 people who join later inherit it and nobody has to redeploy to change it.
 
@@ -38,7 +38,7 @@ docker run -d --name valhalla --restart unless-stopped \
   ghcr.io/valhalla/valhalla:latest valhalla_service /data/valhalla.json 6
 ```
 
-Then in the portal, **Admin → Map matching**, enter `http://valhalla:8002` (the
+Then in the portal, **Admin → Map server**, enter `http://valhalla:8002` (the
 container name works if both are on the same docker network) and press **Test**.
 The page reads Valhalla's `/status`, so a version and a map-data date mean it is
 working.
@@ -68,8 +68,10 @@ Practical notes that have bitten already:
 Each instance keeps a **region catalogue** next to the Valhalla address: name,
 the area it covers, the OSM extract it was built from, and when it was built.
 Every account sees the list (so people know where matching works); admins add,
-edit and delete rows under **Admin → Map data**. It is documentation, not
-configuration: the tiles are whatever the Valhalla server has.
+edit and remove regions under **Admin → Regions**. Adding one starts from a list
+of common Geofabrik extracts, and the area is set by panning a map and pressing
+**Use this view**. It is documentation, not configuration: the tiles are
+whatever the Valhalla server has.
 
 If you want the portal to look into those tiles, mount the Valhalla data
 directory read-only and tell the container where it is:
@@ -96,9 +98,11 @@ login:
 - **The first admin** comes from `ADMIN_USER` / `ADMIN_PASSWORD`, or from
   registering on an install that has no accounts yet (the first account made
   becomes the admin). Once an admin exists the environment pair is ignored.
-- **Making accounts.** Admins create them under **Admin → People**: username,
-  password, optional name, optional admin flag. Reset a password, promote or
-  demote, or disable an account from the same row. Disabling ends the account's
+- **Making accounts.** Admins create them under **Admin → People** with
+  **Add a person**: username, password (or **Generate** one), optional name,
+  optional admin flag. Each person's menu sets a new password, makes them an
+  admin or a member, or stops them signing in. You can't demote or lock out
+  yourself or the last admin. Disabling ends the account's
   sessions on the next request.
 - **Lost passwords.** No web path back in: `PORTAL_DATA=/data python -m
   mapmatch.portal.admin reset <username>` sets one, and `... list` shows the
@@ -122,31 +126,37 @@ admin/member. Both are natural next steps, not hidden limitations.
 ## Gaps: routed or kept, one at a time
 
 Each account sets a default under Settings: route across a gap, or keep what was
-recorded. The trip editor can override it twice over. **Route them all** and
-**Keep them all** change the whole trip; below them every hole the matcher had
-to bridge is listed with its time span and length, each with a button that
-switches that one hole and nothing else. The same choice can be made by clicking
-the gap's line on the map — a routed gap is a dashed curve, a kept one a dotted
-straight run between the points either side.
+recorded. In the trip editor the **Gaps** tab overrides it: **Route all**,
+**Keep all** or **Default** for the whole trip, then one row per hole with its
+time, length and a **Route / Keep GPS** switch that changes that hole only.
+Clicking a gap's line on the map opens its row.
 
 Kept means kept: the line runs between the recorded points rather than along a
-road, so the trip gets shorter and may be flagged "needs a look". A gap you
-chose yourself is drawn in the warning colour so it is distinguishable from one
-nothing could route. Exceptions are stored per trip (`keep_gaps`), survive
-editing, and are cleared by **Route them all**.
+road. A gap you kept yourself is drawn in the warning colour, so it stands apart
+from one nothing could route.
 
-**Route anyway.** A route is refused when it would imply more speed than a car
-can do (270 km/h for driving: 200 × 1.3 + 10) or a detour far longer than the
-recorded path. That is usually a sign the timestamps in the hole are wrong, not
-that the road is wrong. The cap stays on everywhere by default — automatic runs
-never override it — but a refused gap offers **Route anyway** in the editor,
-and one button below the list does the same for every refused gap at once. It
-routes the way the router drew it and records that it was your call; the gap
-then shows as "over the cap" so it is obvious which ones were forced.
+**Route anyway.** A route is refused when it would imply more speed than the
+mode allows (270 km/h for driving) or a detour far longer than the recorded
+path. That usually means the timestamps in the hole are wrong, not the road.
+Automatic runs never override it, but a refused gap shows **Route anyway** in
+its switch, and the gap is then labelled as routed over the speed check.
 
-Because a stored match from before this existed has no per-hole detail, the
-editor asks for a re-match the first time; Settings offers **Rematch them** for
-every trip matched by an older engine.
+## What a push does in Dawarich
+
+Dawarich draws tracks from its points, one track per device, and only drops a
+track once fewer than two of its points are left. So a push never swaps a trip
+on its own: it widens the window to every Dawarich track the trip touches,
+deletes all the points in it, and writes them back. Matched trips go back as
+their matched points on the device the GPS came from (marked as mapmatch's by
+their Wi-Fi name); everything else goes back as the original fixes on their own
+device. Points Dawarich's anomaly filter had hidden are fetched and archived too.
+
+Every point in the window is in the archive before anything is deleted. If
+Dawarich stops answering between the delete and the write, the portal says so
+on every page and **Put them back** writes the missing points again from the
+archive. **Settings → Repair tracks** rewrites every trip mapmatch has touched;
+use it once after upgrading from a version before 2.4, whose pushes left
+straight lines between the points either side of a trip.
 
 ## What is deliberately not in the image
 
@@ -154,16 +164,11 @@ The container needs `mapmatch/`, `pyproject.toml`, and the two GB rail files.
 `.dockerignore` is an allowlist, so `bench/`, `tests/`, `docs/`, `out/`, the
 development virtualenv and private CSV exports never enter a build.
 
-The retired bench review site (the Leaflet pages that showed the worst trips on
-a map) is archived on the server under
-`Homelab/projects/_attic/dawarich-smart-mapmatch-reviewer-2026-11-24/`, together
-with the `bench.py` that could regenerate it.
-
 ## First-run checklist
 
 1. Set `ADMIN_PASSWORD` in compose (or register the first account), sign in.
-2. **Admin → Map matching**: add the Valhalla address and press **Test**.
-3. **Admin → Map data**: add the region(s) the tiles cover.
+2. **Admin → Map server**: add the Valhalla address and press **Test**.
+3. **Admin → Regions**: add the region(s) the tiles cover.
 4. **Admin → People**: make an account for each person, or open sign-up.
 5. Sign in as a person, link a Dawarich key, **Sync**, match a few trips, then
    **Push** one — with `PUSH_DRY_RUN=1` (the shipped default) until you trust it.

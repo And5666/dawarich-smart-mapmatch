@@ -1,160 +1,180 @@
-# Mapmatch for Dawarich
+# mapmatch for Dawarich
 
-Turns the raw GPS in a self-hosted [Dawarich](https://dawarich.app) account into
-clean, map-matched trips, with a web portal to review and fix them.
+Phones record GPS a point every few seconds at best, and often far less. In
+[Dawarich](https://dawarich.app) that turns into lines cutting across buildings,
+corners clipped off every junction, and train journeys drawn as straight
+spokes. mapmatch works out how you travelled, snaps each part of the trip to
+the road, path or railway you were actually on, and writes the result back into
+your Dawarich account. You can check every trip first.
 
-- **Raw first**: **Sync** (and CSV import) only copies your raw points and
-  splits them into trips. Nothing is map matched until you ask: per trip,
-  with **Map match** for everything pending, or by the automatic run.
-- **Automatic when you want it**: on a schedule it fetches new points, works
-  out how you travelled (walk, cycle, drive, train), snaps each part to
-  roads, paths or railways, and can push the result back into Dawarich.
-- **In your control**: the portal shows every trip with its segments; change a
-  segment's mode, split it, recalculate, undo, lock it, push it or revert it.
-- **Nothing original is lost**: every GPS point read from Dawarich is copied
-  into the portal's archive before anything changes, and nothing in the
-  portal ever deletes from that archive. Any pushed trip can be reverted.
+![The same trips through Guildford town centre: the recorded GPS on the left, the matched routes on the right](docs/img/guildford-before-after.png)
 
-## How matching works
+*Drives and rides through Guildford. Left: what the phone recorded. Right: after
+mapmatch, coloured by mode (blue driving, green cycling).*
 
-`mapmatch.engine.api.match_trip(points)` runs per trip:
+## What it does
 
-1. **Clean**: drop duplicates, bad clocks, fixes worse than 150 m, spikes and
-   short teleport excursions. They are excluded from matching, not deleted.
-2. **Stays**: places you stayed (≥3 min within 50 m) become a single point.
-3. **Modes**: per movement leg, a Viterbi pass over the phone's reported speed
-   (falling back to position-derived speed) and railway proximity labels
-   walk, cycle, drive or train. Mode changes are expensive and short blips merge
-   into their neighbours, so a trip reads like *cycle → train → cycle*, not 50
-   flickering parts.
-4. **Match**: one Valhalla `trace_attributes` call per mode segment (trains use
-   GB rail alignments). Each fix gets an exact position on the matched path.
-5. **Fill**: every gap (unmatched fixes, a break in the match, a mode change,
-   a data dropout) goes through one filler. It tries a route, then a route
-   through the recorded fixes, and only then keeps the original fixes. A
-   route is accepted only if its length and implied speed fit the time taken.
-6. **Assemble**: segments with timed geometry, a quality score, and a point
-   stream for Dawarich with strictly increasing timestamps.
+- **Finds your trips** in the raw point stream. A trip ends after a long stop
+  or a gap in the data, so it doesn't depend on how your phone app grouped
+  things.
+- **Works out the mode** of each part: walking, cycling, driving, train or a
+  stop. One trip can be *cycle → train → cycle*.
+- **Matches each part** with the right rules. Driving follows one-way streets.
+  Cycling ignores them. Walks and mountain-bike rides only snap to a path when
+  the GPS clearly follows it, and the rest stays as recorded. Trains follow the
+  rail line.
+- **Bridges dropouts.** Where the signal was lost, the gap is routed only when
+  the timing makes sense, so a tunnel doesn't turn into a detour.
+- **Lets you fix anything** in a web portal. You can:
+  - change the mode of any stretch by dragging across the timeline;
+  - move or leave out individual points;
+  - route or keep each gap;
+  - open any earlier version of a trip and go back to it.
+- **Runs on its own** if you want. It can download new points on a schedule,
+  match them, and push finished trips to Dawarich.
 
-Trips are found in the whole point stream by `mapmatch.engine.trips.split_trips`.
-A trip ends after 30 minutes without data, or a stay of 30 minutes (both settable).
+## Your data stays yours
 
-### Results on the test account (280 routes, 15,197 fixes)
+Before mapmatch changes anything in Dawarich, it copies every original point
+into its own archive. Nothing in mapmatch ever deletes from that archive.
+Pushing a trip replaces its points in Dawarich with the matched route, and
+reverting puts the original points back exactly as they were. You can do that
+for one trip, or for all of them with **Revert everything** in Settings.
 
-`bench/old-tracker.json` is the previous engine; `bench/new-tracker.json` is this one.
+Even so, **back up your Dawarich database before your first push**. mapmatch
+has been tested against a real Dawarich account. Still, it is your location
+history, and a backup costs you five minutes.
 
-| | previous engine | now |
-|---|---|---|
-| straight-line jumps | 720 | 103 (mostly < 100 m) |
-| isolated one-fix raw parts | 297 | 8 |
-| routes with > 20 % unmatched | 32 | 6 |
-| unmatched distance | 101 km | 63 km |
-| 95th-percentile distance from GPS to line (mean) | 1,094 m | 29 m |
-| output km / GPS km | 1.054 | 1.036 |
+## What you need
 
-Most of what remains unmatched is genuinely bad data, such as runs of fixes
-reporting 300–700 km/h.
+- **Dawarich**, reachable from where mapmatch runs, and an API key for each
+  person (Dawarich → Account).
+- **Valhalla**, the open-source routing engine, with map tiles for the area you
+  travel in. mapmatch asks it which roads and paths fit your GPS. It isn't
+  bundled, because tiles are large and specific to your region.
+  [docs/deploying.md](docs/deploying.md#valhalla) has the two commands that
+  build and serve it.
+- **Docker** with one container and one volume. mapmatch keeps everything in a
+  single SQLite file, so there's no database server to run.
 
-## The portal
+Train stretches are matched against bundled Great Britain rail lines, so train
+journeys elsewhere come out less cleanly.
 
-Standalone FastAPI app with a no-build Preact + MapLibre front end.
+## Set it up
 
-- **Trips**: map of every trip (raw trips as grey dashed lines, matched ones
-  coloured by mode), an "All GPS points" layer, distance by mode, filters for
-  not matched, needs review, failed, not pushed, and edited since push, and a
-  **Push** button beside **Match** that writes every matched trip in the view
-  back to Dawarich in one job.
-- **Trip editor**: the route drawn by how it was made (solid = on the map,
-  dashed = routed across a gap, dotted = original GPS kept), the original and
-  ignored fixes, a timeline and speed chart linked to the map, and per-segment
-  mode, split, recalculate, undo, lock, push, revert and GPX/GeoJSON export,
-  plus **Gaps**: route every hole, keep every hole, or click any single gap —
-  in the list or on its line on the map — to decide just that one, and **Route
-  anyway** when the router's answer was refused for being faster or longer than
-  the timestamps allow.
-- **Activity**: background jobs and a log of every change made in Dawarich.
-- **Settings**: Dawarich URL and API key (with a connection test), automatic
-  runs and interval, automatic push, a start date, trip gap, gap strategy
-  ("route across gaps" or "only what was recorded"), CSV import, revert all.
-- **Admin**: accounts, sign-up toggle, Valhalla status, matcher version.
+1. Get the code and the compose file:
 
-### What a push does
+   ```bash
+   git clone https://github.com/And5666/dawarich-smart-mapmatch.git
+   cd dawarich-smart-mapmatch
+   cp compose.example.yml compose.yml
+   ```
 
-For one trip, inside its time window:
+2. Edit `compose.yml`:
+   - `DAWARICH_URL`: how the container reaches Dawarich, for example
+     `http://dawarich_app:3000` on Dawarich's Docker network.
+   - `ADMIN_USER` and `ADMIN_PASSWORD`: your first sign-in.
+   - The network name at the bottom: the one your Dawarich containers use
+     (`docker network ls`).
 
-1. Fetch the window from Dawarich and archive any point not yet archived.
-2. Write the matched points (tracker `mapmatch`).
-3. Delete only the original points that are confirmed in the archive, plus
-   matched points from an earlier push of that trip.
+   `PUSH_DRY_RUN: "1"` is on to start with. Pushes are planned and logged, but
+   Dawarich isn't touched.
 
-If any point in the window cannot be archived, nothing is changed. **Revert**
-re-posts the archived originals (with their original tracker) and removes the
-matched points. Start with `PUSH_DRY_RUN=1` to see the plan without changing
-Dawarich; every push and revert is listed under Activity.
+3. Start it:
 
-## Run it
+   ```bash
+   docker compose up -d --build
+   ```
 
-```bash
-cp compose.example.yml compose.yml   # set the admin password and the network
-docker compose up -d --build
-```
+4. Open `http://your-server:8080` and sign in as the admin. Then:
+   - **Admin → Map server**: enter your Valhalla address and press **Test**.
+   - **Admin → Regions**: note which areas your tiles cover, so everyone knows
+     where matching works.
+   - **Admin → People**: add an account for anyone else, or let people sign up.
 
-Then open the portal and sign in. The first account is the admin: either set
-`ADMIN_USER` and `ADMIN_PASSWORD`, or register on a fresh install (with no
-accounts, the first one made is the admin). An admin then makes everyone else's
-account under **Admin → People**, or opens sign-up if you would rather people
-made their own.
+5. Connect Dawarich by pasting your API key. mapmatch downloads your points and
+   splits them into trips. Nothing is matched or changed yet.
 
-Signing in is a username and password. Your **Dawarich API key is a link, not a
-login**: paste it once, in Settings or on the connect screen after signing in,
-and it is kept with your account so you never need it again.
+6. Press **Match**, look through a few trips, and push one. With dry run on,
+   you see what would change. When you're happy, set `PUSH_DRY_RUN: "0"`,
+   restart, and push for real.
 
-Nothing is matched until an admin sets a Valhalla address under
-**Admin → Map matching**, and that one address applies to every account on the
-instance. Valhalla is not bundled and is not in the compose file: see
-`docs/deploying.md` for the address to give it and the tiles it needs.
+Behind a reverse proxy, set `PORTAL_BASE_PATH` (for example `/mapmatch`) and
+`PORTAL_SECURE_COOKIE: "1"` for https. Back up the `/data` volume: it holds the
+archive that reverting relies on.
 
-Then press **Sync**, then **Match** (or **Push** once matched). You will see your
-raw trips; press **Map match** (or open a trip and match just that one) when ready.
+[docs/deploying.md](docs/deploying.md) covers the details: Valhalla, regions,
+accounts for several people, how gaps are handled, and exactly what a push
+does in Dawarich.
+
+### Settings
 
 | Variable | Default | |
 |---|---|---|
-| `DAWARICH_URL` | `http://dawarich_app:3000` | Dawarich as seen from the container (users can override it in Settings) |
-| `DAWARICH_HOST_HEADER` | – | Host header to send, if Dawarich only answers its public name |
-| `ADMIN_USER`, `ADMIN_PASSWORD` | `admin`, – | First admin account; ignored once an admin exists |
-| `VALHALLA_DATA_DIR` | – | Optional read-only mount of the Valhalla data directory, so admins can list and download region files |
-| `VALHALLA_URL` | – | Bench and development only: the portal keeps the address in its database, set by an admin |
-| `PORTAL_DATA` | `/data` | SQLite database and archive. **Back this up.** |
-| `PORTAL_BASE_PATH` | – | e.g. `/mapmatch` when served under a path |
+| `DAWARICH_URL` | `http://dawarich_app:3000` | Dawarich as seen from the container (each person can point at their own in Settings) |
+| `DAWARICH_HOST_HEADER` | none | Host header to send, if Dawarich only answers to its public name |
+| `ADMIN_USER`, `ADMIN_PASSWORD` | `admin`, none | First admin account; ignored once an admin exists |
+| `PORTAL_DATA` | `/data` | Database and archive. **Back this up.** |
+| `PORTAL_BASE_PATH` | none | e.g. `/mapmatch` when served under a path |
 | `PORTAL_SECURE_COOKIE` | `0` | `1` behind https |
-| `PUSH_DRY_RUN` | `0` | `1` plans pushes without changing Dawarich |
-| `MATCH_WORKERS` | `4` | parallel trip matching |
-| `RAIL_DATA_DIR` | `data/` | GB rail shapes and stations (set in the image) |
+| `PUSH_DRY_RUN` | `0` (`1` in the example compose) | `1` plans pushes without changing Dawarich |
+| `MATCH_WORKERS` | `4` | Trips matched in parallel; keep at or below Valhalla's thread count |
+| `VALHALLA_DATA_DIR` | none | Optional read-only mount of Valhalla's data, so admins can see and download the map files |
 
-Each account's Dawarich API key is stored in the portal's database; protect the
-data volume.
+Lost the admin password? Run
+`docker exec -it mapmatch python -m mapmatch.portal.admin reset <username>`.
+
+## How well it works
+
+Measured on a real account: 280 recorded journeys (15,197 GPS points) over
+three months of driving, cycling, walking, hiking in Snowdonia and commuting
+by train. The comparison is against the previous version of this project.
+
+| | before | now |
+|---|---|---|
+| straight-line jumps between matched parts | 720 | 118 |
+| lone GPS points left unmatched | 297 | 5 |
+| journeys with more than 20 % unmatched | 32 | 8 |
+| distance left unmatched | 101 km | 56 km |
+| typical worst-case distance from GPS to the line (95th percentile, mean) | 1,094 m | 29 m |
+
+Most of what is still unmatched is bad data: fixes that would mean travelling
+at 300–700 km/h, or off-trail walking where no path exists to snap to.
+
+## How it works
+
+For each trip:
+
+1. **Clean.** Duplicates, broken clocks, very inaccurate fixes, spikes and
+   short teleports are set aside. They aren't deleted.
+2. **Stops.** Places you stayed are found and drawn as a single point. A slow
+   scramble, or a pause in the middle of a walk, still counts as walking.
+3. **Modes.** Speed from the phone, plus closeness to railway lines, gives each
+   stretch a mode. Changes of mode are kept rare, so short blips don't split
+   the trip into pieces.
+4. **Match.** Each stretch goes to Valhalla with the profile for its mode;
+   trains follow the rail lines.
+5. **Fill.** Every break goes through one filler: a lost signal, an unmatched
+   run, or a change of mode. It tries a route, then a route through the
+   recorded points, and otherwise keeps the GPS.
+6. **Write.** The result is a timed point stream that slots into Dawarich in
+   place of the original points.
 
 ## Develop
 
 ```bash
 uv venv .venv && uv pip install -e '.[dev]'
-.venv/bin/pytest                      # engine + portal tests, no network
+.venv/bin/pytest                      # engine and portal tests, no network needed
 VALHALLA_URL=http://host:8002 .venv/bin/python -m mapmatch.tools.bench \
-    --csv data/test-account-points.csv --trips tracker --compare bench/old-tracker.json
-DAWARICH_URL=https://your-dawarich VALHALLA_URL=http://host:8002 PORTAL_DATA=./portal-data \
-    .venv/bin/uvicorn mapmatch.portal.app:app --reload --port 8080
+    --csv your-export.csv --trips auto
+PORTAL_DATA=./portal-data .venv/bin/uvicorn mapmatch.portal.app:app --reload --port 8080
 ```
 
-Lost the admin password? `PORTAL_DATA=/data python -m mapmatch.portal.admin reset <username>`
-sets a new one, and `... list` shows the accounts. The bench caches Valhalla answers in `bench/cache/` (git-ignored: they contain
-coordinates). Private GPS exports (`data/*.csv`) are git-ignored.
+- `mapmatch/engine/`: the matcher, standard library only (`api.py` is the entry point)
+- `mapmatch/portal/`: the web app (`push.py` holds the rules for changing Dawarich)
+- `mapmatch/tools/bench.py`: benchmark against a CSV export
+- `tests/`: tests with a fake Valhalla and a fake Dawarich
+- `docs/deploying.md`: running it for yourself or for several people
 
-Layout:
-
-- `mapmatch/engine/`: matcher, standard library only (`api.py` is the entry point)
-- `mapmatch/portal/`: web app (`push.py` holds the Dawarich safety rules)
-- `mapmatch/tools/bench.py`: benchmark on a CSV export
-- `tests/`: unit tests with a fake Valhalla and a fake Dawarich
-- `docs/deploying.md`: what a self-hoster needs to provide (Valhalla), and the
-  account model for one Dawarich, several people
-- `scripts/*.rb`: Dawarich `rails runner` helpers for rebuilding tracks
+Private GPS exports (`data/*.csv`) and the benchmark's Valhalla cache are
+git-ignored, because both contain coordinates.
