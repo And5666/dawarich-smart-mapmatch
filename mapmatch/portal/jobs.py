@@ -222,9 +222,9 @@ class Jobs:
 
     # ------------------------------------------------------------ job kinds
     def _job_sync(self, uid: int, params: dict[str, Any], progress: Any, jid: str) -> None:
-        summary = self._sync(uid, progress)
-        summary.update(self._match_pending(uid, progress, 45, 99))
-        self._finish(uid, progress, summary)
+        # A manual sync only stores the raw points and splits them into trips.
+        # Matching is a separate step (per trip, "Match", or the automatic run).
+        self._finish(uid, progress, self._sync(uid, progress))
 
     def _job_auto(self, uid: int, params: dict[str, Any], progress: Any, jid: str) -> None:
         summary = self._sync(uid, progress)
@@ -242,13 +242,15 @@ class Jobs:
         progress(30, f"archived {new} new points; splitting trips")
         s = trips.settings(self.db, uid)
         seg = trips.segment(self.db, uid, int(s.get("trip_gap_min") or 30), None)
-        summary = {"new_points": new, **seg}
-        summary.update(self._match_pending(uid, progress, 35, 99))
-        self._finish(uid, progress, summary)
+        self._finish(uid, progress, {"new_points": new, **seg})
 
     def _job_rematch(self, uid: int, params: dict[str, Any], progress: Any, jid: str) -> None:
         scope = params.get("scope", "all")
         sql = "SELECT id FROM trips WHERE user_id=? AND locked=0"
+        if scope == "pending":
+            # Trips never matched, or whose points changed since.
+            self._finish(uid, progress, self._match_pending(uid, progress, 2, 99))
+            return
         if scope == "outdated":
             from ..engine.api import ENGINE_VERSION
             rows = self.db.all(sql + " AND engine_version != ? ORDER BY start_ts", (uid, ENGINE_VERSION))

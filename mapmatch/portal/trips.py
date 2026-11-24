@@ -6,6 +6,7 @@ import time
 from typing import Any
 
 from ..engine.api import ENGINE_VERSION, MODES, match_trip
+from ..engine.quality import path_km
 from ..engine.trips import split_trips
 from . import archive
 from .db import Database, now, pack, unpack
@@ -43,8 +44,10 @@ def segment(db: Database, uid: int, gap_min: int, new_ts: list[int] | None = Non
 
     def make(trip: list[dict[str, Any]]) -> dict[str, Any]:
         end = trip[-1]["timestamp"]
+        # Until a trip is matched, its preview and distance come from the raw fixes.
         return {"start_ts": trip[0]["timestamp"], "end_ts": end, "n_points": len(trip),
-                "closed": 1 if (latest > end + gap or now_ts > end + gap) else 0}
+                "closed": 1 if (latest > end + gap or now_ts > end + gap) else 0,
+                "preview": json.dumps(_preview(trip)), "km": round(path_km(trip), 3)}
 
     found: list[dict[str, Any]] = []
     if first_start is not None:
@@ -66,13 +69,16 @@ def segment(db: Database, uid: int, gap_min: int, new_ts: list[int] | None = Non
                 used.add(match["id"])
                 if (match["start_ts"], match["end_ts"], match["n_points"], match["closed"]) != \
                         (m["start_ts"], m["end_ts"], m["n_points"], m["closed"]):
-                    c.execute("UPDATE trips SET start_ts=?, end_ts=?, n_points=?, closed=?, dirty=1, updated_at=?"
-                              " WHERE id=?", (m["start_ts"], m["end_ts"], m["n_points"], m["closed"], now(), match["id"]))
+                    c.execute("UPDATE trips SET start_ts=?, end_ts=?, n_points=?, closed=?, dirty=1, updated_at=?,"
+                              " preview=CASE WHEN result_version=0 THEN ? ELSE preview END,"
+                              " km=CASE WHEN result_version=0 THEN ? ELSE km END WHERE id=?",
+                              (m["start_ts"], m["end_ts"], m["n_points"], m["closed"], now(),
+                               m["preview"], m["km"], match["id"]))
                     stats["updated"] += 1
                 continue
-            c.execute("INSERT INTO trips(user_id, start_ts, end_ts, n_points, closed, created_at, updated_at)"
-                      " VALUES (?,?,?,?,?,?,?)",
-                      (uid, m["start_ts"], m["end_ts"], m["n_points"], m["closed"], now(), now()))
+            c.execute("INSERT INTO trips(user_id, start_ts, end_ts, n_points, closed, preview, km, created_at, updated_at)"
+                      " VALUES (?,?,?,?,?,?,?,?,?)",
+                      (uid, m["start_ts"], m["end_ts"], m["n_points"], m["closed"], m["preview"], m["km"], now(), now()))
             stats["created"] += 1
         for o in open_:
             if o["id"] in used or o["pushed_version"] is not None:

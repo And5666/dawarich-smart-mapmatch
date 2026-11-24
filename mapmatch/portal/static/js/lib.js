@@ -78,11 +78,12 @@ export const MODES = {
   train: { label: "Train", var: "--m-train" },
   stay: { label: "Stay", var: "--m-stay" },
   raw: { label: "Keep GPS", var: "--m-raw" },
+  none: { label: "Not matched", var: "--faint" },
 };
 export const EDITABLE_MODES = ["walk", "cycle", "drive", "train", "stay", "raw"];
 export const modeColor = (m) => cssVar((MODES[m] || MODES.raw).var);
 export const modeStyle = (m) => `--c: var(${(MODES[m] || MODES.raw).var})`;
-export const dominantMode = (modes) => (modes || []).reduce((a, b) => (!a || b.km > a.km ? b : a), null)?.mode || "raw";
+export const dominantMode = (modes) => (modes || []).reduce((a, b) => (!a || b.km > a.km ? b : a), null)?.mode || "none";
 
 // ------------------------------------------------------------------ formatting
 const dtf = (o) => new Intl.DateTimeFormat(undefined, o);

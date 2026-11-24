@@ -3,8 +3,11 @@
 Turns the raw GPS in a self-hosted [Dawarich](https://dawarich.app) account into
 clean, map-matched trips, with a web portal to review and fix them.
 
-- **Automatic**: on a schedule it fetches new points, splits them into trips,
-  works out how you travelled (walk, cycle, drive, train), snaps each part to
+- **Raw first**: **Sync** (and CSV import) only copies your raw points and
+  splits them into trips. Nothing is map matched until you ask: per trip,
+  with **Map match** for everything pending, or by the automatic run.
+- **Automatic when you want it**: on a schedule it fetches new points, works
+  out how you travelled (walk, cycle, drive, train), snaps each part to
   roads, paths or railways, and can push the result back into Dawarich.
 - **In your control**: the portal shows every trip with its segments; change a
   segment's mode, split it, recalculate, undo, lock it, push it or revert it.
@@ -56,8 +59,9 @@ reporting 300–700 km/h.
 
 Standalone FastAPI app with a no-build Preact + MapLibre front end.
 
-- **Trips**: map of every trip coloured by mode, distance by mode, filters for
-  trips that need review, failed, are not pushed yet, or were edited since push.
+- **Trips**: map of every trip (raw trips as grey dashed lines, matched ones
+  coloured by mode), an "All GPS points" layer, distance by mode, and filters
+  for not matched, needs review, failed, not pushed, and edited since push.
 - **Trip editor**: the route drawn by how it was made (solid = on the map,
   dashed = routed across a gap, dotted = original GPS kept), the original and
   ignored fixes, a timeline and speed chart linked to the map, and per-segment
@@ -90,7 +94,8 @@ docker compose up -d --build
 ```
 
 Then open the portal, sign in as the admin, add your Dawarich API key under
-Settings, press **Test connection**, then **Sync now**.
+Settings, press **Test connection**, then **Sync now**. You will see your raw
+trips; press **Map match** (or open a trip and match just that one) when ready.
 
 | Variable | Default | |
 |---|---|---|

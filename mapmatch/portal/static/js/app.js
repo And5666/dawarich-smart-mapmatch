@@ -58,7 +58,7 @@ function Status() {
   return html`<div class="status">
     ${st.last_error ? html`<span class="badge danger" title=${st.last_error}><${Icon} name="alert" size="sm" />Last sync failed</span>`
       : html`<span class="msg">${st.auto_enabled ? `Auto every ${st.interval_min} min · ` : ""}synced ${ago(st.last_run)}</span>`}
-    <button class="sm" onClick=${() => startJob("sync")} disabled=${!st.api_key_set} title=${st.api_key_set ? "Fetch new points and match them" : "Add a Dawarich API key in Settings"}>
+    <button class="sm" onClick=${() => startJob("sync")} disabled=${!st.api_key_set} title=${st.api_key_set ? "Fetch new points and split them into trips (no matching)" : "Add a Dawarich API key in Settings"}>
       <${Icon} name="sync" size="sm" />Sync now</button></div>`;
 }
 

@@ -18,6 +18,7 @@ from .dawarich import DawarichError
 
 COOKIE = "mapmatch_session"
 MAX_UPLOAD = 64 * 1024 * 1024
+MAX_POINTS = 250_000
 
 
 class Credentials(BaseModel):
@@ -194,6 +195,17 @@ def build(app_state: Any) -> APIRouter:
             out.append(p)
         return {"trips": out, "km_by_mode": totals, "counts": counts}
 
+    @r.get("/points")
+    def raw_points(start: int | None = None, end: int | None = None,
+                   u: dict[str, Any] = Depends(user)) -> dict[str, Any]:
+        """Original GPS points in a range, as [lat, lon], thinned past MAX_POINTS."""
+        pts = archive.window(db, u["id"], start, end)
+        total = len(pts)
+        if total > MAX_POINTS:
+            step = total / MAX_POINTS
+            pts = [pts[int(k * step)] for k in range(MAX_POINTS)]
+        return {"total": total, "points": [[round(p["lat"], 6), round(p["lon"], 6)] for p in pts]}
+
     def _detail(uid: int, tid: int) -> dict[str, Any]:
         t = trip_or_404(uid, tid)
         res = trips.result(db, t)
@@ -263,8 +275,8 @@ def build(app_state: Any) -> APIRouter:
 
     @r.post("/trips/{tid}/recalculate")
     def recalculate(tid: int, u: dict[str, Any] = Depends(user)) -> dict[str, Any]:
-        trip_or_404(u["id"], tid)
-        return _rematch(u["id"], tid, "recalculate", [])
+        t = trip_or_404(u["id"], tid)
+        return _rematch(u["id"], tid, "map match" if not t["result_version"] else "recalculate", [])
 
     @r.post("/trips/{tid}/undo")
     def undo(tid: int, u: dict[str, Any] = Depends(user)) -> dict[str, Any]:

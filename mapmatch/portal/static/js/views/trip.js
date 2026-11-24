@@ -139,6 +139,11 @@ export function TripEditor({ id }) {
       }
       for (const p of s.pieces) if (p.coords.length > 1) lines.push(lineFeature(p.coords, { sid: s.id, mode: s.mode, kind: p.kind }));
     }
+    const unmatched = !d.segments.length;
+    setOverlay(map, "rawline", { data: fc(unmatched && d.raw.length > 1 ? [lineFeature(d.raw.map((p) => [p.lat, p.lon]), {})] : []), layers: () => [
+      { id: "rawline", type: "line", layout: { visibility: show.raw ? "visible" : "none", "line-join": "round", "line-cap": "round" },
+        paint: { "line-color": cssVar("--muted"), "line-width": 2.5, "line-opacity": 0.85 } },
+    ] });
     const color = ["match", ["get", "mode"], ...Object.keys(MODES).flatMap((m) => [m, modeColor(m)]), modeColor("raw")];
     const lineLayer = (lid, kinds, dash, width = 4) => ({
       id: lid, type: "line", filter: ["in", ["get", "kind"], ["literal", kinds]],
@@ -158,9 +163,9 @@ export function TripEditor({ id }) {
       { id: "stays", type: "circle", paint: { "circle-radius": 7, "circle-color": cssVar("--surface"), "circle-stroke-color": modeColor("stay"), "circle-stroke-width": 3 } },
     ] });
     setOverlay(map, "raw", { data: fc(d.raw.map((p) => pointFeature(p.lat, p.lon, { ts: p.timestamp, acc: p.accuracy, v: p.velocity }))), layers: () => [
-      { id: "raw", type: "circle", minzoom: 11, layout: { visibility: show.raw ? "visible" : "none" },
-        paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 1.5, 17, 4], "circle-color": cssVar("--text"),
-          "circle-opacity": ["interpolate", ["linear"], ["zoom"], 11, 0.25, 15, 0.6],
+      { id: "raw", type: "circle", minzoom: unmatched ? 0 : 11, layout: { visibility: show.raw ? "visible" : "none" },
+        paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 8, unmatched ? 2 : 1.5, 17, 4], "circle-color": cssVar("--text"),
+          "circle-opacity": unmatched ? 0.8 : ["interpolate", ["linear"], ["zoom"], 11, 0.25, 15, 0.6],
           "circle-stroke-color": cssVar("--surface"), "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 13, 0, 16, 1] } },
     ] });
     setOverlay(map, "dropped", { data: fc(d.dropped.map((p) => pointFeature(p.lat, p.lon, { ts: p.timestamp, why: p._drop || "" }))), layers: () => [
@@ -230,7 +235,10 @@ export function TripEditor({ id }) {
         <button class="icon-btn" title="Later trip (j)" disabled=${!d.next} onClick=${() => navigate(`#/trip/${d.next}`)}><${Icon} name="next" size="sm" /></button>
         <button disabled=${!!busy || d.history.length < 2} onClick=${() => act("Undoing", "/undo")} title="Go back to the previous version">
           <${Icon} name="undo" size="sm" />Undo</button>
-        ${t.overrides.length
+        ${!t.version
+          ? html`<button class="primary" disabled=${!!busy} onClick=${() => act("Matching", "/recalculate")} title="Snap this trip's GPS to roads, paths and railways">
+              <${Icon} name="map" size="sm" />Map match this trip</button>`
+          : t.overrides.length
           ? html`<${ConfirmButton} disabled=${!!busy} confirmLabel="Discard your edits?" onConfirm=${() => act("Recalculating", "/recalculate")}>
               <${Icon} name="recalc" size="sm" />Recalculate<//>`
           : html`<button disabled=${!!busy} onClick=${() => act("Recalculating", "/recalculate")} title="Run the matcher again from the original GPS">
@@ -240,7 +248,7 @@ export function TripEditor({ id }) {
           <${Icon} name=${t.locked ? "unlock" : "lock"} size="sm" />${t.locked ? "Unlock" : "Lock"}</button>
         ${t.push !== "original" && html`<${ConfirmButton} cls="danger" disabled=${!!busy} confirmLabel="Restore original GPS?"
             onConfirm=${() => act("Reverting", "/revert")}><${Icon} name="undo" size="sm" />Revert to original<//>`}
-        ${t.push !== "pushed" && html`<button class="primary" disabled=${!!busy || !canPush} onClick=${() => act("Pushing", "/push")}
+        ${t.version > 0 && t.push !== "pushed" && html`<button class="primary" disabled=${!!busy || !canPush} onClick=${() => act("Pushing", "/push")}
             title=${!t.closed ? "Wait until the trip has finished" : t.locked ? "Unlock the trip first" : "Replace this trip's points in Dawarich with the matched route"}>
             <${Icon} name="push" size="sm" />${t.push === "outdated" ? "Push update" : "Push to Dawarich"}</button>`}
       </div>
@@ -252,7 +260,7 @@ export function TripEditor({ id }) {
           <div class="map-tools"><div class="card">
             <label><input type="checkbox" checked=${show.raw} onChange=${(e) => setShow({ ...show, raw: e.target.checked })} />Original GPS fixes</label>
             <label class="opt"><input type="checkbox" checked=${show.dropped} onChange=${(e) => setShow({ ...show, dropped: e.target.checked })} />Ignored fixes (${d.dropped.length})</label>
-            <div class="key opt">
+            <div class="key opt" hidden=${!t.version}>
               <span><svg viewBox="0 0 26 8"><line x1="1" y1="4" x2="25" y2="4" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>on the map</span>
               <span><svg viewBox="0 0 26 8"><line x1="1" y1="4" x2="25" y2="4" stroke="currentColor" stroke-width="3" stroke-dasharray="6 4"/></svg>routed across a gap</span>
               <span><svg viewBox="0 0 26 8"><line x1="2" y1="4" x2="25" y2="4" stroke="currentColor" stroke-width="3" stroke-dasharray="1.5 5" stroke-linecap="round"/></svg>original GPS kept</span>
@@ -300,9 +308,9 @@ export function TripEditor({ id }) {
                   ${s.t1 > s.t0 && s.km > 0 && html`<span>${Math.round((s.km * 3600) / (s.t1 - s.t0))} km/h</span>`}</div>
                 ${s.mode !== "raw" && html`<${Provenance} prov=${s.provenance || {}} />`}
               </div>`)}
-          ${!d.segments.length && html`<p class="muted">${t.version ? "Nothing to show." : "This trip has not been matched yet."}</p>`}
+          ${!d.segments.length && html`<p class="muted">${t.version ? "Nothing to show." : html`Not map matched yet. The grey line and dots are your original GPS: ${t.n_points} points, ${km(t.km)}.`}</p>`}
         </section>
-        <section>
+        ${t.version > 0 && html`<section>
           <h2 class="panel-title">Match quality</h2>
           ${t.state === "review" && html`<div class="callout warn"><${Icon} name="alert" size="sm" /><span>
             ${q.raw_frac > 0.15 ? `${pct(q.raw_frac)} of this trip could not be placed on the map and keeps the original GPS.` : `Some fixes sit far from the matched line (95th percentile ${Math.round(q.p95)} m).`}
@@ -319,7 +327,7 @@ export function TripEditor({ id }) {
           <h2 class="panel-title">Export</h2>
           <div class="row"><a class="btn sm" href=${apiUrl(`/trips/${id}/export.gpx`)} download><${Icon} name="download" size="sm" />GPX</a>
             <a class="btn sm" href=${apiUrl(`/trips/${id}/export.geojson`)} download><${Icon} name="download" size="sm" />GeoJSON</a></div>
-        </section>
+        </section>`}
         <section>
           <h2 class="panel-title">History</h2>
           <div class="hist">${d.history.map((h) => html`<div key=${h.version}>

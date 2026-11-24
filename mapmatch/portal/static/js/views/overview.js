@@ -8,7 +8,8 @@ import { createMap, setMapTheme, setOverlay, setData, fc, lineFeature, fitCoords
 
 const RANGES = [["7d", "7 days", 7], ["30d", "30 days", 30], ["90d", "90 days", 90], ["1y", "Year", 365], ["all", "All", 0]];
 const FILTERS = [
-  ["all", "All"], ["review", "Needs review"], ["failed", "Failed"], ["original", "Not pushed"], ["outdated", "Edited since push"],
+  ["all", "All"], ["new", "Not matched"], ["review", "Needs review"], ["failed", "Failed"], ["original", "Not pushed"],
+  ["outdated", "Edited since push"],
 ];
 const pref = (k, d) => { try { return localStorage.getItem(k) || d; } catch (e) { return d; } };
 const save = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* ignore */ } };
@@ -34,6 +35,7 @@ export function Overview() {
   const [mode, setMode] = useState("");
   const [data, setDataState] = useState(null);
   const [hot, setHot] = useState(null);
+  const [allPts, setAllPts] = useState(false);
   const mapEl = useRef(null);
   const mapRef = useRef(null);
   const fitted = useRef(false);
@@ -57,14 +59,16 @@ export function Overview() {
     const map = createMap(mapEl.current, theme);
     mapRef.current = map;
     const pop = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 8 });
-    map.on("mousemove", "trips-line", (e) => {
-      const f = e.features[0];
-      map.getCanvas().style.cursor = "pointer";
-      setHot(f.properties.id);
-      pop.setLngLat(e.lngLat).setHTML(`<b>${f.properties.label}</b><br>${f.properties.sub}`).addTo(map);
-    });
-    map.on("mouseleave", "trips-line", () => { map.getCanvas().style.cursor = ""; setHot(null); pop.remove(); });
-    map.on("click", "trips-line", (e) => navigate(`#/trip/${e.features[0].properties.id}`));
+    for (const lid of ["trips-line", "trips-raw"]) {
+      map.on("mousemove", lid, (e) => {
+        const f = e.features[0];
+        map.getCanvas().style.cursor = "pointer";
+        setHot(f.properties.id);
+        pop.setLngLat(e.lngLat).setHTML(`<b>${f.properties.label}</b><br>${f.properties.sub}`).addTo(map);
+      });
+      map.on("mouseleave", lid, () => { map.getCanvas().style.cursor = ""; setHot(null); pop.remove(); });
+      map.on("click", lid, (e) => navigate(`#/trip/${e.features[0].properties.id}`));
+    }
     return () => map.remove();
   }, []);
   useEffect(() => setMapTheme(mapRef.current, theme), [theme]);
@@ -75,14 +79,20 @@ export function Overview() {
     const feats = trips.filter((t) => t.preview.length > 1).map((t) => lineFeature(t.preview, {
       id: t.id, mode: dominantMode(t.modes),
       label: `${day(t.start)} · ${time(t.start)}–${time(t.end)}`,
-      sub: `${km(t.km)} · ${t.modes.map((m) => MODES[m.mode]?.label).join(" → ") || "not matched"}`,
+      sub: `${km(t.km)} · ${t.modes.map((m) => MODES[m.mode]?.label).join(" → ") || "raw GPS, not matched yet"}`,
     }));
     const overlay = {
       data: fc(feats), promoteId: "id",
       layers: () => [
         { id: "trips-casing", type: "line", layout: { "line-cap": "round", "line-join": "round" },
           paint: { "line-color": getComputedStyle(document.documentElement).getPropertyValue("--casing").trim(), "line-width": 5, "line-opacity": 0.9 } },
-        { id: "trips-line", type: "line", layout: { "line-cap": "round", "line-join": "round" },
+        { id: "trips-raw", type: "line", filter: ["==", ["get", "mode"], "none"], layout: { "line-join": "round" },
+          paint: {
+            "line-color": getComputedStyle(document.documentElement).getPropertyValue("--muted").trim(),
+            "line-width": ["case", ["boolean", ["feature-state", "hot"], false], 4.5, 2.2],
+            "line-dasharray": [2, 1.5],
+          } },
+        { id: "trips-line", type: "line", filter: ["!=", ["get", "mode"], "none"], layout: { "line-cap": "round", "line-join": "round" },
           paint: {
             "line-color": ["match", ["get", "mode"], ...Object.keys(MODES).flatMap((m) => [m, modeColor(m)]), modeColor("raw")],
             "line-width": ["case", ["boolean", ["feature-state", "hot"], false], 6, 3],
@@ -100,6 +110,25 @@ export function Overview() {
 
   useEffect(() => {
     const map = mapRef.current;
+    if (!map) return;
+    if (!allPts) { if (map._mm.overlays.has("allpts")) setData(map, "allpts", fc([])); return; }
+    const [a, b] = rangeBounds(range, custom);
+    const q = new URLSearchParams();
+    if (a) q.set("start", a);
+    if (b) q.set("end", b);
+    api(`/points?${q}`).then((x) => {
+      const data = { type: "FeatureCollection", features: x.points.map(([lat, lon]) => ({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [lon, lat] } })) };
+      const ov = { data, layers: () => [{ id: "allpts", type: "circle", paint: {
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 6, 1, 12, 2, 17, 4],
+        "circle-color": getComputedStyle(document.documentElement).getPropertyValue("--m-raw").trim(),
+        "circle-opacity": 0.6 } }] };
+      if (map._mm.overlays.has("allpts")) setData(map, "allpts", data); else setOverlay(map, "allpts", ov);
+      if (x.total > x.points.length) toast(`Showing ${x.points.length.toLocaleString()} of ${x.total.toLocaleString()} points`);
+    }).catch((e) => toast(e.message, "error"));
+  }, [allPts, range, custom.from, custom.to, version]);
+
+  useEffect(() => {
+    const map = mapRef.current;
     if (!map || !map.getSource("trips")) return;
     map.removeFeatureState({ source: "trips" });
     if (hot != null) map.setFeatureState({ source: "trips", id: hot }, { hot: true });
@@ -109,7 +138,11 @@ export function Overview() {
   const totals = useMemo(() => {
     const byMode = {};
     let total = 0;
-    for (const t of trips) for (const m of t.modes) { byMode[m.mode] = (byMode[m.mode] || 0) + m.km; total += m.km; }
+    // Matched trips count their matched distance, unmatched ones their raw GPS distance.
+    for (const t of trips) {
+      if (!t.modes.length) { total += t.km; continue; }
+      for (const m of t.modes) { byMode[m.mode] = (byMode[m.mode] || 0) + m.km; total += m.km; }
+    }
     return { byMode, total };
   }, [trips]);
   const counts = data?.counts || {};
@@ -142,13 +175,16 @@ export function Overview() {
           <div class="kpi"><b class="num">${km(totals.total)}</b><span>travelled</span></div>
           <div class="kpi"><b class="num">${(counts.review || 0) + (counts.failed || 0)}</b><span>to review</span></div>
         </div>
-        ${totals.total > 0 && html`<div class="stack" style="gap:6px">
+        ${Object.keys(totals.byMode).length > 0 && html`<div class="stack" style="gap:6px">
           <div class="modebar">${Object.entries(totals.byMode).sort((a, b) => b[1] - a[1]).map(([m, v]) =>
-            html`<i style=${`${modeStyle(m)};width:${(100 * v) / totals.total}%`} title=${`${MODES[m]?.label}: ${km(v)}`}></i>`)}</div>
+            html`<i style=${`${modeStyle(m)};width:${(100 * v) / Object.values(totals.byMode).reduce((a, b) => a + b, 0)}%`} title=${`${MODES[m]?.label}: ${km(v)}`}></i>`)}</div>
           <div class="legend">${Object.entries(totals.byMode).sort((a, b) => b[1] - a[1]).map(([m, v]) =>
             html`<button class=${`ghost sm ${mode === m ? "on" : ""}`} style=${`${modeStyle(m)};padding:1px 4px`} aria-pressed=${mode === m}
               onClick=${() => setMode(mode === m ? "" : m)} title="Show only trips with this mode">
               <span class="dot"></span>${MODES[m]?.label} <span class="num faint">${km(v)}</span></button>`)}</div></div>`}
+        ${counts.new > 0 && html`<div class="callout info" style="align-items:center">
+          <span class="grow">${counts.new} ${counts.new === 1 ? "trip is" : "trips are"} still raw GPS, not map matched.</span>
+          <button class="sm primary" onClick=${() => startJob("rematch", { scope: "pending" })}>Map match</button></div>`}
         <div class="filters" role="group" aria-label="Filter trips">
           ${FILTERS.map(([k, label]) => {
             const n = k === "all" ? data?.trips.length : (counts[k] || counts[`push_${k}`] || 0);
@@ -168,7 +204,7 @@ export function Overview() {
               <span class="muted small num">${duration(t.end - t.start)} · ${km(t.km)}</span><span class="grow"></span>
               ${t.state !== "matched" && html`<${StateBadge} state=${t.state} />`}</div>
             <div class="row wrap" style="gap:6px"><div class="chips">${t.modes.length ? t.modes.map((m) => html`<${ModeChip} mode=${m.mode} km=${m.km} />`)
-              : html`<span class="faint small">${t.error || "waiting to be matched"}</span>`}</div>
+              : html`<span class="faint small">${t.error || `Raw GPS · ${km(t.km)} · ${t.n_points} points`}</span>`}</div>
               <span class="grow"></span>${t.push !== "original" && html`<${PushBadge} push=${t.push} />`}</div>
           </div>`)}
         </div>`)}
@@ -176,13 +212,16 @@ export function Overview() {
     </aside>
     <div class="map-wrap">
       <div class="map" ref=${mapEl}></div>
+      <div class="map-tools"><div class="card">
+        <label><input type="checkbox" checked=${allPts} onChange=${(e) => setAllPts(e.target.checked)} />All GPS points</label>
+      </div></div>
       ${noTrips && html`<div class="map-empty"><div class="card onboard"><header><h2>Get your trips in</h2>
         <p>Mapmatch keeps a copy of every original GPS point before it changes anything.</p></header>
         <div class="body"><ol>
           <li>${st.api_key_set ? html`<span class="row"><${Icon} name="check" size="sm" />Dawarich is connected.</span>`
             : html`<span><a href="#/settings">Connect your Dawarich account</a> with its API key, or import a CSV export.</span>`}</li>
-          <li>Sync: the portal downloads your points, splits them into trips and matches each one to the map.</li>
-          <li>Review a trip, fix any segment's mode, then push it to Dawarich, or turn on automatic push.</li>
+          <li>Sync: the portal downloads your raw points and splits them into trips. Nothing is matched yet.</li>
+          <li>Map match the trips you want, check each segment's mode, then push to Dawarich when you're happy.</li>
         </ol></div>
         <div class="foot"><button class="primary" disabled=${!st.api_key_set} onClick=${() => startJob("sync")}><${Icon} name="sync" size="sm" />Sync now</button>
           <a class="btn" href="#/settings">Settings</a></div></div></div>`}

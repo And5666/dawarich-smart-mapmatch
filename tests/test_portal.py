@@ -42,16 +42,39 @@ def env(tmp_path, fake_valhalla):
     return client, dw, jobs, app.state.portal.db
 
 
-def sync(client, jobs):
-    jid = client.post("/api/jobs", json={"kind": "sync"}, headers=H).json()["job"]
+def run_job(client, jobs, kind, params=None):
+    jid = client.post("/api/jobs", json={"kind": kind, "params": params or {}}, headers=H).json()["job"]
     jobs.run_pending()
     job = client.get(f"/api/jobs/{jid}").json()
     assert job["status"] == "done", job
     return job
 
 
+def sync(client, jobs):
+    """Sync (raw only), then map match everything pending."""
+    run_job(client, jobs, "sync")
+    return run_job(client, jobs, "rematch", {"scope": "pending"})
+
+
 def archive_count(db) -> int:
     return db.one("SELECT COUNT(*) n FROM points")["n"]
+
+
+def test_sync_only_stores_raw_points(env, fake_valhalla):
+    client, dw, jobs, db = env
+    run_job(client, jobs, "sync")
+    assert archive_count(db) == len(dw.originals())
+    assert not fake_valhalla.calls, "sync must not map match"
+    trips = client.get("/api/trips").json()
+    assert len(trips["trips"]) == 2 and trips["counts"] == {"new": 2, "push_original": 2}
+    t = trips["trips"][0]
+    assert t["modes"] == [] and len(t["preview"]) > 2 and t["km"] > 1   # raw line and distance
+    d = client.get(f"/api/trips/{t['id']}").json()
+    assert d["segments"] == [] and len(d["raw"]) == t["n_points"]
+    assert client.post(f"/api/trips/{t['id']}/push", headers=H).status_code == 400   # nothing to push yet
+    # Matching one trip on request.
+    d = client.post(f"/api/trips/{t['id']}/recalculate", headers=H).json()
+    assert d["segments"] and d["history"][0]["reason"] == "map match"
 
 
 def test_sync_archives_and_finds_trips(env):
