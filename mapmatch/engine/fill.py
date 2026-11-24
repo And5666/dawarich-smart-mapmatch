@@ -24,6 +24,8 @@ JOIN_M = 25.0         # shorter seams are drawn directly
 # original GPS is kept rather than snapping to the wrong path.
 TRAIL_MODES = ("walk", "cycle")
 TRAIL_DEV_M = 30.0
+# Road cycling is matched like driving; only off-road rides get the walk rule.
+TRAIL_DEV_BY_MODE = {"walk": 30.0, "cycle": 55.0}
 MAX_THROUGH = 12
 END_SNAP_M = 150.0
 
@@ -56,7 +58,7 @@ def max_deviation(line: list[tuple[float, float]], ref: list[tuple[float, float]
 
 def _plausible(shape: list[tuple[float, float]], a: dict[str, Any], b: dict[str, Any],
                mids: list[dict[str, Any]], vmax: float, typical: float, raw_path: float,
-               chord: float, check_mids: bool, trail: bool = False) -> str:
+               chord: float, check_mids: bool, trail: bool = False, mode: str = "walk") -> str:
     """Empty string when the route is acceptable, else the reason it is not."""
     if len(shape) < 2:
         return "no_shape"
@@ -77,7 +79,7 @@ def _plausible(shape: list[tuple[float, float]], a: dict[str, Any], b: dict[str,
     if trail:
         ref = [(p["lat"], p["lon"]) for p in (a, *mids, b)]
         if mids:
-            if max_deviation(shape, ref) > TRAIL_DEV_M + max(min(p.get("accuracy") or 15.0, 30.0) for p in mids):
+            if max_deviation(shape, ref) > TRAIL_DEV_BY_MODE.get(mode, TRAIL_DEV_M) + max(min(p.get("accuracy") or 15.0, 30.0) for p in mids):
                 return "off_trail"
         elif length > (2.0 * chord + 40.0 if chord < 150.0 else 1.25 * chord + 30.0):
             # A gap with no fixes: a short one may go round a corner; a long
@@ -134,7 +136,7 @@ def fill(a: dict[str, Any], mids: list[dict[str, Any]], b: dict[str, Any], mode:
             why.append("no_route")
             continue
         shape = r["shape"]
-        bad = _plausible(shape, a, b, mids, vmax, typical, raw_path, chord, check, mode in TRAIL_MODES)
+        bad = _plausible(shape, a, b, mids, vmax, typical, raw_path, chord, check, mode in TRAIL_MODES, mode)
         if not bad:
             coords = [(a["lat"], a["lon"]), *shape, (b["lat"], b["lon"])]
             return {"kind": "filled", "coords": coords}

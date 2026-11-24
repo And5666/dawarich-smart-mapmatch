@@ -33,7 +33,7 @@ export function setMapTheme(map, theme) {
   // diff:false forces a full reload, which drops our layers; put them back
   // as soon as the new style is usable.
   map.setStyle(STYLES[theme], { diff: false });
-  const again = () => { if (map.isStyleLoaded()) { map.off("styledata", again); applyAll(map); } };
+  const again = () => { if (ready(map)) { map.off("styledata", again); applyAll(map); } };
   map.on("styledata", again);
 }
 
@@ -41,11 +41,13 @@ export function setMapTheme(map, theme) {
 // colours are re-read from CSS after a theme change.
 // A map that has been removed (the page navigated away) has no style left.
 const gone = (map) => !map || map._removed || !map.style;
+// isStyleLoaded() is false while tiles load; the style itself being ready is enough.
+const ready = (map) => !!(map.style && map.style._loaded);
 
 export function setOverlay(map, id, overlay) {
   if (gone(map)) return;
   map._mm.overlays.set(id, overlay);
-  if (map.isStyleLoaded()) apply(map, id, overlay);
+  if (ready(map)) apply(map, id, overlay);
 }
 
 export function setData(map, id, data) {

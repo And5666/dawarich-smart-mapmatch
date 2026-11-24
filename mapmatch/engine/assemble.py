@@ -166,7 +166,12 @@ def road_pieces(fixes: list[dict[str, Any]], mode: str, m: dict[str, Any],
         return [_piece("raw", [[fixes[0]["lat"], fixes[0]["lon"], fixes[0]["timestamp"], 1]], 1)]
     anchors = m["anchors"]
     geo = m["pieces"]
-    trail = mode in TRAIL_MODES
+    # Walks always get the off-trail rule; rides only when they are mostly
+    # on paths and tracks rather than roads (MTB), so road cycling matches fully.
+    OFFROAD = ("path", "track", "footway", "bridleway", "cycleway", "steps", "pedestrian")
+    kinds = [a["kind"] for a in anchors if a]
+    offroad = sum(1 for k in kinds if any(w in k for w in OFFROAD)) > 0.5 * max(1, len(kinds))
+    trail = mode == "walk" or (mode == "cycle" and offroad)
 
     def trusted(k: int) -> bool:
         # On foot or by bike, a fix snapped much further away than its own
