@@ -60,8 +60,10 @@ reporting 300–700 km/h.
 Standalone FastAPI app with a no-build Preact + MapLibre front end.
 
 - **Trips**: map of every trip (raw trips as grey dashed lines, matched ones
-  coloured by mode), an "All GPS points" layer, distance by mode, and filters
-  for not matched, needs review, failed, not pushed, and edited since push.
+  coloured by mode), an "All GPS points" layer, distance by mode, filters for
+  not matched, needs review, failed, not pushed, and edited since push, and a
+  **Push** button beside **Match** that writes every matched trip in the view
+  back to Dawarich in one job.
 - **Trip editor**: the route drawn by how it was made (solid = on the map,
   dashed = routed across a gap, dotted = original GPS kept), the original and
   ignored fixes, a timeline and speed chart linked to the map, and per-segment
@@ -93,15 +95,18 @@ cp compose.example.yml compose.yml   # set URLs, admin password, network
 docker compose up -d --build
 ```
 
-Then open the portal and connect with your Dawarich API key: the key is the
-sign-in (no separate accounts or passwords). Press **Sync**, then **Match**. You will see your raw
-trips; press **Map match** (or open a trip and match just that one) when ready.
+Then open the portal and connect with your Dawarich API key: today the key is the
+sign-in. Press **Sync**, then **Match** (or **Push** once matched). You will see
+your raw trips; press **Map match** (or open a trip and match just that one) when
+ready. Valhalla is not bundled — you point the portal at one you already run,
+or at the one that came with your Dawarich stack. `docs/deploying.md` covers the
+choices and the account model.
 
 | Variable | Default | |
 |---|---|---|
 | `DAWARICH_URL` | `http://dawarich_app:3000` | Dawarich as seen from the container (users can override it in Settings) |
 | `DAWARICH_HOST_HEADER` | – | Host header to send, if Dawarich only answers its public name |
-| `VALHALLA_URL` | `http://127.0.0.1:8002` | Valhalla with tiles for your area |
+| `VALHALLA_URL` | `http://127.0.0.1:8002` | Valhalla reachable from the container, with tiles for the area you ride in (see `docs/deploying.md`) |
 | `PORTAL_DATA` | `/data` | SQLite database and archive. **Back this up.** |
 | `PORTAL_BASE_PATH` | – | e.g. `/mapmatch` when served under a path |
 | `PORTAL_SECURE_COOKIE` | `0` | `1` behind https |
@@ -122,8 +127,7 @@ DAWARICH_URL=https://your-dawarich VALHALLA_URL=http://host:8002 PORTAL_DATA=./p
     .venv/bin/uvicorn mapmatch.portal.app:app --reload --port 8080
 ```
 
-The bench caches Valhalla answers in `bench/cache/` and writes a private HTML
-report of the worst trips to `bench/report/` (both git-ignored: they contain
+The bench caches Valhalla answers in `bench/cache/` (git-ignored: they contain
 coordinates). Private GPS exports (`data/*.csv`) are git-ignored.
 
 Layout:
@@ -132,4 +136,6 @@ Layout:
 - `mapmatch/portal/`: web app (`push.py` holds the Dawarich safety rules)
 - `mapmatch/tools/bench.py`: benchmark on a CSV export
 - `tests/`: unit tests with a fake Valhalla and a fake Dawarich
+- `docs/deploying.md`: what a self-hoster needs to provide (Valhalla), and the
+  account model for one Dawarich, several people
 - `scripts/*.rb`: Dawarich `rails runner` helpers for rebuilding tracks

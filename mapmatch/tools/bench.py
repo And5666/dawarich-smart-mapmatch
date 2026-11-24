@@ -7,8 +7,9 @@
                  "*-loose" points left out; comparable with bench/old-tracker.json.
 --trips auto     the whole stream, split by the new engine's own segmenter.
 
-Writes bench/<engine>-<trips>.json (ids and metrics only, no coordinates) and
-bench/report/<engine>-<trips>.html (private: contains coordinates).
+Writes bench/<engine>-<trips>.json (ids and metrics only, no coordinates).
+The HTML page that showed the worst trips on a map was retired once the engine
+was good enough to stop eyeballing; it is archived under `_attic` on the server.
 """
 from __future__ import annotations
 
@@ -137,22 +138,6 @@ def summarize(ms: list[dict[str, Any]], failures: list[Any], secs: float) -> dic
     }
 
 
-def html_report(path: Path, rows: list[dict[str, Any]]) -> None:
-    data = json.dumps(rows, separators=(",", ":"))
-    path.write_text("""<!doctype html><meta charset=utf-8><title>bench</title>
-<link rel=stylesheet href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<style>body{margin:0;font:13px system-ui;display:grid;grid-template-columns:300px 1fr;height:100vh}
-#l{overflow:auto;border-right:1px solid #ccc}#l div{padding:6px 10px;cursor:pointer;border-bottom:1px solid #eee}
-#l div:hover{background:#eef}#m{height:100vh}</style><div id=l></div><div id=m></div>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script>
-const R=""" + data + """;const C={matched:'#1f77b4',filled:'#2ca02c',raw:'#d62728',straight:'#ff00ff',stay:'#999'};
-const M=L.map('m');L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(M);let G=L.layerGroup().addTo(M);
-function show(r){G.clearLayers();L.polyline(r.raw,{color:'#ff7f0e',weight:2,dashArray:'3 4'}).addTo(G);r.raw.forEach(p=>L.circleMarker(p,{radius:2,color:'#ff7f0e'}).addTo(G));
-r.pieces.forEach(p=>{if(p.coords.length>1)L.polyline(p.coords,{color:C[p.kind]||'#000',weight:4,opacity:.8}).bindTooltip(p.mode+' '+p.kind+' '+p.km.toFixed(2)+'km').addTo(G)});M.fitBounds(r.raw)}
-const l=document.getElementById('l');R.forEach(r=>{let d=document.createElement('div');d.innerHTML=`<b>#${r.id}</b> ${(r.m.unmatched_frac*100).toFixed(0)}% unmatched · ${r.m.segments} seg · p95 ${r.m.p95}m<br><small>${(r.m.modes||[]).join(' › ')}</small>`;d.onclick=()=>show(r);l.appendChild(d)});if(R.length)show(R[0]);
-</script>""")
-
-
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--csv", default=str(ROOT / "data/test-account-points.csv"))
@@ -162,7 +147,6 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--only", default="", help="comma-separated trip ids")
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--out", default=str(ROOT / "bench"))
-    ap.add_argument("--worst", type=int, default=25)
     args = ap.parse_args(argv)
     os.environ.setdefault("VALHALLA_CACHE_DIR", str(ROOT / "bench/cache"))
 
@@ -200,17 +184,8 @@ def main(argv: list[str] | None = None) -> int:
     if agree:
         summary["segmentation"] = agree
     out = Path(args.out)
-    (out / "report").mkdir(parents=True, exist_ok=True)
     name = f"{args.engine}-{args.trips}"
     json.dump({"summary": summary, "failures": failures, "trips": ms}, open(out / f"{name}.json", "w"), indent=1)
-    worst = sorted(ms, key=lambda m: (-m["unmatched_frac"], -m["p95"]))[:args.worst]
-    focus = [m for m in ms if m["id"] in (3247, 3347, 3193, 3345, 3361) and m not in worst]
-    rows = []
-    for m in worst + focus:
-        r = results[m["id"]]
-        rows.append({"id": m["id"], "m": m, "raw": [[p["lat"], p["lon"]] for p in by_id[m["id"]]],
-                     "pieces": [{k: p[k] for k in ("mode", "kind", "km", "coords")} for p in r["pieces"]]})
-    html_report(out / "report" / f"{name}.html", rows)
     print(json.dumps(summary, indent=1))
     if args.compare:
         base = json.load(open(args.compare))["summary"]
@@ -218,7 +193,7 @@ def main(argv: list[str] | None = None) -> int:
         for k, v in summary.items():
             if isinstance(v, (int, float)) and k in base and k != "seconds":
                 print(f"{k:28s} {base[k]!s:>10s} {v!s:>10s}")
-    print(f"wrote {out / (name + '.json')} and {out / 'report' / (name + '.html')}")
+    print(f"wrote {out / (name + '.json')}")
     return 0
 
 

@@ -63,6 +63,8 @@ export function Trips() {
   const trips = useMemo(() => (data?.trips || []).filter((t) =>
     (show === "all" || t.state === show || t.push === show) && (!onlyMode || t.modes.some((m) => m.mode === onlyMode))), [data, show, onlyMode]);
   const unmatched = useMemo(() => (data?.trips || []).filter((t) => !t.version && !t.locked), [data]);
+  const pushing = useMemo(() => (data?.trips || []).filter((t) => t.version && t.closed && !t.locked
+    && (t.push === "original" || t.push === "outdated")), [data]);
   const totals = useMemo(() => {
     const by = {};
     let all = 0;
@@ -222,6 +224,7 @@ export function Trips() {
 
   // ---------------------------------------------------------------- actions
   const match = (scope, params, label) => startJob("rematch", { scope, ...params }).then((ok) => ok && toast(label));
+  const push = (ids, label) => startJob("push_all", { ids }).then((ok) => ok && toast(label));
   const togglePick = (id) => setPicked((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const groups = useMemo(() => {
     const g = [];
@@ -263,6 +266,11 @@ export function Trips() {
               Everything in ${periodLabel} <span class="faint num">${data?.trips.length || 0}</span></button>
             <div class="sep"></div>
             <button onClick=${() => setSelecting(true)}>Choose trips…</button>
+          <//>
+          <${Menu} left cls=${pushing.length ? "go" : ""} label=${html`Push<${Icon} name="down" small />`}>
+            <button disabled=${!pushing.length} onClick=${() => push(pushing.map((t) => t.id), `Pushing ${plural(pushing.length, "trip")}`)}>
+              Everything in ${periodLabel} <span class="faint num">${pushing.length}</span></button>
+            <button disabled=${!pushing.length} onClick=${() => setSelecting(true)}>Choose trips…</button>
           <//>
           <button class=${selecting ? "go" : ""} onClick=${() => { setSelecting(!selecting); setPicked(new Set()); }}>${selecting ? "Done" : "Select"}</button>
           <span class="grow"></span>
