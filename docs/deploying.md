@@ -135,6 +135,15 @@ chose yourself is drawn in the warning colour so it is distinguishable from one
 nothing could route. Exceptions are stored per trip (`keep_gaps`), survive
 editing, and are cleared by **Route them all**.
 
+**Route anyway.** A route is refused when it would imply more speed than a car
+can do (270 km/h for driving: 200 × 1.3 + 10) or a detour far longer than the
+recorded path. That is usually a sign the timestamps in the hole are wrong, not
+that the road is wrong. The cap stays on everywhere by default — automatic runs
+never override it — but a refused gap offers **Route anyway** in the editor,
+and one button below the list does the same for every refused gap at once. It
+routes the way the router drew it and records that it was your call; the gap
+then shows as "over the cap" so it is obvious which ones were forced.
+
 Because a stored match from before this existed has no per-hole detail, the
 editor asks for a re-match the first time; Settings offers **Rematch them** for
 every trip matched by an older engine.

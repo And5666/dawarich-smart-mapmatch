@@ -51,6 +51,9 @@ class GapsIn(BaseModel):
     # With t0 and t1, the choice is for that one gap instead of the whole trip.
     t0: int | None = None
     t1: int | None = None
+    # Route it even though the plausibility gate refuses it (the timestamps make
+    # it look faster than the cap). Explicit "match it anyway" from the editor.
+    force: StrictBool | None = None
 
 
 class LockIn(BaseModel):
@@ -458,21 +461,36 @@ def build(app_state: Any) -> APIRouter:
             if body.route is None:
                 raise HTTPException(400, "say whether that gap should be routed or kept")
             span = [min(body.t0, body.t1), max(body.t0, body.t1)]
-            keep = [k for k in json.loads(trip.get("keep_gaps") or "[]")
-                    if not (span[0] <= k[1] and k[0] <= span[1])]
+            hits = lambda span_list: [k for k in span_list if not (span[0] <= k[1] and k[0] <= span[1])]
+            keep = hits(json.loads(trip.get("keep_gaps") or "[]"))
+            force = hits(json.loads(trip.get("force_gaps") or "[]"))
             if body.route is False:
                 keep.append(span)
+                reason = "gap kept as recorded"
+            elif body.force:
+                force.append(span)
+                reason = "gap routed anyway, over the speed cap"
+            else:
+                reason = "gap routed"
             trips.set_keep_gaps(db, u["id"], tid, keep)
-            return _rematch(u["id"], tid, "gap kept as recorded" if body.route is False else "gap routed", None)
+            trips.set_force_gaps(db, u["id"], tid, force)
+            return _rematch(u["id"], tid, reason, None)
         mode = "" if body.route is None else ("fill" if body.route else "strict")
         try:
             trips.set_gap_mode(db, u["id"], tid, mode)
             if body.route is True:
-                # "Route across" for the whole trip drops the per-gap choices.
+                # "Route across" for the whole trip drops the per-gap choices, and
+                # says whether the speed and length checks may be overridden.
                 trips.set_keep_gaps(db, u["id"], tid, [])
+                trips.set_force_gaps(db, u["id"], tid, [])
+                trips.set_force_route(db, u["id"], tid, bool(body.force))
+            else:
+                trips.set_force_route(db, u["id"], tid, False)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
-        reason = {"fill": "gaps routed", "strict": "gaps kept as recorded", "": "gaps follow settings"}[mode]
+        reason = {"fill": "gaps routed" + (" anyway, over the speed cap" if body.force else ""),
+                  "strict": "gaps kept as recorded",
+                  "": "gaps follow settings"}[mode]
         return _rematch(u["id"], tid, reason, None)
 
     @r.post("/trips/{tid}/push")

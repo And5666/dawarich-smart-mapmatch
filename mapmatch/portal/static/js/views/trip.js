@@ -318,6 +318,15 @@ export function TripView({ id }) {
       { t0: g.t0, t1: g.t1, route: !g.routed });
     if (x) toast(g.routed ? "That gap keeps the recorded GPS" : "That gap is routed");
   };
+  // The explicit "match it anyway": route past the speed and length checks.
+  const forceGap = async (g) => {
+    const x = await act("Routing anyway", "/gaps", { t0: g.t0, t1: g.t1, route: true, force: true });
+    if (x) toast("Routed anyway, over the speed cap");
+  };
+  const forceAll = async () => {
+    const x = await act("Routing anyway", "/gaps", { route: true, force: true });
+    if (x) toast("Every gap routed, over the speed cap");
+  };
   gapRef.current = toggleGap;
 
   if (err) return html`<div class="doc"><div class="note bad">${err}</div><p><a href="#/">Back to trips</a></p></div>`;
@@ -338,12 +347,19 @@ export function TripView({ id }) {
   // Every hole the filler bridged, as one entry per stretch of time.
   const gaps = useMemo(() => {
     const out = [];
+    const gate = (why) => (why || []).filter((w) => w === "too_fast" || w === "too_long");
     for (const s of segs) for (const p of s.pieces || []) {
       if (!p.gap) continue;
       const [g0, g1] = p.gap;
       const hit = out.find((g) => g.t0 <= g1 && g0 <= g.t1);
-      if (hit) { hit.km += p.km; if (p.kind === "filled") hit.routed = true; continue; }
-      out.push({ t0: g0, t1: g1, km: p.km, routed: p.kind === "filled" });
+      if (hit) {
+        hit.km += p.km;
+        if (p.kind === "filled") { hit.routed = true; hit.overrode = !!p.overrode_gate; }
+        hit.why = [...new Set([...hit.why, ...gate(p.why)])];
+        continue;
+      }
+      out.push({ t0: g0, t1: g1, km: p.km, routed: p.kind === "filled",
+                 overrode: !!p.overrode_gate, why: gate(p.why) });
     }
     return out.sort((a, b) => a.t0 - b.t0);
   }, [segs]);
@@ -452,11 +468,19 @@ export function TripView({ id }) {
                 <span class="num">${time(g.t0)}–${time(g.t1)}</span>
                 <span class="faint num">${km(g.km)}</span>
                 <span class="grow"></span>
+                ${g.routed && g.overrode && html`<span class="flag" title="Routed on your say-so: the timestamps make it faster than the cap">over the cap</span>`}
                 <button class=${`sm ${g.routed ? "" : "go"}`} disabled=${!!busy || !t.closed}
                   title=${g.routed ? "Keep your recorded GPS across this gap" : "Route across this gap"}
                   onClick=${() => toggleGap(g)}>${g.routed ? "Routed" : "Kept"}</button>
+                ${!g.routed && g.why.length > 0 && html`<button class="sm" disabled=${!!busy || !t.closed}
+                  title=${`The router's answer is refused because the timestamps would make it ${g.why.includes("too_fast") ? "too fast" : "too long"}. This routs it regardless.`}
+                  onClick=${() => forceGap(g)}>Route anyway</button>`}
               </div>`)}</div>
-              <p class="small faint" style="margin:0">${plural(gaps.length, "gap")}: click one, or its dashed line on the map, to switch that one only.</p>`}
+              <p class="small faint" style="margin:0">${plural(gaps.length, "gap")}: click one, or its dashed line on the map, to switch that one only.${
+                gaps.some((g) => !g.routed && g.why.length)
+                  ? " A kept gap marked for the speed or length check can still be routed with Route anyway, or all of them at once below." : ""}</p>`}
+          ${gaps.some((g) => !g.routed && g.why.length) && html`<button class="sm" disabled=${!!busy || !t.closed}
+            onClick=${forceAll}>Route the refused ${plural(gaps.filter((g) => !g.routed && g.why.length).length, "gap")} anyway</button>`}
           ${t.gap_mode
             ? html`<button class="sm bare" onClick=${() => allGaps(null)}>Follow my setting instead (${me?.settings?.strength === "strict" ? "keep them all" : "route them all"})</button>`
             : html`<p class="small faint" style="margin:0">The whole-trip buttons are your account's setting; a single gap you switch stays switched.</p>`}

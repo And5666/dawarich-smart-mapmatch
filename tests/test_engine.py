@@ -155,6 +155,20 @@ def test_strict_never_routes_even_with_an_empty_hole(fake_valhalla):
     assert fill(a, [], b, "drive", strength="strict")["kind"] == "straight"
 
 
+def test_route_anyway_waves_a_fast_route_through(fake_valhalla):
+    # 5.5 km in 30 s is 660 km/h: the gate refuses it, and the editor's explicit
+    # "route it anyway" is the only thing that accepts it.
+    a = {"lat": LAT0, "lon": LON0, "timestamp": T0}
+    b = {"lat": LAT0 + 0.05, "lon": LON0, "timestamp": T0 + 30}
+    refused = fill(a, [], b, "drive")
+    assert refused["kind"] == "straight" and "too_fast" in refused["why"]
+    assert fill(a, [], b, "drive", force=True)["kind"] == "filled"
+    # It is an override of the speed judgement, not of a broken route: a hole
+    # with no route at all still falls back to the recorded points.
+    fake_valhalla.fail_route = True
+    assert fill(a, [], b, "drive", force=True)["kind"] == "straight"
+
+
 def test_one_hole_can_be_kept_while_others_route(fake_valhalla):
     from mapmatch.engine.api import match_trip
     fake_valhalla.unmatched = {10, 25}

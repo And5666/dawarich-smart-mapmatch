@@ -285,6 +285,37 @@ def test_each_gap_can_be_chosen_separately(env, fake_valhalla):
     assert d["trip"]["keep_gaps"] == [] and d["trip"]["gap_mode"] == "fill"
 
 
+def test_route_anyway_reaches_the_engine(env, fake_valhalla, monkeypatch):
+    from mapmatch.portal import trips as T
+    seen: dict = {}
+    real = T.match_trip
+    def spy(points, overrides=None, options=None):
+        seen.clear()
+        seen.update(options or {})
+        return real(points, overrides=overrides, options=options)
+    monkeypatch.setattr(T, "match_trip", spy)
+    client, dw, jobs, db = env
+    sync(client, jobs)
+    tid = client.get("/api/trips").json()["trips"][0]["id"]
+    d = client.get(f"/api/trips/{tid}").json()
+    hole = next(p for s in d["segments"] for p in s["pieces"] if p.get("gap"))["gap"]
+    # A gap on its own, past the gate.
+    d = client.post(f"/api/trips/{tid}/gaps", json={"t0": hole[0], "t1": hole[1], "route": True, "force": True},
+                    headers=H).json()
+    assert d["trip"]["force_gaps"] == [hole]
+    assert seen["force_gaps"] == [hole] and seen["force_route"] is False
+    # The whole trip, past the gate.
+    d = client.post(f"/api/trips/{tid}/gaps", json={"route": True, "force": True}, headers=H).json()
+    assert d["trip"]["force_route"] is True
+    assert seen["force_route"] is True and seen["force_gaps"] == []
+    # Keeping them clears both overrides.
+    d = client.post(f"/api/trips/{tid}/gaps", json={"route": False}, headers=H).json()
+    assert d["trip"]["force_route"] is False and seen["force_route"] is False
+    # And an automatic rematch without an override passes nothing on.
+    client.post(f"/api/trips/{tid}/gaps", json={"route": True}, headers=H)
+    assert seen["force_route"] is False
+
+
 def test_accounts_are_made_by_admins(env):
     client, dw, jobs, db = env
     # Sign-up is off, so a stranger cannot register.

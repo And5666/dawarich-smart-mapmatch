@@ -221,8 +221,12 @@ def match(db: Database, uid: int, trip_id: int, reason: str = "auto",
     strength = trip.get("gap_mode") or settings(db, uid).get("strength") or "fill"
     # Holes picked out one by one in the editor stay as recorded whatever the above says.
     keep = json.loads(trip.get("keep_gaps") or "[]")
+    # Holes the user insisted on routing, past the speed and length checks.
+    force_all = bool(trip.get("force_route"))
+    force = json.loads(trip.get("force_gaps") or "[]")
     try:
-        result = match_trip(pts, overrides=ov, options={"strength": strength, "keep_gaps": keep})
+        result = match_trip(pts, overrides=ov, options={"strength": strength, "keep_gaps": keep,
+                                                        "force_route": force_all, "force_gaps": force})
     except Exception as exc:  # noqa: BLE001 - recorded on the trip and shown
         with db.tx() as c:
             c.execute("UPDATE trips SET status='failed', dirty=0, error=?, updated_at=? WHERE id=?",
@@ -263,6 +267,29 @@ def set_keep_gaps(db: Database, uid: int, trip_id: int, spans: list[Any]) -> dic
     with db.tx() as c:
         c.execute("UPDATE trips SET keep_gaps=?, updated_at=? WHERE id=?", (json.dumps(clean), now(), trip_id))
     return get(db, uid, trip_id)
+
+
+def set_force_route(db: Database, uid: int, trip_id: int, on: bool) -> None:
+    """Route every gap on this trip even where the plausibility gate refuses it."""
+    if not get(db, uid, trip_id):
+        raise KeyError(trip_id)
+    with db.tx() as c:
+        c.execute("UPDATE trips SET force_route=?, updated_at=? WHERE id=?", (1 if on else 0, now(), trip_id))
+
+
+def set_force_gaps(db: Database, uid: int, trip_id: int, spans: list[Any]) -> None:
+    """The individual holes to route regardless of the gate: [[t0, t1], ...]."""
+    clean: list[list[int]] = []
+    for span in spans or []:
+        t0, t1 = int(span[0]), int(span[1])
+        lo, hi = (t0, t1) if t0 <= t1 else (t1, t0)
+        if not any(lo <= c[1] and c[0] <= hi for c in clean):
+            clean.append([lo, hi])
+    clean.sort()
+    if not get(db, uid, trip_id):
+        raise KeyError(trip_id)
+    with db.tx() as c:
+        c.execute("UPDATE trips SET force_gaps=?, updated_at=? WHERE id=?", (json.dumps(clean), now(), trip_id))
 
 
 def validate_overrides(ov: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -365,6 +392,8 @@ def public(trip: dict[str, Any]) -> dict[str, Any]:
         "point_edits": len(json.loads(trip.get("point_edits") or "{}")),
         "gap_mode": trip.get("gap_mode") or "",
         "keep_gaps": json.loads(trip.get("keep_gaps") or "[]"),
+        "force_route": bool(trip.get("force_route")),
+        "force_gaps": json.loads(trip.get("force_gaps") or "[]"),
         "pushed_version": pushed, "pushed_at": trip["pushed_at"],
         "engine_version": trip["engine_version"], "outdated_engine": bool(trip["result_version"]) and
         trip["engine_version"] != ENGINE_VERSION,

@@ -58,8 +58,15 @@ def max_deviation(line: list[tuple[float, float]], ref: list[tuple[float, float]
 
 def _plausible(shape: list[tuple[float, float]], a: dict[str, Any], b: dict[str, Any],
                mids: list[dict[str, Any]], vmax: float, typical: float, raw_path: float,
-               chord: float, check_mids: bool, trail: bool = False, mode: str = "walk") -> str:
-    """Empty string when the route is acceptable, else the reason it is not."""
+               chord: float, check_mids: bool, trail: bool = False, mode: str = "walk",
+               force: bool = False) -> str:
+    """Empty string when the route is acceptable, else the reason it is not.
+
+    force=True is an explicit "route it anyway" from the editor: it waves through
+    the two judgements that depend on the timestamps being right (too_long and
+    too_fast) but still refuses a route that does not join the two ends or is
+    shorter than the distance between them — those are broken routes, not fast ones.
+    """
     if len(shape) < 2:
         return "no_shape"
     if haversine(a["lat"], a["lon"], shape[0][0], shape[0][1]) > END_SNAP_M or \
@@ -70,11 +77,11 @@ def _plausible(shape: list[tuple[float, float]], a: dict[str, Any], b: dict[str,
     limit = max(1.3 * raw_path, 1.5 * chord + 150.0)
     if dt > 0 and length / dt * 3.6 <= 1.5 * typical:
         limit = max(limit, 2.5 * chord + 300.0)
-    if length > limit:
+    if not force and length > limit:
         return "too_long"
     if length < 0.6 * chord:
         return "too_short"
-    if dt > 0 and length / dt * 3.6 > vmax * 1.3 + 10.0:
+    if not force and dt > 0 and length / dt * 3.6 > vmax * 1.3 + 10.0:
         return "too_fast"
     if trail:
         ref = [(p["lat"], p["lon"]) for p in (a, *mids, b)]
@@ -103,7 +110,7 @@ SHORT_GAP_M = 1500.0   # below this a footpath route is an acceptable seam for a
 
 
 def fill(a: dict[str, Any], mids: list[dict[str, Any]], b: dict[str, Any], mode: str,
-         strength: str = "fill", vmax: float | None = None) -> dict[str, Any]:
+         strength: str = "fill", vmax: float | None = None, force: bool = False) -> dict[str, Any]:
     """Geometry from a to b. a/b carry lat, lon, timestamp (snapped positions).
 
     Returns {"kind": filled|raw|straight|join, "coords": [(lat, lon), ...]} and,
@@ -141,7 +148,8 @@ def fill(a: dict[str, Any], mids: list[dict[str, Any]], b: dict[str, Any], mode:
             why.append("no_route")
             continue
         shape = r["shape"]
-        bad = _plausible(shape, a, b, mids, vmax, typical, raw_path, chord, check, mode in TRAIL_MODES, mode)
+        bad = _plausible(shape, a, b, mids, vmax, typical, raw_path, chord, check, mode in TRAIL_MODES,
+                         mode, force)
         if not bad:
             coords = [(a["lat"], a["lon"]), *shape, (b["lat"], b["lon"])]
             return {"kind": "filled", "coords": coords}

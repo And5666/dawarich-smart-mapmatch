@@ -69,7 +69,9 @@ Standalone FastAPI app with a no-build Preact + MapLibre front end.
   ignored fixes, a timeline and speed chart linked to the map, and per-segment
   mode, split, recalculate, undo, lock, push, revert and GPX/GeoJSON export,
   plus **Gaps**: route every hole, keep every hole, or click any single gap —
-  in the list or on its line on the map — to decide just that one.
+  in the list or on its line on the map — to decide just that one, and **Route
+  anyway** when the router's answer was refused for being faster or longer than
+  the timestamps allow.
 - **Activity**: background jobs and a log of every change made in Dawarich.
 - **Settings**: Dawarich URL and API key (with a connection test), automatic
   runs and interval, automatic push, a start date, trip gap, gap strategy

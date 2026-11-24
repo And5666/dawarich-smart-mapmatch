@@ -56,16 +56,26 @@ def match_trip(points: list[dict[str, Any]], overrides: list[dict[str, Any]] | N
     """Match one trip.
 
     overrides: [{"t0", "t1", "mode"}] with mode in MODES; fixes in the range
-    are forced to that mode. options: {"strength": "fill" | "strict"} and
-    {"keep_gaps": [[t0, t1], ...]} for holes that must stay as recorded.
+    are forced to that mode. options: {"strength": "fill" | "strict"},
+    {"keep_gaps": [[t0, t1], ...]} for holes that must stay as recorded, and
+    {"force_route": bool, "force_gaps": [...]} for holes the user insists on
+    routing even though the plausibility gate would refuse them.
     """
     opts = {"strength": "fill", **(options or {})}
     strength = opts["strength"]
     keep_ranges = [tuple(sorted((int(a), int(b)))) for a, b in (opts.get("keep_gaps") or [])]
+    force_ranges = [tuple(sorted((int(a), int(b)))) for a, b in (opts.get("force_gaps") or [])]
+    force_all = bool(opts.get("force_route"))
 
     def keep_gap(t0: int, t1: int) -> bool:
         lo, hi = (t0, t1) if t0 <= t1 else (t1, t0)
         return any(lo <= r1 and r0 <= hi for r0, r1 in keep_ranges)
+
+    def force_gap(t0: int, t1: int) -> bool:
+        if force_all:
+            return True
+        lo, hi = (t0, t1) if t0 <= t1 else (t1, t0)
+        return any(lo <= r1 and r0 <= hi for r0, r1 in force_ranges)
     fixes, dropped = clean(points)
     if not fixes:
         return {"segments": [], "stream": [], "dropped": dropped, "quality": {},
@@ -98,11 +108,11 @@ def match_trip(points: list[dict[str, Any]], overrides: list[dict[str, Any]] | N
             else:
                 mode, res = _choose_road(seg_fixes, mode)
             profile = res.get("profile")
-            pieces = assemble.road_pieces(seg_fixes, mode, res, strength, keep_gap)
+            pieces = assemble.road_pieces(seg_fixes, mode, res, strength, keep_gap, force_gap)
         segments.append({"mode": mode, "forced": is_forced, "profile": profile,
                          "n_fixes": j - i, "pieces": pieces, "key": key if is_forced else None})
 
-    segments = assemble.connect(segments, strength, keep_gap)
+    segments = assemble.connect(segments, strength, keep_gap, force_gap)
     segments = assemble.merge_same_mode(segments)
     assemble.finish(segments)
     out = assemble.stream(segments)

@@ -156,6 +156,11 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE trips ADD COLUMN keep_gaps TEXT NOT NULL DEFAULT '[]';
     """,
+    # 6: "route it anyway" — the explicit override of the plausibility gate
+    """
+    ALTER TABLE trips ADD COLUMN force_route INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE trips ADD COLUMN force_gaps TEXT NOT NULL DEFAULT '[]';
+    """,
 ]
 
 
