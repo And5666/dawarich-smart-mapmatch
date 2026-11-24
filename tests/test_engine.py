@@ -322,3 +322,14 @@ def test_stop_to_trip_link_follows_the_road_between_their_times(fake_valhalla):
     assert [p["timestamp"] for p in pts] == sorted({p["timestamp"] for p in pts})
     assert all(p["ours"] and p["tracker"] == "phone" for p in pts)
     assert link(a, {**a, "timestamp": T0 + 60}) == [], "nothing to draw for a few metres"
+
+
+def test_pushed_lines_have_no_long_straight_steps_but_jumps_stay_jumps():
+    from mapmatch.engine.geo import haversine
+    from mapmatch.portal.push import densify
+    a = {"lat": LAT0, "lon": LON0, "timestamp": T0, "kind": "matched"}
+    b = {"lat": LAT0, "lon": LON0 + 0.02, "timestamp": T0 + 60, "kind": "matched"}   # ~1.3 km
+    pts = densify([a, b])
+    assert all(haversine(p["lat"], p["lon"], q["lat"], q["lon"]) <= 150 for p, q in zip(pts, pts[1:]))
+    assert [p["timestamp"] for p in pts] == sorted({p["timestamp"] for p in pts})
+    assert len(densify([a, {**b, "kind": "straight"}])) == 2, "an unrouted jump is not drawn in"

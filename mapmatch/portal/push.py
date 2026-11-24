@@ -139,6 +139,36 @@ def tidy_stops(run: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
 
 
 LINK_MIN_M = 25.0
+DENSE_M = 150.0   # longest step between pushed points along a matched line
+
+
+def densify(pts: list[dict[str, Any]], max_m: float = DENSE_M) -> list[dict[str, Any]]:
+    """Extra points on the long straight stretches of a matched line, so no
+    two consecutive points are more than max_m apart. Dawarich can then be
+    told to break its lines at gaps longer than a few hundred metres without
+    breaking a matched road. Straight jumps the matcher couldn't route, and
+    recorded GPS kept as is, are left alone."""
+    from ..engine.geo import haversine
+    out: list[dict[str, Any]] = []
+    for a, b in zip(pts, pts[1:]):
+        out.append(a)
+        if a.get("kind") in ("straight", "raw") or b.get("kind") in ("straight", "raw"):
+            continue
+        d = haversine(a["lat"], a["lon"], b["lat"], b["lon"])
+        dt = int(b["timestamp"]) - int(a["timestamp"])
+        n = min(int(d // max_m), dt - 1)
+        for k in range(1, n + 1):
+            f = k / (n + 1)
+            out.append({**a, "lat": a["lat"] + (b["lat"] - a["lat"]) * f, "lon": a["lon"] + (b["lon"] - a["lon"]) * f,
+                        "timestamp": int(a["timestamp"]) + int(round(dt * f))})
+    if pts:
+        out.append(pts[-1])
+    # whole seconds, strictly increasing
+    clean: list[dict[str, Any]] = []
+    for p in out:
+        if not clean or int(p["timestamp"]) > int(clean[-1]["timestamp"]):
+            clean.append(p)
+    return clean
 
 
 def link(a: dict[str, Any], b: dict[str, Any], mode: str | None = None) -> list[dict[str, Any]]:
@@ -169,7 +199,9 @@ def link(a: dict[str, Any], b: dict[str, Any], mode: str | None = None) -> list[
             out.append({"lat": lat, "lon": lon, "timestamp": t, "accuracy": 10.0, "tracker": a.get("tracker"),
                         "ours": True, "mode": mode})
             last = t
-    return out
+    ends = [{"lat": x["lat"], "lon": x["lon"], "timestamp": int(x["timestamp"]), "kind": "filled", "accuracy": 10.0,
+             "tracker": a.get("tracker"), "ours": True, "mode": mode} for x in (a, b)]
+    return [p for p in densify([ends[0], *out, ends[1]]) if p is not ends[0] and p is not ends[1]]
 
 
 def _first_mode(res: dict[str, Any], last: bool = False) -> str:
@@ -256,8 +288,8 @@ def apply(db: Database, cfg: Any, uid: int, changes: dict[int, bool], transport:
                     raise RuntimeError(f"the pushed match of trip {t['id']} is gone; push it again")
                 own = [p for p in fixes if t["start_ts"] <= p["timestamp"] <= t["end_ts"]]
                 dev = _tracker(own)
-                stream = [{**p, "tracker": dev, "ours": True} for p in res["stream"]
-                          if t["start_ts"] <= p["timestamp"] <= t["end_ts"]]
+                stream = densify([{**p, "tracker": dev, "ours": True} for p in res["stream"]
+                                  if t["start_ts"] <= p["timestamp"] <= t["end_ts"]])
                 if len(stream) < 2:
                     raise ValueError(f"the match of trip {t['id']} is empty")
                 posts += stream
