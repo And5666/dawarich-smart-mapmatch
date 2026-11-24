@@ -118,7 +118,7 @@ uv venv .venv && uv pip install -e '.[dev]'
 .venv/bin/pytest                      # engine + portal tests, no network
 VALHALLA_URL=http://host:8002 .venv/bin/python -m mapmatch.tools.bench \
     --csv data/test-account-points.csv --trips tracker --compare bench/old-tracker.json
-VALHALLA_URL=http://host:8002 PORTAL_DATA=./portal-data PORTAL_ADMIN_PASSWORD=... \
+DAWARICH_URL=https://your-dawarich VALHALLA_URL=http://host:8002 PORTAL_DATA=./portal-data \
     .venv/bin/uvicorn mapmatch.portal.app:app --reload --port 8080
 ```
 
