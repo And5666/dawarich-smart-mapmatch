@@ -10,7 +10,10 @@ from .stays import centroid
 
 SIMPLIFY_M = 2.0
 TRAIL_ANCHOR_M = 15.0
-SYNTH_MAX_KMH = 260.0
+# Only absurd steps are dropped: dropping vertices draws a straight line in
+# Dawarich, whose own speed filter starts at 1000 km/h. A train or a gap the
+# user routed anyway can run at 250+ km/h between real fixes.
+SYNTH_MAX_KMH = 900.0
 
 
 # ---------------------------------------------------------------- helpers

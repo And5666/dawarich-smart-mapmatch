@@ -176,7 +176,6 @@ def link(a: dict[str, Any], b: dict[str, Any], mode: str | None = None) -> list[
     Dawarich doesn't draw a straight line from a stop to where a trip begins.
     Empty when no believable route exists (the straight line then stays)."""
     from ..engine.assemble import timed
-    from ..engine.fill import fill
     from ..engine.geo import haversine
     dt = int(b["timestamp"]) - int(a["timestamp"])
     d = haversine(a["lat"], a["lon"], b["lat"], b["lon"])
@@ -185,15 +184,24 @@ def link(a: dict[str, Any], b: dict[str, Any], mode: str | None = None) -> list[
     if mode not in ("walk", "cycle", "drive"):
         v = d / dt * 3.6
         mode = "drive" if v > 25 else "cycle" if v > 9 else "walk"
-    ends = [{"lat": x["lat"], "lon": x["lon"], "timestamp": int(x["timestamp"])} for x in (a, b)]
+    from ..engine import valhalla
+    from ..engine.fill import PROFILE, VMAX_KMH
     try:
-        f = fill(ends[0], [], ends[1], mode, "fill")
+        r = valhalla.route([a, b], PROFILE[mode])
     except Exception:  # noqa: BLE001 - a missing link is only cosmetic
         return []
-    if f.get("kind") != "filled":
+    shape = (r or {}).get("shape") or []
+    if len(shape) < 2:
         return []
+    length = sum(haversine(*p, *q) for p, q in zip(shape, shape[1:]))
+    # The ends are a stop and a trip, not GPS to follow, so the only checks
+    # are that the route reaches them, isn't a long detour, and fits the time.
+    if haversine(a["lat"], a["lon"], *shape[0]) > 150 or haversine(b["lat"], b["lon"], *shape[-1]) > 150 \
+            or length > 2.5 * d + 300 or length / dt * 3.6 > VMAX_KMH[mode] * 1.3 + 10:
+        return []
+    coords = [(a["lat"], a["lon"]), *shape, (b["lat"], b["lon"])]
     out, last = [], int(a["timestamp"])
-    for lat, lon, ts, _ in timed(f["coords"], a["timestamp"], b["timestamp"])[1:-1]:
+    for lat, lon, ts, _ in timed(coords, a["timestamp"], b["timestamp"])[1:-1]:
         t = int(round(ts))
         if last < t < int(b["timestamp"]):
             out.append({"lat": lat, "lon": lon, "timestamp": t, "accuracy": 10.0, "tracker": a.get("tracker"),
@@ -202,6 +210,24 @@ def link(a: dict[str, Any], b: dict[str, Any], mode: str | None = None) -> list[
     ends = [{"lat": x["lat"], "lon": x["lon"], "timestamp": int(x["timestamp"]), "kind": "filled", "accuracy": 10.0,
              "tracker": a.get("tracker"), "ours": True, "mode": mode} for x in (a, b)]
     return [p for p in densify([ends[0], *out, ends[1]]) if p is not ends[0] and p is not ends[1]]
+
+
+def _bridge_stops(pts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Route the step into and out of each stop inside a trip. A stop is one
+    point at its centre; the portal draws it as a dot, but Dawarich would join
+    it to the next part of the trip with a straight line."""
+    from ..engine.geo import haversine
+    out: list[dict[str, Any]] = []
+    for a, b in zip(pts, pts[1:]):
+        out.append(a)
+        if "stay" in (a.get("mode"), b.get("mode")) and a.get("mode") != b.get("mode") \
+                and haversine(a["lat"], a["lon"], b["lat"], b["lon"]) > 4 * LINK_MIN_M:
+            moving = b if a.get("mode") == "stay" else a
+            m = moving.get("mode")
+            out += link(a, b, "walk" if m == "train" else m)
+    if pts:
+        out.append(pts[-1])
+    return out
 
 
 def _first_mode(res: dict[str, Any], last: bool = False) -> str:
@@ -288,8 +314,15 @@ def apply(db: Database, cfg: Any, uid: int, changes: dict[int, bool], transport:
                     raise RuntimeError(f"the pushed match of trip {t['id']} is gone; push it again")
                 own = [p for p in fixes if t["start_ts"] <= p["timestamp"] <= t["end_ts"]]
                 dev = _tracker(own)
-                stream = densify([{**p, "tracker": dev, "ours": True} for p in res["stream"]
-                                  if t["start_ts"] <= p["timestamp"] <= t["end_ts"]])
+                # Built afresh from the matched shapes, so a fix to how shapes
+                # become points reaches Dawarich without matching again.
+                from ..engine.assemble import stream as to_stream
+                try:
+                    pts = to_stream(res["segments"])
+                except (KeyError, TypeError, ValueError):
+                    pts = res["stream"]
+                pts = [{**p, "tracker": dev, "ours": True} for p in pts if t["start_ts"] <= p["timestamp"] <= t["end_ts"]]
+                stream = densify(_bridge_stops(pts))
                 if len(stream) < 2:
                     raise ValueError(f"the match of trip {t['id']} is empty")
                 posts += stream
