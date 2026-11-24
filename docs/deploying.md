@@ -161,8 +161,8 @@ between two trips that both show their original GPS is left exactly as it was.
 Every point in the window is in the archive before anything is deleted. If
 Dawarich stops answering between the delete and the write, the portal says so
 on every page and **Put them back** writes the missing points again from the
-archive. **Settings → Repair tracks** rewrites every trip mapmatch has touched;
-use it once after upgrading from a version before 2.4, whose pushes left
+archive. **Settings → Troubleshooting → Repair tracks** rewrites every trip mapmatch has touched;
+you should never need it, except once after upgrading from a version before 2.4, whose pushes left
 straight lines between the points either side of a trip.
 
 ## What is deliberately not in the image

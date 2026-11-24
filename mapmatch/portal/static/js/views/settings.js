@@ -105,20 +105,24 @@ export function Settings() {
     </section>
 
     <section class="danger-zone">
-      <header><h2>Put Dawarich right</h2><p>Both rewrite points in your Dawarich account from the copy kept here.</p></header>
+      <header><h2>Undo in Dawarich</h2><p>Rewrites points in your Dawarich account from the copy kept here.</p></header>
       <div class="body">
         <div class="stack">
-          <b>Repair tracks</b>
-          <p class="help">Rewrites every trip mapmatch has changed so Dawarich draws it cleanly: matched points on the same device as your GPS, the stops beside pushed trips tidied, and no straight lines left from old tracks. Pushed trips stay pushed.</p>
-          <div class="actions"><${Confirm} disabled=${running || !me.dawarich_linked} armedLabel="Rewrite those trips in Dawarich?" onConfirm=${() => startJob("repair")}>Repair tracks<//></div>
-        </div>
-        <div class="stack" style="border-top:1px solid var(--line);padding-top:14px">
           <b>Revert everything</b>
           <p class="help">Puts the original GPS back in Dawarich for every trip you pushed. Matches stay here, so you can push again later.</p>
           <label class="field"><span>Type <b>REVERT</b> to enable</span><input value=${typed} onInput=${(e) => setTyped(e.target.value)} style="max-width:160px" /></label>
           <div class="actions"><${Confirm} cls="danger" disabled=${typed !== "REVERT" || running} armedLabel="This changes Dawarich. Sure?"
             onConfirm=${() => { setTyped(""); startJob("revert_all"); }}>Revert all pushed trips<//></div>
         </div>
+        <details class="stack" style="border-top:1px solid var(--line);padding-top:14px">
+          <summary class="small dim" style="cursor:pointer">Troubleshooting</summary>
+          <p class="help" style="margin:8px 0">You shouldn't need this: every push already keeps Dawarich's tracks clean. Use it if Dawarich still draws straight lines or spikes around trips, for example after pushes made with a version of mapmatch before 2.4.</p>
+          <div class="stack">
+          <b>Repair tracks</b>
+          <p class="help">Rewrites every trip mapmatch has changed so Dawarich draws it cleanly: matched points on the same device as your GPS, the stops beside pushed trips tidied, and no straight lines left from old tracks. Pushed trips stay pushed.</p>
+          <div class="actions"><${Confirm} disabled=${running || !me.dawarich_linked} armedLabel="Rewrite those trips in Dawarich?" onConfirm=${() => startJob("repair")}>Repair tracks<//></div>
+        </div>
+        </details>
       </div>
     </section>
 
