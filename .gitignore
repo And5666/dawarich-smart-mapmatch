@@ -6,3 +6,8 @@ data/raw_v5.json
 data/v29_meta.json
 data/*.local.json
 .env
+data/*.csv
+bench/cache/
+.venv/
+.pytest_cache/
+bench/report/
