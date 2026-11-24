@@ -100,6 +100,9 @@ login:
   password, optional name, optional admin flag. Reset a password, promote or
   demote, or disable an account from the same row. Disabling ends the account's
   sessions on the next request.
+- **Lost passwords.** No web path back in: `PORTAL_DATA=/data python -m
+  mapmatch.portal.admin reset <username>` sets one, and `... list` shows the
+  accounts, their role, trip count and whether they have linked a Dawarich key.
 - **Sign-up.** Off by default. The checkbox at the top of the admin page opens
   it; when it is off, registration is refused and people are told to ask an
   admin.
@@ -115,6 +118,15 @@ login:
 What is not built yet: per-account switches for whether matching or pushing may
 run (today every account can match and push its own trips), and roles beyond
 admin/member. Both are natural next steps, not hidden limitations.
+
+## Gaps: routed or kept, per trip
+
+Each account sets a default under Settings (route across a gap, or keep what was
+recorded). A trip can override that in its editor, under **Gaps**: *Route
+across* fills missing stretches from the routing server when the timing and the
+points either side agree, *Keep GPS* draws the recorded points as they are.
+Picking one recalculates that trip only and leaves every other trip alone; the
+trip remembers the choice, and *Use my setting instead* hands it back.
 
 ## What is deliberately not in the image
 

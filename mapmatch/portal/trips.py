@@ -217,7 +217,8 @@ def match(db: Database, uid: int, trip_id: int, reason: str = "auto",
     ov = json.loads(trip["overrides"]) if overrides is None else overrides
     ov = validate_overrides(ov)
     pts = points(db, uid, trip)
-    strength = settings(db, uid).get("strength") or "fill"
+    # The trip can choose for itself; otherwise the account's setting applies.
+    strength = trip.get("gap_mode") or settings(db, uid).get("strength") or "fill"
     try:
         result = match_trip(pts, overrides=ov, options={"strength": strength})
     except Exception as exc:  # noqa: BLE001 - recorded on the trip and shown
@@ -227,6 +228,22 @@ def match(db: Database, uid: int, trip_id: int, reason: str = "auto",
         raise
     store(db, trip, result, ov, reason)
     return result
+
+
+GAP_MODES = ("", "fill", "strict")
+
+
+def set_gap_mode(db: Database, uid: int, trip_id: int, mode: str) -> dict[str, Any]:
+    """Choose per trip what happens in the gaps: "fill", "strict", or "" to
+    fall back to the account's setting."""
+    if mode not in GAP_MODES:
+        raise ValueError("gap mode must be fill, strict or empty")
+    trip = get(db, uid, trip_id)
+    if not trip:
+        raise KeyError(trip_id)
+    with db.tx() as c:
+        c.execute("UPDATE trips SET gap_mode=?, updated_at=? WHERE id=?", (mode, now(), trip_id))
+    return get(db, uid, trip_id)
 
 
 def validate_overrides(ov: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -327,6 +344,7 @@ def public(trip: dict[str, Any]) -> dict[str, Any]:
         "modes": json.loads(trip["modes"] or "[]"), "quality": q,
         "overrides": json.loads(trip["overrides"] or "[]"), "version": trip["result_version"],
         "point_edits": len(json.loads(trip.get("point_edits") or "{}")),
+        "gap_mode": trip.get("gap_mode") or "",
         "pushed_version": pushed, "pushed_at": trip["pushed_at"],
         "engine_version": trip["engine_version"], "outdated_engine": bool(trip["result_version"]) and
         trip["engine_version"] != ENGINE_VERSION,

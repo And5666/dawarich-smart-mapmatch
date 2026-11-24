@@ -224,6 +224,41 @@ def test_auth_rules(env):
     assert again.get(f"/api/trips/{tid}").status_code == 200   # the same account, same trips
 
 
+def test_gap_choice_is_per_trip(env, fake_valhalla):
+    client, dw, jobs, db = env
+    sync(client, jobs)
+    trips = client.get("/api/trips").json()["trips"]
+    a, b = trips[0], trips[1]
+    assert a["gap_mode"] == "" and b["gap_mode"] == ""
+    assert client.post(f"/api/trips/{a['id']}/push", headers=H).status_code == 200
+    a = next(x for x in client.get("/api/trips").json()["trips"] if x["id"] == a["id"])
+    assert a["push"] == "pushed"
+    r = client.post(f"/api/trips/{a['id']}/gaps", json={"route": False}, headers=H)
+    assert r.status_code == 200, r.text
+    t = r.json()["trip"]
+    assert t["gap_mode"] == "strict" and t["version"] == a["version"] + 1
+    assert t["push"] == "outdated", "the route changed, so Dawarich is behind"
+    other = next(x for x in client.get("/api/trips").json()["trips"] if x["id"] == b["id"])
+    assert other["gap_mode"] == "" and other["version"] == b["version"], "only this trip changed"
+    # Choosing again is one more change; null hands it back to the account setting.
+    t = client.post(f"/api/trips/{a['id']}/gaps", json={"route": None}, headers=H).json()["trip"]
+    assert t["gap_mode"] == "" and t["version"] == a["version"] + 2
+    assert client.post(f"/api/trips/{a['id']}/gaps", json={"route": "yes"}, headers=H).status_code == 422
+
+
+def test_keeping_gaps_changes_the_route(env, fake_valhalla):
+    client, dw, jobs, db = env
+    sync(client, jobs)
+    tid = client.get("/api/trips").json()["trips"][0]["id"]
+    # A fix in the middle of the trace that Valhalla cannot match breaks the
+    # match into two pieces with recorded fixes between them: a real gap.
+    fake_valhalla.unmatched = {5}
+    filled = client.post(f"/api/trips/{tid}/gaps", json={"route": True}, headers=H).json()["trip"]["quality"]
+    kept = client.post(f"/api/trips/{tid}/gaps", json={"route": False}, headers=H).json()["trip"]["quality"]
+    assert kept["raw_frac"] > filled["raw_frac"], (filled, kept)
+    assert filled["filled_frac"] > kept["filled_frac"], (filled, kept)
+
+
 def test_accounts_are_made_by_admins(env):
     client, dw, jobs, db = env
     # Sign-up is off, so a stranger cannot register.
@@ -279,6 +314,31 @@ def test_signup_opens_with_admin_permission(env):
     r = fresh.post("/api/register", json={"username": "newbie", "password": "newbie password"})
     assert r.status_code == 200 and r.json()["is_admin"] is False
     assert fresh.get("/api/me").json()["username"] == "newbie"
+
+
+def test_admin_cli_resets_a_password(tmp_path):
+    from mapmatch.portal import admin as cli
+    from mapmatch.portal.db import Database
+
+    db = Database(tmp_path / "portal.db")
+    uid = __import__("mapmatch.portal.auth", fromlist=["x"]).create_user(db, "someone", "old password")
+    monkeypatch_env = {"PORTAL_DATA": str(tmp_path)}
+    import os
+    old = {k: os.environ.get(k) for k in monkeypatch_env}
+    os.environ.update(monkeypatch_env)
+    try:
+        assert cli.main(["reset", "someone", "--password", "new password"]) == 0
+        assert cli.main(["reset", "nobody", "--password", "new password"]) == 1
+        assert cli.main(["list"]) == 0
+        from mapmatch.portal import auth
+        assert auth.authenticate(db, "someone", "new password") is not None
+        assert uid == 1
+    finally:
+        for k, v in old.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
 
 
 def test_upgrade_rescues_the_old_key_only_admin(tmp_path, fake_valhalla):

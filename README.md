@@ -67,7 +67,9 @@ Standalone FastAPI app with a no-build Preact + MapLibre front end.
 - **Trip editor**: the route drawn by how it was made (solid = on the map,
   dashed = routed across a gap, dotted = original GPS kept), the original and
   ignored fixes, a timeline and speed chart linked to the map, and per-segment
-  mode, split, recalculate, undo, lock, push, revert and GPX/GeoJSON export.
+  mode, split, recalculate, undo, lock, push, revert and GPX/GeoJSON export,
+  plus a **Gaps** choice for that trip: route across the gaps, or keep the
+  recorded GPS across them.
 - **Activity**: background jobs and a log of every change made in Dawarich.
 - **Settings**: Dawarich URL and API key (with a connection test), automatic
   runs and interval, automatic push, a start date, trip gap, gap strategy
@@ -141,7 +143,8 @@ DAWARICH_URL=https://your-dawarich VALHALLA_URL=http://host:8002 PORTAL_DATA=./p
     .venv/bin/uvicorn mapmatch.portal.app:app --reload --port 8080
 ```
 
-The bench caches Valhalla answers in `bench/cache/` (git-ignored: they contain
+Lost the admin password? `PORTAL_DATA=/data python -m mapmatch.portal.admin reset <username>`
+sets a new one, and `... list` shows the accounts. The bench caches Valhalla answers in `bench/cache/` (git-ignored: they contain
 coordinates). Private GPS exports (`data/*.csv`) are git-ignored.
 
 Layout:

@@ -284,6 +284,11 @@ export function TripView({ id }) {
   };
   const scrub = useScrub(T0, T1, pick, setCursor);
   const choose = (a, b, mode) => act("Rematching", "/range", { t0: a, t1: b, mode });
+  // null = follow the account's setting again
+  const gaps = async (route) => {
+    const x = await act(route === null ? "Rematching" : route ? "Routing gaps" : "Keeping GPS", "/gaps", { route });
+    if (x) toast(route === null ? "This trip follows your setting again" : route ? "Gaps are routed" : "Gaps keep the recorded GPS");
+  };
 
   if (err) return html`<div class="doc"><div class="note bad">${err}</div><p><a href="#/">Back to trips</a></p></div>`;
   if (!d) return html`<div class="doc faint">Loading…</div>`;
@@ -297,6 +302,8 @@ export function TripView({ id }) {
   const state = t.state === "new" ? ["", "Not matched yet"] : t.state === "failed" ? ["bad", "Couldn't be matched"]
     : t.state === "review" ? ["warn", "Needs a look"] : t.state === "locked" ? ["", "Locked"] : ["good", "Matched"];
   const pushState = t.push === "pushed" ? "in Dawarich" : t.push === "outdated" ? "changed since pushed" : "not in Dawarich yet";
+  // This trip's own choice, or the account's when it has not made one.
+  const gapMode = t.gap_mode || me?.settings?.strength || "fill";
 
   return html`<div class="tripv">
     <header class="tv-head">
@@ -381,6 +388,22 @@ export function TripView({ id }) {
             <select aria-label="Mode" value=${s.mode} onClick=${(e) => e.stopPropagation()} onChange=${(e) => choose(s.t0, s.t1, e.target.value)}>
               ${PICKABLE.map((m) => html`<option value=${m}>${MODES[m].label}</option>`)}</select>
           </div>`)}</div>
+        </section>
+        <section>
+          <h2>Gaps</h2>
+          <div class="seg" role="radiogroup" aria-label="What to do where the GPS drops out">
+            <button class=${gapMode === "fill" ? "on" : ""} role="radio" aria-checked=${gapMode === "fill"}
+              disabled=${!!busy || !t.closed} onClick=${() => gaps(true)}>Route across</button>
+            <button class=${gapMode === "strict" ? "on" : ""} role="radio" aria-checked=${gapMode === "strict"}
+              disabled=${!!busy || !t.closed} onClick=${() => gaps(false)}>Keep GPS</button>
+          </div>
+          <p class="small dim" style="margin:0">${gapMode === "strict"
+            ? "A break in the signal keeps your recorded GPS as dotted lines, even when a road could join the two ends."
+            : "Missing stretches follow the road or path when the timing and the points either side agree; where they don't, your GPS is kept."}</p>
+          ${t.version > 0 && q.filled_frac > 0 && html`<p class="small faint" style="margin:0">${pct(q.filled_frac)} of this trip is routed across a gap.</p>`}
+          ${t.gap_mode ? html`<button class="sm bare" onClick=${() => gaps(null)}>Use my setting instead
+            (${me?.settings?.strength === "strict" ? "keep GPS" : "route across"})</button>`
+            : html`<p class="small faint" style="margin:0">This is your account's setting; picking one here only changes this trip.</p>`}
         </section>
         ${t.version > 0 && html`<section>
           <h2>How well it fits</h2>

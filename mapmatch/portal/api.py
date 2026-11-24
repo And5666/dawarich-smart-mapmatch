@@ -10,7 +10,7 @@ from xml.sax.saxutils import escape
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 
 from ..engine import valhalla
 from ..engine.api import ENGINE_VERSION, MODES
@@ -42,6 +42,12 @@ class ModeIn(BaseModel):
 
 class SplitIn(BaseModel):
     ts: int
+
+
+class GapsIn(BaseModel):
+    # True: route across the gaps. False: keep the recorded GPS. None: follow
+    # the account's own setting again.
+    route: StrictBool | None = None
 
 
 class LockIn(BaseModel):
@@ -440,6 +446,18 @@ def build(app_state: Any) -> APIRouter:
         with db.tx() as c:
             c.execute("UPDATE trips SET locked=? WHERE id=?", (1 if body.locked else 0, tid))
         return _detail(u["id"], tid)
+
+    @r.post("/trips/{tid}/gaps")
+    def put_gaps(tid: int, body: GapsIn, u: dict[str, Any] = Depends(user)) -> dict[str, Any]:
+        """Route this trip's gaps, or keep the recorded GPS across them."""
+        trip_or_404(u["id"], tid)
+        mode = "" if body.route is None else ("fill" if body.route else "strict")
+        try:
+            trips.set_gap_mode(db, u["id"], tid, mode)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        reason = {"fill": "gaps routed", "strict": "gaps kept as recorded", "": "gaps follow settings"}[mode]
+        return _rematch(u["id"], tid, reason, None)
 
     @r.post("/trips/{tid}/push")
     def push_one(tid: int, u: dict[str, Any] = Depends(user)) -> dict[str, Any]:

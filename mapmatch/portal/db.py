@@ -148,6 +148,10 @@ MIGRATIONS: list[str] = [
     );
     INSERT INTO site(key, value) VALUES ('valhalla_url', '');
     """,
+    # 4: per-trip choice of what happens where the GPS drops out
+    """
+    ALTER TABLE trips ADD COLUMN gap_mode TEXT NOT NULL DEFAULT '';
+    """,
 ]
 
 
