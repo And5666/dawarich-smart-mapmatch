@@ -189,7 +189,7 @@ def label(fixes: list[dict[str, Any]], overrides: list[dict[str, Any]] | None = 
     labels = ["walk"] * n
     forced = [False] * n
     stay_id = [-1] * n
-    for sid, (a, b) in enumerate(find_stays(fixes)):
+    for sid, (a, b) in enumerate(find_stays(fixes, trim=True)):
         for k in range(a, b):
             labels[k] = "stay"
             stay_id[k] = sid

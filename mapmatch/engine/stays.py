@@ -32,7 +32,7 @@ def drifts(run: list[dict[str, Any]]) -> bool:
 
 
 def find_stays(fixes: list[dict[str, Any]], radius: float = STAY_RADIUS_M,
-               min_s: int = STAY_MIN_S) -> list[tuple[int, int]]:
+               min_s: int = STAY_MIN_S, trim: bool = False) -> list[tuple[int, int]]:
     """Return [start, end) index runs that are stays.
 
     A run grows while each fix stays within `radius` of the run's running
@@ -57,11 +57,30 @@ def find_stays(fixes: list[dict[str, Any]], radius: float = STAY_RADIUS_M,
             j += 1
         if j - i >= 2 and fixes[j - 1]["timestamp"] - fixes[i]["timestamp"] >= min_s \
                 and not drifts(fixes[i:j]):
-            runs.append((i, j))
-            i = j
-        else:
-            i += 1
+            # Trimmed for labelling a trip's modes; trip splitting keeps the
+            # whole dwell, arrival included.
+            a, b = _trim(fixes, i, j) if trim else (i, j)
+            if fixes[b - 1]["timestamp"] - fixes[a]["timestamp"] >= min_s:
+                runs.append((a, b))
+                i = b
+                continue
+        i += 1
     return runs
+
+
+def _trim(fixes: list[dict[str, Any]], i: int, j: int) -> tuple[int, int]:
+    """Drop the arriving and leaving fixes the running centroid swallowed: the
+    stop is where the fixes cluster, not the slow approach to it."""
+    c = _mean(fixes[i:j])
+
+    def far(p: dict[str, Any]) -> bool:
+        return haversine(c[0], c[1], p["lat"], p["lon"]) > max(20.0, 1.5 * (p.get("accuracy") or 10.0))
+
+    while j - i > 2 and far(fixes[i]):
+        i += 1
+    while j - i > 2 and far(fixes[j - 1]):
+        j -= 1
+    return i, j
 
 
 def centroid(fixes: list[dict[str, Any]]) -> tuple[float, float]:
