@@ -32,10 +32,12 @@ def day(t0: int) -> list[dict]:
 def env(tmp_path, fake_valhalla):
     dw = FakeDawarich()
     dw.seed(day(1_780_000_000))
-    cfg = Config(data_dir=tmp_path, base_path="/", dawarich_url="http://dawarich.test", scheduler=False)
+    cfg = Config(data_dir=tmp_path, base_path="/", dawarich_url="http://dawarich.test", scheduler=False,
+                 admin_user="admin", admin_password="adminpass")
     app = create_app(cfg, transport=dw.transport, start_workers=False)
     client = TestClient(app)
-    assert client.post("/api/connect", json={"api_key": "secret"}).status_code == 200
+    assert client.post("/api/login", json={"username": "admin", "password": "adminpass"}).status_code == 200
+    assert client.post("/api/connect", json={"api_key": "secret"}, headers=H).status_code == 200
     jobs = app.state.portal.jobs
     return client, dw, jobs, app.state.portal.db
 
@@ -190,10 +192,12 @@ def test_late_point_marks_trip_dirty_and_rematches(env):
 
 def test_csv_import(tmp_path, fake_valhalla):
     dw = FakeDawarich()
-    cfg = Config(data_dir=tmp_path, base_path="/mm", dawarich_url="http://x", scheduler=False)
+    cfg = Config(data_dir=tmp_path, base_path="/mm", dawarich_url="http://x", scheduler=False,
+                 admin_user="admin", admin_password="adminpass")
     app = create_app(cfg, transport=dw.transport, start_workers=False)
     c = TestClient(app)
-    assert c.post("/mm/api/connect", json={"api_key": "secret"}).status_code == 200
+    assert c.post("/mm/api/login", json={"username": "admin", "password": "adminpass"}).status_code == 200
+    assert c.post("/mm/api/connect", json={"api_key": "secret"}, headers=H).status_code == 200
     rows = ["tracker_id,timestamp,lat,lon,accuracy,velocity,altitude"]
     rows += [f"phone,{p['timestamp']},{p['lat']},{p['lon']},8,," for p in day(1_780_000_000)]
     r = c.post("/mm/api/import/csv", files={"file": ("pts.csv", "\n".join(rows), "text/csv")}, headers=H)
@@ -207,16 +211,103 @@ def test_csv_import(tmp_path, fake_valhalla):
 def test_auth_rules(env):
     client, dw, jobs, db = env
     assert client.put("/api/settings", json={"auto_push": True}).status_code == 403   # no X-Portal header
-    assert client.get("/api/me").json()["name"] == "rider@example.com"
+    assert client.get("/api/me").json()["name"] == "rider@example.com"   # named after the Dawarich user
     stranger = TestClient(client.app)
     assert stranger.get("/api/me").status_code == 401
-    assert stranger.post("/api/connect", json={"api_key": "wrong"}).status_code == 401
-    # The same key signs back into the same account.
+    # A key alone is not a login any more.
+    assert stranger.post("/api/connect", json={"api_key": "secret"}, headers=H).status_code == 401
+    assert stranger.post("/api/login", json={"username": "admin", "password": "wrong"}).status_code == 401
     sync(client, jobs)
     tid = client.get("/api/trips").json()["trips"][0]["id"]
     again = TestClient(client.app)
-    assert again.post("/api/connect", json={"api_key": "secret"}).status_code == 200
-    assert again.get(f"/api/trips/{tid}").status_code == 200
+    assert again.post("/api/login", json={"username": "admin", "password": "adminpass"}).status_code == 200
+    assert again.get(f"/api/trips/{tid}").status_code == 200   # the same account, same trips
+
+
+def test_accounts_are_made_by_admins(env):
+    client, dw, jobs, db = env
+    # Sign-up is off, so a stranger cannot register.
+    assert client.get("/api/public").json()["signup"] is False
+    stranger = TestClient(client.app)
+    r = stranger.post("/api/register", json={"username": "someone", "password": "longenough"})
+    assert r.status_code == 403
+    # An admin makes the account, then it signs in and links its own key.
+    r = client.post("/api/admin/users", json={"username": "sam", "password": "sams long password"}, headers=H)
+    assert r.status_code == 200, r.text
+    sam = TestClient(client.app)
+    assert sam.post("/api/login", json={"username": "sam", "password": "sams long password"}).status_code == 200
+    me = sam.get("/api/me").json()
+    assert me["is_admin"] is False and me["dawarich_linked"] is False
+    assert len(sam.get("/api/trips").json()["trips"]) == 0
+    assert sam.post("/api/connect", json={"api_key": "secret"}, headers=H).status_code == 200
+    assert sam.get("/api/me").json()["dawarich_linked"] is True
+    # Admin keeps control: disable stops the sign-in dead.
+    uid = next(u["id"] for u in client.get("/api/admin/site").json()["users"] if u["username"] == "sam")
+    assert client.patch(f"/api/admin/users/{uid}", json={"disabled": True}, headers=H).status_code == 200
+    assert TestClient(client.app).post("/api/login", json={"username": "sam", "password": "sams long password"}).status_code == 401
+
+
+def test_admin_sets_one_valhalla_and_region_catalogue(env, fake_valhalla):
+    client, dw, jobs, db = env
+    assert client.get("/api/system").json()["valhalla_url"] == ""
+    # Saved by an admin; applies to the whole instance, so a member sees it too.
+    r = client.put("/api/admin/site", json={"valhalla_url": "http://valhalla.test:8002"}, headers=H)
+    assert r.status_code == 200, r.text
+    assert client.get("/api/system").json()["valhalla_url"] == "http://valhalla.test:8002"
+    assert client.put("/api/admin/site", json={"valhalla_url": "ftp://nope"}, headers=H).status_code == 400
+    # Region catalogue.
+    r = client.post("/api/admin/regions", json={"name": "England and Wales", "bounds": "50,-5.8,55.8,1.8"}, headers=H)
+    assert r.status_code == 200 and r.json()["regions"][0]["name"] == "England and Wales"
+    rid = r.json()["id"]
+    r = client.patch(f"/api/admin/regions/{rid}", json={"built_at": "2026-11-01"}, headers=H)
+    assert r.json()["regions"][0]["built_at"] == "2026-11-01"
+    assert [x["name"] for x in client.get("/api/system").json()["regions"]] == ["England and Wales"]
+    assert client.delete(f"/api/admin/regions/{rid}", headers=H).json()["regions"] == []
+    # Only admins may touch any of it.
+    stranger = TestClient(client.app)
+    assert stranger.post("/api/admin/users", json={"username": "x", "password": "12345678"}).status_code == 401
+    r = client.post("/api/admin/users", json={"username": "mem", "password": "mem password"}, headers=H)
+    mem = TestClient(client.app)
+    assert mem.post("/api/login", json={"username": "mem", "password": "mem password"}).status_code == 200
+    assert mem.put("/api/admin/site", json={"signup": True}, headers=H).status_code == 403
+
+
+def test_signup_opens_with_admin_permission(env):
+    client, dw, jobs, db = env
+    assert client.put("/api/admin/site", json={"signup": True}, headers=H).json()["signup"] is True
+    fresh = TestClient(client.app)
+    r = fresh.post("/api/register", json={"username": "newbie", "password": "newbie password"})
+    assert r.status_code == 200 and r.json()["is_admin"] is False
+    assert fresh.get("/api/me").json()["username"] == "newbie"
+
+
+def test_upgrade_rescues_the_old_key_only_admin(tmp_path, fake_valhalla):
+    """An install made by the key-only sign-in has an admin with no password."""
+    from mapmatch.portal import auth
+    from mapmatch.portal.config import Config
+    from mapmatch.portal.db import Database
+
+    db = Database(tmp_path / "old.db")
+    with db.tx() as c:
+        c.execute("INSERT INTO users(username, password, is_admin, created_at)"
+                  " VALUES ('dawarich:dawarich.example:5','!',1,'2026-01-01T00:00:00+00:00')")
+        c.execute("INSERT INTO settings(user_id) VALUES (1)")
+    auth.bootstrap_admin(db, "andre", "a long password")
+    row = db.one("SELECT username, password, is_admin FROM users")
+    assert row["username"] == "andre" and row["is_admin"] == 1
+    assert auth.authenticate(db, "andre", "a long password") is not None
+    assert auth.authenticate(db, "andre", "wrong password") is None
+
+
+def test_first_account_on_a_fresh_install_is_the_admin(tmp_path, fake_valhalla):
+    dw = FakeDawarich()
+    cfg = Config(data_dir=tmp_path, base_path="/", dawarich_url="http://x", scheduler=False)
+    app = create_app(cfg, transport=dw.transport, start_workers=False)
+    c = TestClient(app)
+    assert c.get("/api/public").json()["first_run"] is True
+    r = c.post("/api/register", json={"username": "founder", "password": "founder password"})
+    assert r.status_code == 200 and r.json()["is_admin"] is True
+    assert c.get("/api/me").json()["is_admin"] is True
 
 
 def test_scheduler_runs_auto_with_push(env):

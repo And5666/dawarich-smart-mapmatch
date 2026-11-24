@@ -4,16 +4,17 @@ from __future__ import annotations
 import json
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from xml.sax.saxutils import escape
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from ..engine import valhalla
 from ..engine.api import ENGINE_VERSION, MODES
-from . import archive, auth, push, trips
+from . import archive, auth, push, site, trips
 from .db import now as now_iso
 from .dawarich import Client, DawarichError
 
@@ -56,6 +57,60 @@ class ConnectIn(BaseModel):
     api_key: str
 
 
+class LoginIn(BaseModel):
+    username: str
+    password: str
+
+
+class RegisterIn(BaseModel):
+    username: str
+    password: str
+    display_name: str = ""
+
+
+class PasswordIn(BaseModel):
+    password: str
+
+
+class AdminUserIn(BaseModel):
+    username: str
+    password: str
+    display_name: str = ""
+    is_admin: bool = False
+
+
+class AdminUserPatch(BaseModel):
+    password: str | None = None
+    is_admin: bool | None = None
+    disabled: bool | None = None
+    display_name: str | None = None
+
+
+class SiteIn(BaseModel):
+    signup: bool | None = None
+    valhalla_url: str | None = None
+
+
+class ValhallaTestIn(BaseModel):
+    url: str = ""
+
+
+class RegionIn(BaseModel):
+    name: str
+    pbf_url: str = ""
+    bounds: str = ""
+    notes: str = ""
+    built_at: str = ""
+
+
+class RegionPatch(BaseModel):
+    name: str | None = None
+    pbf_url: str | None = None
+    bounds: str | None = None
+    notes: str | None = None
+    built_at: str | None = None
+
+
 class RangeIn(BaseModel):
     t0: int
     t1: int
@@ -74,12 +129,17 @@ def build(app_state: Any) -> APIRouter:
     # ------------------------------------------------------------ deps
     def user(request: Request) -> dict[str, Any]:
         u = auth.session_user(db, request.cookies.get(COOKIE))
-        if not u:
+        if not u or u.get("disabled"):
             raise HTTPException(401, "login required")
         if request.method not in ("GET", "HEAD") and request.headers.get("x-portal") != "1":
             # Every write comes from our page with this header; a cross-site
             # form post cannot add it.
             raise HTTPException(403, "missing X-Portal header")
+        return u
+
+    def admin(u: dict[str, Any] = Depends(user)) -> dict[str, Any]:
+        if not u["is_admin"]:
+            raise HTTPException(403, "admin only")
         return u
 
     def trip_or_404(uid: int, tid: int) -> dict[str, Any]:
@@ -94,29 +154,71 @@ def build(app_state: Any) -> APIRouter:
 
     # ------------------------------------------------------------ auth
 
+    @r.post("/login")
+    def login(body: LoginIn, response: Response) -> dict[str, Any]:
+        who = auth.authenticate(db, body.username, body.password)
+        if not who:
+            time.sleep(0.4)   # no free guesses
+            raise HTTPException(401, "Wrong username or password")
+        set_cookie(response, auth.new_session(db, int(who["id"]), cfg.session_days))
+        return {"ok": True, "is_admin": bool(who["is_admin"])}
+
+    @r.post("/register")
+    def register(body: RegisterIn, response: Response) -> dict[str, Any]:
+        """Create an account: freely only while nobody exists or sign-up is on."""
+        first = db.one("SELECT COUNT(*) n FROM users")["n"] == 0
+        if not first and not site.signup_enabled(db):
+            raise HTTPException(403, "Sign-up is off. Ask an admin to make you an account.")
+        try:
+            uid = auth.create_user(db, body.username.strip(), body.password,
+                                   is_admin=first, display_name=body.display_name)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        set_cookie(response, auth.new_session(db, uid, cfg.session_days))
+        return {"ok": True, "is_admin": first}
+
     @r.post("/connect")
-    def connect(body: ConnectIn, response: Response) -> dict[str, Any]:
-        """Sign in with a Dawarich API key: the key both identifies the account
-        and is what the portal syncs with."""
+    def connect(body: ConnectIn, u: dict[str, Any] = Depends(user)) -> dict[str, Any]:
+        """Link the signed-in account to a Dawarich user by pasting its API key."""
         key = body.api_key.strip()
         if not key or len(key) > 200:
             raise HTTPException(400, "Paste the API key from your Dawarich account page")
+        s = trips.settings(db, u["id"])
+        base = (s.get("dawarich_url") or cfg.dawarich_url).rstrip("/")
         try:
-            with Client(cfg.dawarich_url, key, cfg.dawarich_host_header, transport=jobs.transport) as dw:
+            with Client(base, key, cfg.dawarich_host_header, transport=jobs.transport) as dw:
                 who = dw.me()
+                dw.count()
         except DawarichError as exc:
             time.sleep(0.4)
             msg = str(exc)
             if "rejected" in msg:
                 raise HTTPException(401, "Dawarich didn't accept that key. Check it on your Dawarich account page.") from exc
             raise HTTPException(502, f"Couldn't reach Dawarich: {msg}") from exc
-        uid = auth.connect(db, cfg.dawarich_url, key, who)
-        set_cookie(response, auth.new_session(db, uid, cfg.session_days))
-        first = archive.stats(db, uid)["points"] == 0
+        auth.link_key(db, u["id"], base, key)
+        if not u.get("display_name") and who.get("email"):
+            # A new link names the account after the Dawarich user.
+            auth.update_user(db, u["id"], display_name=str(who["email"]))
+        first = archive.stats(db, u["id"])["points"] == 0
         if first:
-            # First time: download everything straight away (no matching).
-            jobs.enqueue(uid, "sync")
-        return {"ok": True, "first_sync": first}
+            jobs.enqueue(u["id"], "sync")
+        return {"ok": True, "first_sync": first,
+                "dawarich": {"id": who.get("id"), "email": who.get("email") or ""}}
+
+    @r.post("/connect/base")
+    def connect_base(body: dict[str, str], u: dict[str, Any] = Depends(user)) -> dict[str, Any]:
+        """Remember which Dawarich this account points at, before a key is added."""
+        url = (body.get("dawarich_url") or "").strip().rstrip("/")
+        if not url.startswith(("http://", "https://")) or len(url) > 200:
+            raise HTTPException(400, "Dawarich URL must start with http:// or https://")
+        with db.tx() as c:
+            c.execute("UPDATE settings SET dawarich_url=? WHERE user_id=?", (url, u["id"]))
+        return {"ok": True}
+
+    @r.post("/unlink")
+    def unlink(u: dict[str, Any] = Depends(user)) -> dict[str, Any]:
+        auth.unlink_key(db, u["id"])
+        return {"ok": True}
 
     @r.post("/logout")
     def logout(request: Request, response: Response) -> dict[str, Any]:
@@ -126,12 +228,16 @@ def build(app_state: Any) -> APIRouter:
 
     @r.get("/public")
     def public_info() -> dict[str, Any]:
-        return {"dawarich": cfg.dawarich_url, "engine": ENGINE_VERSION}
+        return {"dawarich": cfg.dawarich_url, "engine": ENGINE_VERSION,
+                "signup": site.signup_enabled(db),
+                "first_run": db.one("SELECT COUNT(*) n FROM users")["n"] == 0,
+                "valhalla": bool(valhalla.configured() or site.valhalla_url(db))}
 
     @r.get("/me")
     def me(u: dict[str, Any] = Depends(user)) -> dict[str, Any]:
         s = trips.settings(db, u["id"])
-        return {"name": u.get("display_name") or u["username"], "is_admin": bool(u["is_admin"]),
+        return {"name": u.get("display_name") or u["username"], "username": u["username"],
+                "is_admin": bool(u["is_admin"]), "dawarich_linked": bool(s.get("api_key")),
                 "settings": _public_settings(s, cfg), "archive": archive.stats(db, u["id"]),
                 "dry_run": cfg.push_dry_run, "engine": ENGINE_VERSION, "modes": list(MODES)}
 
@@ -425,13 +531,141 @@ def build(app_state: Any) -> APIRouter:
         rows = db.all("SELECT * FROM pushes WHERE user_id=? ORDER BY id DESC LIMIT 100", (u["id"],))
         return {"pushes": [{**dict(x), "detail": json.loads(x["detail"] or "{}")} for x in rows]}
 
+    # ------------------------------------------------------------ admin
+    # Instance-wide settings: the Valhalla every account matches against, the
+    # region catalogue that goes with it, whether people may register, and the
+    # accounts themselves.
+
+    def _site_state() -> dict[str, Any]:
+        url = site.valhalla_url(db)
+        return {
+            "signup": site.signup_enabled(db),
+            "valhalla_url": url,
+            "valhalla": valhalla.status(timeout=4.0) if url else {},
+            "configured": bool(url),
+            "users": auth.users(db),
+            "regions": site.regions(db),
+            "data_dir": bool(cfg.valhalla_data_dir),
+            "data_dir_path": cfg.valhalla_data_dir,
+        }
+
+    @r.get("/admin/site")
+    def admin_site(u: dict[str, Any] = Depends(admin)) -> dict[str, Any]:
+        return _site_state()
+
+    @r.put("/admin/site")
+    def put_admin_site(body: SiteIn, u: dict[str, Any] = Depends(admin)) -> dict[str, Any]:
+        if body.signup is not None:
+            site.set_signup(db, body.signup)
+        if body.valhalla_url is not None:
+            url = body.valhalla_url.strip().rstrip("/")
+            if url and not url.startswith(("http://", "https://")):
+                raise HTTPException(400, "Valhalla address must start with http:// or https://")
+            if len(url) > 200:
+                raise HTTPException(400, "That address is too long")
+            site.put(db, "valhalla_url", url)
+            valhalla.configure(url)   # applies to every account, at once
+        return _site_state()
+
+    @r.post("/admin/valhalla/test")
+    def test_valhalla(body: ValhallaTestIn, u: dict[str, Any] = Depends(admin)) -> dict[str, Any]:
+        url = (body.url or "").strip().rstrip("/") or site.valhalla_url(db)
+        if not url:
+            raise HTTPException(400, "Give a Valhalla address first")
+        out = valhalla.status(timeout=6.0, url=url)
+        out["url"] = url
+        return out
+
+    @r.get("/admin/valhalla/data")
+    def valhalla_data(u: dict[str, Any] = Depends(admin)) -> dict[str, Any]:
+        """What is in the mounted Valhalla data directory, when an admin mounted one."""
+        root = cfg.valhalla_data_dir
+        if not root or not Path(root).is_dir():
+            return {"mounted": False, "files": []}
+        files = []
+        for p in sorted(Path(root).iterdir(), key=lambda x: x.name.lower()):
+            try:
+                st = p.stat()
+                files.append({"name": p.name, "dir": p.is_dir(),
+                              "size": None if p.is_dir() else st.st_size,
+                              "modified": datetime.fromtimestamp(st.st_mtime, timezone.utc).isoformat(timespec="seconds")})
+            except OSError:
+                continue
+        return {"mounted": True, "root": str(root), "files": files}
+
+    @r.get("/admin/valhalla/data/{name}")
+    def valhalla_data_file(name: str, u: dict[str, Any] = Depends(admin)) -> FileResponse:
+        root = cfg.valhalla_data_dir
+        if not root:
+            raise HTTPException(400, "No Valhalla data directory is mounted in this container")
+        base = Path(root).resolve()
+        target = (base / name).resolve()
+        if target.parent != base or not target.is_file():
+            raise HTTPException(404, "not found")
+        return FileResponse(target, filename=target.name)
+
+    @r.post("/admin/users")
+    def admin_create_user(body: AdminUserIn, u: dict[str, Any] = Depends(admin)) -> dict[str, Any]:
+        try:
+            uid = auth.create_user(db, body.username.strip(), body.password, body.is_admin, body.display_name)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {"id": uid, "users": auth.users(db)}
+
+    @r.patch("/admin/users/{uid}")
+    def admin_patch_user(uid: int, body: AdminUserPatch, u: dict[str, Any] = Depends(admin)) -> dict[str, Any]:
+        target = db.one("SELECT * FROM users WHERE id=?", (uid,))
+        if not target:
+            raise HTTPException(404, "no such account")
+        loses_admin = (body.is_admin is False or body.disabled is True) and target["is_admin"]
+        if uid == u["id"] and (body.is_admin is False or body.disabled is True):
+            raise HTTPException(400, "You can't remove your own admin access or disable yourself")
+        if loses_admin and auth.admin_count(db) <= 1:
+            raise HTTPException(400, "At least one admin account has to stay")
+        if body.password is not None:
+            try:
+                auth.set_password(db, uid, body.password)
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from exc
+        auth.update_user(db, uid, is_admin=body.is_admin, disabled=body.disabled, display_name=body.display_name)
+        return {"users": auth.users(db)}
+
+    # ------------------------------------------------------------ regions
+
+    @r.get("/admin/regions")
+    def list_regions(u: dict[str, Any] = Depends(admin)) -> dict[str, Any]:
+        return {"regions": site.regions(db)}
+
+    @r.post("/admin/regions")
+    def add_region(body: RegionIn, u: dict[str, Any] = Depends(admin)) -> dict[str, Any]:
+        if not body.name.strip():
+            raise HTTPException(400, "Give the region a name")
+        rid = site.add_region(db, body.name, body.pbf_url, body.bounds, body.notes, body.built_at)
+        return {"id": rid, "regions": site.regions(db)}
+
+    @r.patch("/admin/regions/{rid}")
+    def patch_region(rid: int, body: RegionPatch, u: dict[str, Any] = Depends(admin)) -> dict[str, Any]:
+        if not site.region(db, rid):
+            raise HTTPException(404, "no such region")
+        site.update_region(db, rid, **body.model_dump(exclude_none=True))
+        return {"regions": site.regions(db)}
+
+    @r.delete("/admin/regions/{rid}")
+    def delete_region(rid: int, u: dict[str, Any] = Depends(admin)) -> dict[str, Any]:
+        site.delete_region(db, rid)
+        return {"regions": site.regions(db)}
+
     # ------------------------------------------------------------ system
     @r.get("/system")
     def system(u: dict[str, Any] = Depends(user)) -> dict[str, Any]:
         outdated = db.one("SELECT COUNT(*) n FROM trips WHERE user_id=? AND result_version > 0 AND engine_version != ?",
                           (u["id"], ENGINE_VERSION))["n"]
-        return {"valhalla": valhalla.status(), "engine": ENGINE_VERSION, "outdated_trips": outdated,
-                "dry_run": cfg.push_dry_run, "dawarich": cfg.dawarich_url}
+        url = site.valhalla_url(db)
+        return {"valhalla": valhalla.status(timeout=4.0) if url else {},
+                "valhalla_url": url, "regions": site.regions(db),
+                "engine": ENGINE_VERSION, "outdated_trips": outdated,
+                "dry_run": cfg.push_dry_run, "dawarich": cfg.dawarich_url,
+                "is_admin": bool(u["is_admin"]), "signup": site.signup_enabled(db)}
 
     return r
 

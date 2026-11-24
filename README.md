@@ -91,22 +91,35 @@ Dawarich; every push and revert is listed under Activity.
 ## Run it
 
 ```bash
-cp compose.example.yml compose.yml   # set URLs, admin password, network
+cp compose.example.yml compose.yml   # set the admin password and the network
 docker compose up -d --build
 ```
 
-Then open the portal and connect with your Dawarich API key: today the key is the
-sign-in. Press **Sync**, then **Match** (or **Push** once matched). You will see
-your raw trips; press **Map match** (or open a trip and match just that one) when
-ready. Valhalla is not bundled — you point the portal at one you already run,
-or at the one that came with your Dawarich stack. `docs/deploying.md` covers the
-choices and the account model.
+Then open the portal and sign in. The first account is the admin: either set
+`ADMIN_USER` and `ADMIN_PASSWORD`, or register on a fresh install (with no
+accounts, the first one made is the admin). An admin then makes everyone else's
+account under **Admin → People**, or opens sign-up if you would rather people
+made their own.
+
+Signing in is a username and password. Your **Dawarich API key is a link, not a
+login**: paste it once, in Settings or on the connect screen after signing in,
+and it is kept with your account so you never need it again.
+
+Nothing is matched until an admin sets a Valhalla address under
+**Admin → Map matching**, and that one address applies to every account on the
+instance. Valhalla is not bundled and is not in the compose file: see
+`docs/deploying.md` for the address to give it and the tiles it needs.
+
+Then press **Sync**, then **Match** (or **Push** once matched). You will see your
+raw trips; press **Map match** (or open a trip and match just that one) when ready.
 
 | Variable | Default | |
 |---|---|---|
 | `DAWARICH_URL` | `http://dawarich_app:3000` | Dawarich as seen from the container (users can override it in Settings) |
 | `DAWARICH_HOST_HEADER` | – | Host header to send, if Dawarich only answers its public name |
-| `VALHALLA_URL` | `http://127.0.0.1:8002` | Valhalla reachable from the container, with tiles for the area you ride in (see `docs/deploying.md`) |
+| `ADMIN_USER`, `ADMIN_PASSWORD` | `admin`, – | First admin account; ignored once an admin exists |
+| `VALHALLA_DATA_DIR` | – | Optional read-only mount of the Valhalla data directory, so admins can list and download region files |
+| `VALHALLA_URL` | – | Bench and development only: the portal keeps the address in its database, set by an admin |
 | `PORTAL_DATA` | `/data` | SQLite database and archive. **Back this up.** |
 | `PORTAL_BASE_PATH` | – | e.g. `/mapmatch` when served under a path |
 | `PORTAL_SECURE_COOKIE` | `0` | `1` behind https |
@@ -114,7 +127,8 @@ choices and the account model.
 | `MATCH_WORKERS` | `4` | parallel trip matching |
 | `RAIL_DATA_DIR` | `data/` | GB rail shapes and stations (set in the image) |
 
-The Dawarich API key is stored in the portal's database; protect the data volume.
+Each account's Dawarich API key is stored in the portal's database; protect the
+data volume.
 
 ## Develop
 

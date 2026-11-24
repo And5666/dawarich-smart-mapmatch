@@ -133,6 +133,21 @@ MIGRATIONS: list[str] = [
     ALTER TABLE users ADD COLUMN display_name TEXT NOT NULL DEFAULT '';
     ALTER TABLE trips ADD COLUMN point_edits TEXT NOT NULL DEFAULT '{}';
     """,
+    # 3: password accounts; one Valhalla and one region catalogue for the site
+    """
+    ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0;
+    CREATE TABLE regions (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      pbf_url TEXT NOT NULL DEFAULT '',
+      bounds TEXT NOT NULL DEFAULT '',
+      notes TEXT NOT NULL DEFAULT '',
+      built_at TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    INSERT INTO site(key, value) VALUES ('valhalla_url', '');
+    """,
 ]
 
 

@@ -82,8 +82,23 @@ class ValhallaError(RuntimeError):
     pass
 
 
+# The portal keeps the Valhalla address in its database (one server for every
+# account) and configures it at start-up and whenever an admin changes it. The
+# environment variable stays as the fallback for the bench and for development.
+_configured: str | None = None
+
+
+def configure(url: str | None) -> None:
+    global _configured
+    _configured = (url or "").strip().rstrip("/") or None
+
+
+def configured() -> str:
+    return _configured or ""
+
+
 def base_url() -> str:
-    return os.environ.get("VALHALLA_URL", "http://127.0.0.1:8002").rstrip("/")
+    return _configured or os.environ.get("VALHALLA_URL", "http://127.0.0.1:8002").rstrip("/")
 
 
 def _cache_path(path: str, body: dict[str, Any]) -> Path | None:
@@ -254,9 +269,10 @@ def route(locations: list[dict[str, Any]], profile: str = "auto",
             "time_s": float(summary.get("time") or 0)}
 
 
-def status(timeout: float = 5.0) -> dict[str, Any]:
+def status(timeout: float = 5.0, url: str | None = None) -> dict[str, Any]:
+    base = (url or base_url()).rstrip("/")
     try:
-        with urllib.request.urlopen(f"{base_url()}/status", timeout=timeout) as resp:
+        with urllib.request.urlopen(f"{base}/status", timeout=timeout) as resp:
             return json.loads(resp.read())
     except Exception as exc:  # noqa: BLE001
         return {"error": str(exc)}

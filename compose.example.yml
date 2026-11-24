@@ -1,4 +1,4 @@
-# Mapmatch next to an existing Dawarich + Valhalla stack.
+# Mapmatch next to an existing Dawarich stack.
 # Copy to compose.yml (or merge into your Dawarich compose file) and adjust.
 services:
   mapmatch:
@@ -7,11 +7,19 @@ services:
     container_name: mapmatch
     restart: unless-stopped
     environment:
-      # How the container reaches Dawarich and Valhalla on the docker network.
+      # How the container reaches Dawarich on the docker network.
       DAWARICH_URL: http://dawarich_app:3000
       # Set when Dawarich only answers for its public hostname (APPLICATION_HOSTS).
       DAWARICH_HOST_HEADER: ""
-      VALHALLA_URL: http://dawarich-valhalla:8002
+      # First admin account. Change the password before you expose the portal.
+      # Once an admin exists this is ignored.
+      ADMIN_USER: admin
+      ADMIN_PASSWORD: change-me-please
+      # The map-matching server is NOT set here: an admin adds its address in the
+      # portal (Admin -> Map matching) and every account uses it.
+      # Optional: mount the Valhalla data directory read-only so an admin can
+      # list and download region extracts and tiles from the portal.
+      # VALHALLA_DATA_DIR: /valhalla
       # Serve under a path behind a reverse proxy, e.g. /mapmatch. Empty = site root.
       PORTAL_BASE_PATH: ""
       # Set to 1 when the portal is reached over https.
@@ -23,6 +31,7 @@ services:
     volumes:
       # SQLite database with the archive of original GPS points. Back this up.
       - ./mapmatch-data:/data
+      # - /var/lib/docker/volumes/valhalla/_data:/valhalla:ro
     ports:
       - "8080:8080"
     networks:
@@ -31,5 +40,5 @@ services:
 networks:
   dawarich:
     external: true
-    # The network your Dawarich and Valhalla containers are on (`docker network ls`).
+    # The network your Dawarich containers are on (`docker network ls`).
     name: dawarich

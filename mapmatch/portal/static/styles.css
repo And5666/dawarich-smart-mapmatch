@@ -280,3 +280,11 @@ table.t { width: 100%; border-collapse: collapse; font-size: 13px; }
   .float.tl .opt { display: none; }
   .chooser { min-width: 260px; }
 }
+
+/* Sign-in and key-linking panels, plus the admin forms. */
+.connect .link-wrap { width: min(480px, 100%); display: grid; gap: 16px; }
+.connect .link-wrap form { width: 100%; }
+.link-form { display: grid; gap: 14px; }
+.region-add { display: grid; gap: 10px; border-top: 1px solid var(--line); padding-top: 14px; }
+table.t tr.off td { opacity: .55; }
+.doc code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; background: var(--sunk); padding: 1px 4px; border-radius: 4px; word-break: break-all; }

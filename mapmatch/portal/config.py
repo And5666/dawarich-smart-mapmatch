@@ -24,6 +24,12 @@ class Config:
     secure_cookie: bool = field(default_factory=lambda: _flag("PORTAL_SECURE_COOKIE"))
     session_days: int = field(default_factory=lambda: int(os.environ.get("PORTAL_SESSION_DAYS", "30")))
     scheduler: bool = field(default_factory=lambda: _flag("PORTAL_SCHEDULER", True))
+    # First/admin account. Password empty means no environment admin is made.
+    admin_user: str = field(default_factory=lambda: os.environ.get("ADMIN_USER", "admin"))
+    admin_password: str = field(default_factory=lambda: os.environ.get("ADMIN_PASSWORD", ""))
+    # Optional read-only mount of the Valhalla data directory, so an admin can
+    # list and download the extracts and tiles behind the configured server.
+    valhalla_data_dir: str = field(default_factory=lambda: os.environ.get("VALHALLA_DATA_DIR", ""))
 
     @property
     def prefix(self) -> str:

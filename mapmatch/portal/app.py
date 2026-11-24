@@ -14,7 +14,8 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import api, trips
+from ..engine import valhalla
+from . import api, auth, site, trips
 from .config import Config
 from .db import Database
 from .jobs import Jobs
@@ -26,6 +27,13 @@ def create_app(cfg: Config | None = None, transport: Any = None, start_workers: 
     cfg = cfg or Config()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     db = Database(cfg.db_path)
+    auth.bootstrap_admin(db, cfg.admin_user, cfg.admin_password)
+    if not auth.admin_count(db):
+        logging.getLogger("mapmatch").warning(
+            "no admin account: set ADMIN_USER and ADMIN_PASSWORD to create one")
+    # One Valhalla for the whole instance; an admin sets it in the portal and it
+    # is kept in the database rather than the container environment.
+    valhalla.configure(site.valhalla_url(db))
     trips.refresh_previews(db)
     jobs = Jobs(db, cfg, transport)
     state = SimpleNamespace(db=db, cfg=cfg, jobs=jobs)

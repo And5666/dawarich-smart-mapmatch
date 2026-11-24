@@ -1,6 +1,7 @@
 // Settings: automation, matching, import, originals, undo-everything, system.
 import { html, useState, useEffect, useRef, api, useStore, store, toast, Icon, Confirm, ago, full, plural } from "../lib.js";
 import { loadMe, startJob, watchJobs } from "../session.js";
+import { LinkDawarich, LinkedAccount } from "./link.js";
 
 export function Settings() {
   const me = useStore((s) => s.me);
@@ -44,7 +45,16 @@ export function Settings() {
 
   return html`<div class="doc">
     <h1>Settings</h1>
-    <p class="lede">Signed in as <b>${me.name}</b>${host ? html` on ${host}` : ""}.</p>
+    <p class="lede">Signed in as <b>${me.name}</b>.</p>
+
+    <section>
+      <header><h2>Your Dawarich</h2><p>The account your trips come from.</p></header>
+      <div class="body">
+        ${me.dawarich_linked
+          ? html`<${LinkedAccount} settings=${s} />`
+          : html`<${LinkDawarich} intro=${false} />`}
+      </div>
+    </section>
 
     <section>
       <header><h2>Automatic runs</h2><p>Off by default. Nothing is pushed to Dawarich unless you turn that on too.</p></header>
@@ -107,8 +117,10 @@ export function Settings() {
       <header><h2>System</h2><p>The services this server uses.</p></header>
       <div class="body">
         ${!sys ? html`<p class="help">Checking…</p>` : html`
-          ${sys.valhalla?.error ? html`<div class="note bad">The map-matching service (Valhalla) is unreachable: ${sys.valhalla.error}</div>`
+          ${!sys.valhalla_url ? html`<div class="note warn">No map-matching server is set up yet. ${me.is_admin ? html`Set one under <a href="#/admin">Admin</a>.` : "Ask an admin to set one."}</div>`
+          : sys.valhalla?.error ? html`<div class="note bad">The map-matching service (Valhalla) is unreachable: ${sys.valhalla.error}</div>`
             : html`<div class="note good">Map matching (Valhalla ${sys.valhalla?.version}) is up${sys.valhalla?.tileset_last_modified ? `; map data from ${new Date(sys.valhalla.tileset_last_modified * 1000).toLocaleDateString()}` : ""}.</div>`}
+          ${sys.regions?.length > 0 && html`<p class="help">Map data covers ${sys.regions.map((r) => r.name).join(", ")}.</p>`}
           ${sys.dry_run && html`<div class="note warn">Dry run is on (PUSH_DRY_RUN): pushes are planned and logged, but Dawarich is not changed.</div>`}
           <p class="help">Matcher version ${sys.engine}.${sys.outdated_trips ? ` ${plural(sys.outdated_trips, "trip")} were matched by an older version.` : ""}</p>
           ${sys.outdated_trips > 0 && html`<div class="actions"><button onClick=${() => startJob("rematch", { scope: "outdated" })}>Rematch them</button></div>`}`}
