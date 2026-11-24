@@ -5,7 +5,6 @@ import json
 import logging
 import threading
 import time
-import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone

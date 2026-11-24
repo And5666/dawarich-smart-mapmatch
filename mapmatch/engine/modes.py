@@ -215,11 +215,42 @@ def label(fixes: list[dict[str, Any]], overrides: list[dict[str, Any]] | None = 
         labels[i:j] = _viterbi(speeds(fixes[i:j]), rails[i:j])
         i = j
     _merge_short(fixes, labels, forced)
+    _walk_through_pauses(fixes, labels, forced, stay_id)
     # Each override is its own run, so a split segment keeps both halves even
     # while they share a mode.
     keys = [f"ov{ov_id[k]}:{labels[k]}" if forced[k] else
             f"stay{stay_id[k]}" if labels[k] == "stay" else labels[k] for k in range(n)]
     return labels, forced, keys
+
+
+WALK_PAUSE_S = 1500
+
+
+def _walk_through_pauses(fixes: list[dict[str, Any]], labels: list[str], forced: list[bool],
+                         stay_id: list[int]) -> None:
+    """A short stop with walking on both sides is part of the walk.
+
+    A hike is a string of pauses (a view, a scramble, lunch on a ridge); as
+    stays they cut the line into pieces and the day reads as mostly stationary.
+    Stops at the ends of a trip, or next to anything but walking, stay stays.
+    """
+    n = len(labels)
+    i = 0
+    while i < n:
+        if labels[i] != "stay" or forced[i]:
+            i += 1
+            continue
+        j = i
+        while j < n and labels[j] == "stay" and stay_id[j] == stay_id[i] and not forced[j]:
+            j += 1
+        before = labels[i - 1] if i > 0 else ""
+        after = labels[j] if j < n else ""
+        if before == "walk" and after == "walk" and \
+                fixes[j - 1]["timestamp"] - fixes[i]["timestamp"] < WALK_PAUSE_S:
+            for k in range(i, j):
+                labels[k] = "walk"
+                stay_id[k] = -1
+        i = j
 
 
 def summary_speed(fixes: list[dict[str, Any]]) -> dict[str, float]:

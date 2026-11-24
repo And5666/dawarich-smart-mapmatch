@@ -9,7 +9,7 @@ from .match import fit_score, match_segment
 from .modes import label, runs, summary_speed
 from .quality import deviations, path_km, percentile
 
-ENGINE_VERSION = "2.3.0"
+ENGINE_VERSION = "2.4.0"
 MODES = ("walk", "cycle", "drive", "train", "stay", "raw")
 
 

@@ -297,3 +297,15 @@ def test_trail_fill_keeps_gps_when_route_strays(fake_valhalla):
     assert out["kind"] == "raw" and "off_trail" in out["why"]
     fake_valhalla.route_detour = 1.0
     assert fill(a, [m1, m2], b, "walk")["kind"] == "filled"
+
+
+def test_slow_scramble_is_walking_not_a_string_of_stays():
+    """Crib Goch: a fix every two minutes, 15-25 m apart, with a long pause."""
+    from mapmatch.engine.modes import label
+    climb = track([(18, 6)] * 40, dt=120)                       # ~0.6 km/h for 80 min
+    pause = track([(1, -1), (-1, 1)] * 6, start=(climb[-1]["lat"], climb[-1]["lon"]),
+                  t0=climb[-1]["timestamp"] + 120, dt=90)       # 18 min on the ridge
+    on = track([(18, 6)] * 20, start=(pause[-1]["lat"], pause[-1]["lon"]),
+               t0=pause[-1]["timestamp"] + 120, dt=120)
+    labels, _, _ = label(climb + pause + on)
+    assert "stay" not in labels and set(labels) == {"walk"}

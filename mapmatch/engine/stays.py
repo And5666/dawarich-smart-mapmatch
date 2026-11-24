@@ -7,6 +7,28 @@ from .geo import haversine
 
 STAY_RADIUS_M = 50.0
 STAY_MIN_S = 180
+# A run whose first and last quarters sit this far apart is slow movement (a
+# scramble, a queue), not a stop: the running centroid trails a slow walker,
+# so the radius test alone would call 1 km/h progress a stay.
+DRIFT_M = 30.0
+DRIFT_MIN_FIXES = 3
+DRIFT_MIN_KMH = 0.25   # slower than this is GPS wander during a real stop
+
+
+def _mean(pts: list[dict[str, Any]]) -> tuple[float, float]:
+    return sum(p["lat"] for p in pts) / len(pts), sum(p["lon"] for p in pts) / len(pts)
+
+
+def drifts(run: list[dict[str, Any]]) -> bool:
+    """True when a candidate stay is really steady progress."""
+    if len(run) < DRIFT_MIN_FIXES:
+        return False
+    q = max(1, len(run) // 4)
+    a, b = _mean(run[:q]), _mean(run[-q:])
+    acc = sorted(p.get("accuracy") or 20.0 for p in run)[len(run) // 2]
+    d = haversine(a[0], a[1], b[0], b[1])
+    dt = max(1, run[-1]["timestamp"] - run[0]["timestamp"])
+    return d > DRIFT_M + 0.5 * max(0.0, acc - 10.0) and d / dt * 3.6 >= DRIFT_MIN_KMH
 
 
 def find_stays(fixes: list[dict[str, Any]], radius: float = STAY_RADIUS_M,
@@ -33,7 +55,8 @@ def find_stays(fixes: list[dict[str, Any]], radius: float = STAY_RADIUS_M,
             lon = (lon * k + p["lon"]) / (k + 1)
             k += 1
             j += 1
-        if j - i >= 2 and fixes[j - 1]["timestamp"] - fixes[i]["timestamp"] >= min_s:
+        if j - i >= 2 and fixes[j - 1]["timestamp"] - fixes[i]["timestamp"] >= min_s \
+                and not drifts(fixes[i:j]):
             runs.append((i, j))
             i = j
         else:
