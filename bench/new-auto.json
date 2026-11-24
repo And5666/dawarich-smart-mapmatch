@@ -1,0 +1,6625 @@
+{
+ "summary": {
+  "trips": 285,
+  "failures": 0,
+  "straight": 95,
+  "straight_25m": 95,
+  "single_fix_raw": 8,
+  "segments_per_trip": 2.74,
+  "trips_over_20pct_unmatched": 10,
+  "unmatched_km": 57.2,
+  "km_by_kind": {
+   "filled": 600.3,
+   "join": 0.4,
+   "matched": 3675.4,
+   "raw": 41.0,
+   "stay": 0.0,
+   "straight": 16.2
+  },
+  "out_over_raw_km": 1.04,
+  "median_p95": 18.4,
+  "mean_p95": 19.5,
+  "seconds": 21.0,
+  "segmentation": {
+   "routes": 280,
+   "auto_trips": 285,
+   "routes_one_trip": 223,
+   "routes_split": 27,
+   "routes_missing": 26,
+   "trips_merging_routes": 2,
+   "trips_loose_only": 0
+  }
+ },
+ "failures": [],
+ "trips": [
+  {
+   "id": 0,
+   "n_in": 68,
+   "n_out": 169,
+   "raw_km": 34.252,
+   "out_km": 34.855,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 2,
+   "straight_25m": 2,
+   "km": {
+    "matched": 34.149,
+    "filled": 0.309,
+    "straight": 0.41
+   },
+   "unmatched_frac": 0.012,
+   "p50": 5.9,
+   "p95": 35.0,
+   "modes": [
+    "cycle",
+    "train",
+    "cycle"
+   ]
+  },
+  {
+   "id": 1,
+   "n_in": 139,
+   "n_out": 231,
+   "raw_km": 34.968,
+   "out_km": 35.541,
+   "segments": 5,
+   "single_fix_raw": 0,
+   "straight": 2,
+   "straight_25m": 2,
+   "km": {
+    "matched": 34.834,
+    "filled": 0.44,
+    "straight": 0.272,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.008,
+   "p50": 5.3,
+   "p95": 26.2,
+   "modes": [
+    "cycle",
+    "stay",
+    "train",
+    "walk",
+    "cycle"
+   ]
+  },
+  {
+   "id": 2,
+   "n_in": 194,
+   "n_out": 493,
+   "raw_km": 40.419,
+   "out_km": 41.325,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 41.168,
+    "filled": 0.168,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.0,
+   "p95": 7.0,
+   "modes": [
+    "drive",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 3,
+   "n_in": 178,
+   "n_out": 481,
+   "raw_km": 40.184,
+   "out_km": 40.765,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 40.65,
+    "filled": 0.124,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.0,
+   "p95": 5.3,
+   "modes": [
+    "cycle",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 4,
+   "n_in": 54,
+   "n_out": 156,
+   "raw_km": 5.855,
+   "out_km": 6.292,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 5.31,
+    "filled": 1.001,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 5.2,
+   "p95": 20.6,
+   "modes": [
+    "cycle",
+    "stay",
+    "cycle"
+   ]
+  },
+  {
+   "id": 5,
+   "n_in": 59,
+   "n_out": 136,
+   "raw_km": 5.827,
+   "out_km": 6.262,
+   "segments": 5,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 5.475,
+    "filled": 0.787,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 8.6,
+   "p95": 28.2,
+   "modes": [
+    "cycle",
+    "stay",
+    "cycle",
+    "stay",
+    "cycle"
+   ]
+  },
+  {
+   "id": 6,
+   "n_in": 71,
+   "n_out": 105,
+   "raw_km": 2.475,
+   "out_km": 2.863,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 2.059,
+    "filled": 0.436,
+    "raw": 0.36,
+    "join": 0.008
+   },
+   "unmatched_frac": 0.146,
+   "p50": 5.1,
+   "p95": 42.1,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 7,
+   "n_in": 107,
+   "n_out": 199,
+   "raw_km": 9.689,
+   "out_km": 9.77,
+   "segments": 5,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 9.328,
+    "filled": 0.45,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.6,
+   "p95": 10.7,
+   "modes": [
+    "drive",
+    "stay",
+    "drive",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 8,
+   "n_in": 117,
+   "n_out": 267,
+   "raw_km": 12.173,
+   "out_km": 12.659,
+   "segments": 5,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 12.304,
+    "filled": 0.361,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.7,
+   "p95": 25.6,
+   "modes": [
+    "drive",
+    "stay",
+    "drive",
+    "walk",
+    "drive"
+   ]
+  },
+  {
+   "id": 9,
+   "n_in": 17,
+   "n_out": 48,
+   "raw_km": 1.546,
+   "out_km": 1.545,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.448,
+    "filled": 0.097
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.2,
+   "p95": 17.2,
+   "modes": [
+    "cycle"
+   ]
+  },
+  {
+   "id": 10,
+   "n_in": 16,
+   "n_out": 42,
+   "raw_km": 1.508,
+   "out_km": 1.657,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.533,
+    "filled": 0.138
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.5,
+   "p95": 18.7,
+   "modes": [
+    "cycle"
+   ]
+  },
+  {
+   "id": 11,
+   "n_in": 72,
+   "n_out": 382,
+   "raw_km": 38.936,
+   "out_km": 40.471,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 35.068,
+    "filled": 5.424,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 7.1,
+   "p95": 29.8,
+   "modes": [
+    "drive",
+    "stay",
+    "stay"
+   ]
+  },
+  {
+   "id": 12,
+   "n_in": 9,
+   "n_out": 38,
+   "raw_km": 2.694,
+   "out_km": 2.829,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 1,
+   "straight_25m": 1,
+   "km": {
+    "raw": 1.023,
+    "matched": 1.744,
+    "straight": 0.061
+   },
+   "unmatched_frac": 0.403,
+   "p50": 4.7,
+   "p95": 9.4,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 13,
+   "n_in": 6,
+   "n_out": 43,
+   "raw_km": 2.835,
+   "out_km": 2.946,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 2.946
+   },
+   "unmatched_frac": 0.0,
+   "p50": 9.0,
+   "p95": 21.3,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 14,
+   "n_in": 7,
+   "n_out": 45,
+   "raw_km": 2.852,
+   "out_km": 3.001,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.246,
+    "filled": 1.755,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 5.0,
+   "p95": 18.4,
+   "modes": [
+    "drive",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 15,
+   "n_in": 257,
+   "n_out": 2764,
+   "raw_km": 376.206,
+   "out_km": 387.873,
+   "segments": 10,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 150.831,
+    "filled": 237.051,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.2,
+   "p95": 14.3,
+   "modes": [
+    "drive",
+    "stay",
+    "stay",
+    "cycle",
+    "walk",
+    "drive",
+    "walk",
+    "stay",
+    "walk",
+    "stay"
+   ]
+  },
+  {
+   "id": 16,
+   "n_in": 30,
+   "n_out": 301,
+   "raw_km": 24.962,
+   "out_km": 26.674,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 26.493,
+    "filled": 0.183
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.2,
+   "p95": 24.3,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 17,
+   "n_in": 203,
+   "n_out": 951,
+   "raw_km": 58.877,
+   "out_km": 63.396,
+   "segments": 29,
+   "single_fix_raw": 1,
+   "straight": 19,
+   "straight_25m": 19,
+   "km": {
+    "stay": 0.0,
+    "filled": 5.426,
+    "matched": 54.951,
+    "straight": 1.541,
+    "raw": 1.485
+   },
+   "unmatched_frac": 0.051,
+   "p50": 2.5,
+   "p95": 18.8,
+   "modes": [
+    "stay",
+    "stay",
+    "drive",
+    "stay",
+    "drive",
+    "stay",
+    "walk",
+    "stay",
+    "walk",
+    "stay",
+    "walk",
+    "stay",
+    "walk",
+    "stay",
+    "stay",
+    "stay",
+    "stay",
+    "stay",
+    "stay",
+    "stay",
+    "stay",
+    "walk",
+    "stay",
+    "walk",
+    "stay",
+    "stay",
+    "walk",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 18,
+   "n_in": 67,
+   "n_out": 132,
+   "raw_km": 4.874,
+   "out_km": 5.487,
+   "segments": 5,
+   "single_fix_raw": 0,
+   "straight": 1,
+   "straight_25m": 1,
+   "km": {
+    "raw": 3.334,
+    "filled": 0.81,
+    "stay": 0.0,
+    "straight": 0.104,
+    "matched": 1.239
+   },
+   "unmatched_frac": 0.705,
+   "p50": 0.0,
+   "p95": 19.5,
+   "modes": [
+    "walk",
+    "stay",
+    "walk",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 19,
+   "n_in": 50,
+   "n_out": 578,
+   "raw_km": 33.704,
+   "out_km": 36.903,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 34.402,
+    "filled": 2.501,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.5,
+   "p95": 10.5,
+   "modes": [
+    "drive",
+    "stay"
+   ]
+  },
+  {
+   "id": 20,
+   "n_in": 15,
+   "n_out": 139,
+   "raw_km": 11.938,
+   "out_km": 12.545,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 12.467,
+    "filled": 0.079,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.6,
+   "p95": 20.9,
+   "modes": [
+    "drive",
+    "stay"
+   ]
+  },
+  {
+   "id": 21,
+   "n_in": 22,
+   "n_out": 33,
+   "raw_km": 1.478,
+   "out_km": 1.507,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.507
+   },
+   "unmatched_frac": 0.0,
+   "p50": 6.6,
+   "p95": 9.4,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 22,
+   "n_in": 21,
+   "n_out": 37,
+   "raw_km": 1.604,
+   "out_km": 1.724,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.368,
+    "filled": 0.356,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 5.6,
+   "p95": 16.0,
+   "modes": [
+    "walk",
+    "stay",
+    "stay"
+   ]
+  },
+  {
+   "id": 23,
+   "n_in": 14,
+   "n_out": 86,
+   "raw_km": 5.065,
+   "out_km": 5.348,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "stay": 0.0,
+    "filled": 0.377,
+    "matched": 4.971
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.3,
+   "p95": 35.7,
+   "modes": [
+    "stay",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 24,
+   "n_in": 15,
+   "n_out": 106,
+   "raw_km": 5.607,
+   "out_km": 6.226,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 6.053,
+    "filled": 0.173
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.3,
+   "p95": 4.3,
+   "modes": [
+    "walk",
+    "drive"
+   ]
+  },
+  {
+   "id": 25,
+   "n_in": 265,
+   "n_out": 2689,
+   "raw_km": 375.532,
+   "out_km": 388.137,
+   "segments": 5,
+   "single_fix_raw": 0,
+   "straight": 1,
+   "straight_25m": 1,
+   "km": {
+    "stay": 0.0,
+    "filled": 210.377,
+    "matched": 176.572,
+    "straight": 1.201
+   },
+   "unmatched_frac": 0.003,
+   "p50": 2.7,
+   "p95": 6.6,
+   "modes": [
+    "stay",
+    "drive",
+    "stay",
+    "drive",
+    "stay"
+   ]
+  },
+  {
+   "id": 26,
+   "n_in": 9,
+   "n_out": 48,
+   "raw_km": 1.934,
+   "out_km": 2.094,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 2.01,
+    "filled": 0.088
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.3,
+   "p95": 20.9,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 27,
+   "n_in": 124,
+   "n_out": 205,
+   "raw_km": 34.514,
+   "out_km": 34.962,
+   "segments": 4,
+   "single_fix_raw": 0,
+   "straight": 2,
+   "straight_25m": 2,
+   "km": {
+    "matched": 34.128,
+    "straight": 0.376,
+    "stay": 0.0,
+    "filled": 0.461
+   },
+   "unmatched_frac": 0.011,
+   "p50": 6.8,
+   "p95": 18.7,
+   "modes": [
+    "cycle",
+    "stay",
+    "train",
+    "cycle"
+   ]
+  },
+  {
+   "id": 28,
+   "n_in": 12,
+   "n_out": 28,
+   "raw_km": 16.386,
+   "out_km": 16.48,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 16.487
+   },
+   "unmatched_frac": 0.0,
+   "p50": 13.1,
+   "p95": 69.5,
+   "modes": [
+    "train"
+   ]
+  },
+  {
+   "id": 29,
+   "n_in": 13,
+   "n_out": 49,
+   "raw_km": 12.541,
+   "out_km": 12.9,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 1,
+   "straight_25m": 1,
+   "km": {
+    "raw": 10.445,
+    "matched": 1.409,
+    "straight": 1.052
+   },
+   "unmatched_frac": 0.917,
+   "p50": 0.9,
+   "p95": 23.5,
+   "modes": [
+    "cycle"
+   ]
+  },
+  {
+   "id": 30,
+   "n_in": 90,
+   "n_out": 417,
+   "raw_km": 38.976,
+   "out_km": 40.017,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 39.894,
+    "filled": 0.123
+   },
+   "unmatched_frac": 0.0,
+   "p50": 1.9,
+   "p95": 5.6,
+   "modes": [
+    "drive",
+    "cycle"
+   ]
+  },
+  {
+   "id": 31,
+   "n_in": 88,
+   "n_out": 441,
+   "raw_km": 39.273,
+   "out_km": 40.597,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 40.287,
+    "filled": 0.317
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.2,
+   "p95": 5.5,
+   "modes": [
+    "cycle",
+    "drive"
+   ]
+  },
+  {
+   "id": 32,
+   "n_in": 47,
+   "n_out": 95,
+   "raw_km": 2.354,
+   "out_km": 2.916,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 2.017,
+    "raw": 0.626,
+    "filled": 0.273
+   },
+   "unmatched_frac": 0.266,
+   "p50": 4.3,
+   "p95": 24.9,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 33,
+   "n_in": 36,
+   "n_out": 167,
+   "raw_km": 10.01,
+   "out_km": 10.681,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 10.682
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.8,
+   "p95": 14.6,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 34,
+   "n_in": 42,
+   "n_out": 221,
+   "raw_km": 11.355,
+   "out_km": 12.386,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 12.388
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.0,
+   "p95": 16.0,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 35,
+   "n_in": 91,
+   "n_out": 395,
+   "raw_km": 26.356,
+   "out_km": 27.348,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 26.958,
+    "filled": 0.389
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.6,
+   "p95": 12.9,
+   "modes": [
+    "drive",
+    "cycle",
+    "drive"
+   ]
+  },
+  {
+   "id": 36,
+   "n_in": 134,
+   "n_out": 416,
+   "raw_km": 17.474,
+   "out_km": 19.299,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 2,
+   "straight_25m": 2,
+   "km": {
+    "matched": 16.285,
+    "filled": 1.219,
+    "straight": 0.35,
+    "raw": 1.445
+   },
+   "unmatched_frac": 0.103,
+   "p50": 6.0,
+   "p95": 24.0,
+   "modes": [
+    "cycle"
+   ]
+  },
+  {
+   "id": 37,
+   "n_in": 52,
+   "n_out": 368,
+   "raw_km": 26.257,
+   "out_km": 27.46,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 27.47
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.3,
+   "p95": 9.7,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 38,
+   "n_in": 363,
+   "n_out": 925,
+   "raw_km": 54.966,
+   "out_km": 57.488,
+   "segments": 7,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "filled": 1.465,
+    "matched": 56.041,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.4,
+   "p95": 16.8,
+   "modes": [
+    "cycle",
+    "stay",
+    "cycle",
+    "stay",
+    "walk",
+    "train",
+    "walk"
+   ]
+  },
+  {
+   "id": 39,
+   "n_in": 38,
+   "n_out": 58,
+   "raw_km": 6.641,
+   "out_km": 6.425,
+   "segments": 4,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 5.659,
+    "filled": 0.766,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 10.3,
+   "p95": 84.8,
+   "modes": [
+    "train",
+    "stay",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 40,
+   "n_in": 108,
+   "n_out": 511,
+   "raw_km": 59.89,
+   "out_km": 61.312,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 61.312
+   },
+   "unmatched_frac": 0.0,
+   "p50": 5.5,
+   "p95": 12.3,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 41,
+   "n_in": 14,
+   "n_out": 61,
+   "raw_km": 2.328,
+   "out_km": 2.749,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 2.161,
+    "filled": 0.588,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 12.1,
+   "p95": 30.4,
+   "modes": [
+    "drive",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 42,
+   "n_in": 23,
+   "n_out": 140,
+   "raw_km": 8.8,
+   "out_km": 9.403,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 9.416
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.9,
+   "p95": 11.2,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 43,
+   "n_in": 84,
+   "n_out": 413,
+   "raw_km": 38.942,
+   "out_km": 40.17,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 39.871,
+    "filled": 0.3,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.5,
+   "p95": 6.7,
+   "modes": [
+    "drive",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 44,
+   "n_in": 80,
+   "n_out": 417,
+   "raw_km": 38.938,
+   "out_km": 40.291,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 39.861,
+    "filled": 0.442,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.6,
+   "p95": 10.6,
+   "modes": [
+    "drive",
+    "stay"
+   ]
+  },
+  {
+   "id": 45,
+   "n_in": 97,
+   "n_out": 481,
+   "raw_km": 35.667,
+   "out_km": 37.101,
+   "segments": 8,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "filled": 2.302,
+    "matched": 34.816,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.1,
+   "p95": 13.7,
+   "modes": [
+    "drive",
+    "stay",
+    "drive",
+    "stay",
+    "drive",
+    "stay",
+    "walk",
+    "drive"
+   ]
+  },
+  {
+   "id": 46,
+   "n_in": 125,
+   "n_out": 276,
+   "raw_km": 12.895,
+   "out_km": 13.609,
+   "segments": 9,
+   "single_fix_raw": 0,
+   "straight": 6,
+   "straight_25m": 6,
+   "km": {
+    "matched": 9.52,
+    "straight": 0.642,
+    "raw": 1.414,
+    "filled": 2.033,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.159,
+   "p50": 5.4,
+   "p95": 26.9,
+   "modes": [
+    "cycle",
+    "stay",
+    "walk",
+    "cycle",
+    "walk",
+    "stay",
+    "cycle",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 47,
+   "n_in": 80,
+   "n_out": 403,
+   "raw_km": 26.378,
+   "out_km": 27.507,
+   "segments": 8,
+   "single_fix_raw": 0,
+   "straight": 2,
+   "straight_25m": 2,
+   "km": {
+    "matched": 25.391,
+    "filled": 2.007,
+    "stay": 0.0,
+    "straight": 0.13
+   },
+   "unmatched_frac": 0.005,
+   "p50": 6.2,
+   "p95": 22.1,
+   "modes": [
+    "drive",
+    "stay",
+    "walk",
+    "stay",
+    "walk",
+    "stay",
+    "walk",
+    "drive"
+   ]
+  },
+  {
+   "id": 48,
+   "n_in": 49,
+   "n_out": 279,
+   "raw_km": 35.639,
+   "out_km": 36.547,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 21.476,
+    "raw": 15.08
+   },
+   "unmatched_frac": 0.423,
+   "p50": 2.7,
+   "p95": 23.2,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 49,
+   "n_in": 8,
+   "n_out": 65,
+   "raw_km": 2.677,
+   "out_km": 3.295,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 3.296
+   },
+   "unmatched_frac": 0.0,
+   "p50": 6.9,
+   "p95": 19.4,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 50,
+   "n_in": 11,
+   "n_out": 96,
+   "raw_km": 4.656,
+   "out_km": 5.504,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 5.513
+   },
+   "unmatched_frac": 0.0,
+   "p50": 5.9,
+   "p95": 14.2,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 51,
+   "n_in": 35,
+   "n_out": 125,
+   "raw_km": 5.557,
+   "out_km": 6.216,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "filled": 0.396,
+    "matched": 5.82
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.1,
+   "p95": 14.6,
+   "modes": [
+    "cycle"
+   ]
+  },
+  {
+   "id": 52,
+   "n_in": 29,
+   "n_out": 107,
+   "raw_km": 5.377,
+   "out_km": 5.674,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 5.674
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.2,
+   "p95": 14.2,
+   "modes": [
+    "cycle"
+   ]
+  },
+  {
+   "id": 53,
+   "n_in": 39,
+   "n_out": 272,
+   "raw_km": 27.548,
+   "out_km": 28.098,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 1,
+   "straight_25m": 1,
+   "km": {
+    "matched": 20.713,
+    "filled": 4.713,
+    "straight": 2.69
+   },
+   "unmatched_frac": 0.098,
+   "p50": 3.2,
+   "p95": 25.5,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 54,
+   "n_in": 46,
+   "n_out": 327,
+   "raw_km": 25.682,
+   "out_km": 27.117,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 27.124
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.4,
+   "p95": 8.5,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 55,
+   "n_in": 63,
+   "n_out": 375,
+   "raw_km": 38.502,
+   "out_km": 39.397,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 38.883,
+    "filled": 0.524
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.0,
+   "p95": 13.5,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 56,
+   "n_in": 97,
+   "n_out": 494,
+   "raw_km": 39.971,
+   "out_km": 41.256,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 40.675,
+    "filled": 0.595,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.1,
+   "p95": 7.9,
+   "modes": [
+    "drive",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 57,
+   "n_in": 80,
+   "n_out": 411,
+   "raw_km": 38.809,
+   "out_km": 40.123,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 39.865,
+    "filled": 0.262,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.6,
+   "p95": 14.1,
+   "modes": [
+    "drive",
+    "stay"
+   ]
+  },
+  {
+   "id": 58,
+   "n_in": 58,
+   "n_out": 185,
+   "raw_km": 34.653,
+   "out_km": 35.854,
+   "segments": 6,
+   "single_fix_raw": 0,
+   "straight": 1,
+   "straight_25m": 1,
+   "km": {
+    "filled": 1.391,
+    "matched": 34.426,
+    "straight": 0.043,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.001,
+   "p50": 8.7,
+   "p95": 25.8,
+   "modes": [
+    "cycle",
+    "stay",
+    "train",
+    "cycle",
+    "stay",
+    "cycle"
+   ]
+  },
+  {
+   "id": 59,
+   "n_in": 76,
+   "n_out": 169,
+   "raw_km": 34.822,
+   "out_km": 35.493,
+   "segments": 5,
+   "single_fix_raw": 0,
+   "straight": 2,
+   "straight_25m": 2,
+   "km": {
+    "filled": 0.459,
+    "stay": 0.0,
+    "matched": 34.632,
+    "straight": 0.407
+   },
+   "unmatched_frac": 0.012,
+   "p50": 6.4,
+   "p95": 31.7,
+   "modes": [
+    "stay",
+    "cycle",
+    "stay",
+    "train",
+    "cycle"
+   ]
+  },
+  {
+   "id": 60,
+   "n_in": 37,
+   "n_out": 125,
+   "raw_km": 5.524,
+   "out_km": 5.86,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "filled": 0.142,
+    "matched": 5.717
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.1,
+   "p95": 25.7,
+   "modes": [
+    "cycle"
+   ]
+  },
+  {
+   "id": 61,
+   "n_in": 16,
+   "n_out": 70,
+   "raw_km": 3.137,
+   "out_km": 3.256,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 3.256
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.6,
+   "p95": 12.9,
+   "modes": [
+    "cycle"
+   ]
+  },
+  {
+   "id": 62,
+   "n_in": 13,
+   "n_out": 43,
+   "raw_km": 1.999,
+   "out_km": 2.371,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 2.371
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.8,
+   "p95": 20.3,
+   "modes": [
+    "cycle"
+   ]
+  },
+  {
+   "id": 63,
+   "n_in": 46,
+   "n_out": 147,
+   "raw_km": 7.374,
+   "out_km": 8.007,
+   "segments": 5,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 7.674,
+    "filled": 0.334,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 5.8,
+   "p95": 15.2,
+   "modes": [
+    "drive",
+    "walk",
+    "stay",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 64,
+   "n_in": 16,
+   "n_out": 91,
+   "raw_km": 4.778,
+   "out_km": 5.289,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 5.289
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.2,
+   "p95": 11.8,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 65,
+   "n_in": 33,
+   "n_out": 120,
+   "raw_km": 5.403,
+   "out_km": 5.801,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "filled": 0.351,
+    "matched": 5.449,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.7,
+   "p95": 17.3,
+   "modes": [
+    "cycle",
+    "stay",
+    "cycle"
+   ]
+  },
+  {
+   "id": 66,
+   "n_in": 17,
+   "n_out": 71,
+   "raw_km": 3.2,
+   "out_km": 3.441,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 3.21,
+    "filled": 0.231
+   },
+   "unmatched_frac": 0.0,
+   "p50": 5.9,
+   "p95": 22.8,
+   "modes": [
+    "cycle"
+   ]
+  },
+  {
+   "id": 67,
+   "n_in": 23,
+   "n_out": 54,
+   "raw_km": 2.409,
+   "out_km": 2.819,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 1,
+   "straight_25m": 1,
+   "km": {
+    "straight": 0.059,
+    "stay": 0.0,
+    "filled": 0.316,
+    "matched": 2.445
+   },
+   "unmatched_frac": 0.024,
+   "p50": 5.4,
+   "p95": 11.0,
+   "modes": [
+    "stay",
+    "cycle"
+   ]
+  },
+  {
+   "id": 68,
+   "n_in": 8,
+   "n_out": 81,
+   "raw_km": 3.805,
+   "out_km": 5.158,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 5.163
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.5,
+   "p95": 23.9,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 69,
+   "n_in": 77,
+   "n_out": 407,
+   "raw_km": 38.947,
+   "out_km": 40.079,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 40.087
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.2,
+   "p95": 9.0,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 70,
+   "n_in": 80,
+   "n_out": 447,
+   "raw_km": 39.135,
+   "out_km": 40.686,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 40.672,
+    "join": 0.023
+   },
+   "unmatched_frac": 0.0,
+   "p50": 1.7,
+   "p95": 7.8,
+   "modes": [
+    "walk",
+    "drive"
+   ]
+  },
+  {
+   "id": 71,
+   "n_in": 13,
+   "n_out": 122,
+   "raw_km": 5.641,
+   "out_km": 6.466,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 6.466
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.5,
+   "p95": 30.5,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 72,
+   "n_in": 68,
+   "n_out": 410,
+   "raw_km": 38.582,
+   "out_km": 39.823,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 39.838
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.1,
+   "p95": 4.5,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 73,
+   "n_in": 47,
+   "n_out": 258,
+   "raw_km": 11.024,
+   "out_km": 13.138,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 12.766,
+    "filled": 0.375,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 5.1,
+   "p95": 13.7,
+   "modes": [
+    "drive",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 74,
+   "n_in": 20,
+   "n_out": 37,
+   "raw_km": 1.209,
+   "out_km": 1.315,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "stay": 0.0,
+    "filled": 0.107,
+    "matched": 1.208
+   },
+   "unmatched_frac": 0.0,
+   "p50": 8.4,
+   "p95": 19.0,
+   "modes": [
+    "stay",
+    "cycle"
+   ]
+  },
+  {
+   "id": 75,
+   "n_in": 7,
+   "n_out": 38,
+   "raw_km": 1.138,
+   "out_km": 1.396,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.158,
+    "filled": 0.238
+   },
+   "unmatched_frac": 0.0,
+   "p50": 8.5,
+   "p95": 18.4,
+   "modes": [
+    "cycle"
+   ]
+  },
+  {
+   "id": 76,
+   "n_in": 18,
+   "n_out": 65,
+   "raw_km": 2.566,
+   "out_km": 2.738,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 2.557,
+    "join": 0.008,
+    "filled": 0.173
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.4,
+   "p95": 21.2,
+   "modes": [
+    "cycle"
+   ]
+  },
+  {
+   "id": 77,
+   "n_in": 44,
+   "n_out": 127,
+   "raw_km": 5.559,
+   "out_km": 6.439,
+   "segments": 4,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 5.892,
+    "filled": 0.548,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.1,
+   "p95": 12.1,
+   "modes": [
+    "cycle",
+    "stay",
+    "stay",
+    "cycle"
+   ]
+  },
+  {
+   "id": 78,
+   "n_in": 30,
+   "n_out": 123,
+   "raw_km": 5.486,
+   "out_km": 5.833,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 5.473,
+    "filled": 0.36
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.6,
+   "p95": 14.2,
+   "modes": [
+    "cycle"
+   ]
+  },
+  {
+   "id": 79,
+   "n_in": 94,
+   "n_out": 167,
+   "raw_km": 8.761,
+   "out_km": 9.227,
+   "segments": 5,
+   "single_fix_raw": 1,
+   "straight": 1,
+   "straight_25m": 1,
+   "km": {
+    "matched": 7.872,
+    "filled": 1.13,
+    "stay": 0.0,
+    "raw": 0.098,
+    "straight": 0.134
+   },
+   "unmatched_frac": 0.027,
+   "p50": 4.4,
+   "p95": 24.2,
+   "modes": [
+    "drive",
+    "stay",
+    "stay",
+    "cycle",
+    "drive"
+   ]
+  },
+  {
+   "id": 80,
+   "n_in": 13,
+   "n_out": 57,
+   "raw_km": 2.054,
+   "out_km": 2.703,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.545,
+    "filled": 1.172,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 7.4,
+   "p95": 30.3,
+   "modes": [
+    "drive",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 81,
+   "n_in": 14,
+   "n_out": 59,
+   "raw_km": 2.918,
+   "out_km": 3.253,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 2.82,
+    "filled": 0.439,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 6.3,
+   "p95": 30.2,
+   "modes": [
+    "drive",
+    "stay"
+   ]
+  },
+  {
+   "id": 82,
+   "n_in": 9,
+   "n_out": 72,
+   "raw_km": 3.372,
+   "out_km": 4.241,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 4.241
+   },
+   "unmatched_frac": 0.0,
+   "p50": 7.2,
+   "p95": 9.9,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 83,
+   "n_in": 22,
+   "n_out": 102,
+   "raw_km": 5.472,
+   "out_km": 6.152,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 6.156
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.5,
+   "p95": 12.7,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 84,
+   "n_in": 46,
+   "n_out": 109,
+   "raw_km": 3.314,
+   "out_km": 3.885,
+   "segments": 7,
+   "single_fix_raw": 0,
+   "straight": 1,
+   "straight_25m": 1,
+   "km": {
+    "matched": 3.356,
+    "join": 0.047,
+    "filled": 0.403,
+    "stay": 0.0,
+    "straight": 0.081
+   },
+   "unmatched_frac": 0.024,
+   "p50": 5.0,
+   "p95": 15.6,
+   "modes": [
+    "drive",
+    "walk",
+    "stay",
+    "walk",
+    "stay",
+    "walk",
+    "cycle"
+   ]
+  },
+  {
+   "id": 85,
+   "n_in": 4,
+   "n_out": 28,
+   "raw_km": 0.824,
+   "out_km": 1.402,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.937,
+    "filled": 0.471
+   },
+   "unmatched_frac": 0.0,
+   "p50": 7.8,
+   "p95": 15.4,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 86,
+   "n_in": 3,
+   "n_out": 19,
+   "raw_km": 0.704,
+   "out_km": 0.966,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.966
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.5,
+   "p95": 13.6,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 87,
+   "n_in": 84,
+   "n_out": 421,
+   "raw_km": 39.147,
+   "out_km": 40.556,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 40.558
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.8,
+   "p95": 10.7,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 88,
+   "n_in": 70,
+   "n_out": 424,
+   "raw_km": 38.619,
+   "out_km": 39.824,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 39.83
+   },
+   "unmatched_frac": 0.0,
+   "p50": 1.8,
+   "p95": 6.3,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 89,
+   "n_in": 10,
+   "n_out": 87,
+   "raw_km": 4.57,
+   "out_km": 5.297,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 5.307
+   },
+   "unmatched_frac": 0.0,
+   "p50": 11.8,
+   "p95": 23.7,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 90,
+   "n_in": 79,
+   "n_out": 414,
+   "raw_km": 38.992,
+   "out_km": 40.118,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 40.12
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.2,
+   "p95": 8.0,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 91,
+   "n_in": 255,
+   "n_out": 1130,
+   "raw_km": 120.201,
+   "out_km": 122.647,
+   "segments": 10,
+   "single_fix_raw": 1,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "stay": 0.0,
+    "filled": 7.779,
+    "matched": 114.754,
+    "raw": 0.132
+   },
+   "unmatched_frac": 0.001,
+   "p50": 2.7,
+   "p95": 13.6,
+   "modes": [
+    "stay",
+    "drive",
+    "stay",
+    "drive",
+    "stay",
+    "stay",
+    "stay",
+    "drive",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 92,
+   "n_in": 84,
+   "n_out": 301,
+   "raw_km": 28.178,
+   "out_km": 29.186,
+   "segments": 5,
+   "single_fix_raw": 1,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 28.581,
+    "filled": 0.447,
+    "stay": 0.0,
+    "raw": 0.163
+   },
+   "unmatched_frac": 0.006,
+   "p50": 6.7,
+   "p95": 20.4,
+   "modes": [
+    "walk",
+    "drive",
+    "stay",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 93,
+   "n_in": 159,
+   "n_out": 409,
+   "raw_km": 32.052,
+   "out_km": 32.861,
+   "segments": 12,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "stay": 0.0,
+    "filled": 1.627,
+    "matched": 30.41,
+    "raw": 0.834
+   },
+   "unmatched_frac": 0.026,
+   "p50": 6.5,
+   "p95": 26.9,
+   "modes": [
+    "stay",
+    "walk",
+    "stay",
+    "stay",
+    "drive",
+    "stay",
+    "drive",
+    "walk",
+    "stay",
+    "stay",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 94,
+   "n_in": 24,
+   "n_out": 135,
+   "raw_km": 9.927,
+   "out_km": 10.409,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 10.409
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.3,
+   "p95": 20.3,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 95,
+   "n_in": 23,
+   "n_out": 139,
+   "raw_km": 9.192,
+   "out_km": 9.742,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 9.744
+   },
+   "unmatched_frac": 0.0,
+   "p50": 6.6,
+   "p95": 24.9,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 96,
+   "n_in": 9,
+   "n_out": 33,
+   "raw_km": 1.538,
+   "out_km": 1.672,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.588,
+    "filled": 0.084
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.5,
+   "p95": 14.4,
+   "modes": [
+    "drive",
+    "walk"
+   ]
+  },
+  {
+   "id": 97,
+   "n_in": 46,
+   "n_out": 278,
+   "raw_km": 28.547,
+   "out_km": 29.631,
+   "segments": 4,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "stay": 0.0,
+    "filled": 10.519,
+    "matched": 19.12
+   },
+   "unmatched_frac": 0.0,
+   "p50": 6.4,
+   "p95": 28.5,
+   "modes": [
+    "stay",
+    "drive",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 98,
+   "n_in": 155,
+   "n_out": 213,
+   "raw_km": 18.465,
+   "out_km": 18.485,
+   "segments": 15,
+   "single_fix_raw": 0,
+   "straight": 3,
+   "straight_25m": 3,
+   "km": {
+    "matched": 16.051,
+    "filled": 2.263,
+    "stay": 0.0,
+    "straight": 0.173
+   },
+   "unmatched_frac": 0.009,
+   "p50": 8.7,
+   "p95": 43.8,
+   "modes": [
+    "drive",
+    "stay",
+    "walk",
+    "stay",
+    "walk",
+    "stay",
+    "walk",
+    "stay",
+    "stay",
+    "stay",
+    "stay",
+    "walk",
+    "stay",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 99,
+   "n_in": 41,
+   "n_out": 28,
+   "raw_km": 1.14,
+   "out_km": 1.178,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.59,
+    "join": 0.002,
+    "filled": 0.587,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 6.4,
+   "p95": 34.9,
+   "modes": [
+    "walk",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 100,
+   "n_in": 30,
+   "n_out": 148,
+   "raw_km": 12.78,
+   "out_km": 13.11,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 13.111
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.4,
+   "p95": 12.4,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 101,
+   "n_in": 9,
+   "n_out": 59,
+   "raw_km": 4.188,
+   "out_km": 4.397,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 4.399
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.9,
+   "p95": 13.2,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 102,
+   "n_in": 12,
+   "n_out": 68,
+   "raw_km": 4.799,
+   "out_km": 5.271,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 5.272
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.2,
+   "p95": 16.0,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 103,
+   "n_in": 4,
+   "n_out": 23,
+   "raw_km": 1.332,
+   "out_km": 1.431,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.431
+   },
+   "unmatched_frac": 0.0,
+   "p50": 6.7,
+   "p95": 12.2,
+   "modes": [
+    "cycle"
+   ]
+  },
+  {
+   "id": 104,
+   "n_in": 14,
+   "n_out": 28,
+   "raw_km": 1.979,
+   "out_km": 2.159,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "filled": 0.407,
+    "stay": 0.0,
+    "matched": 0.239,
+    "raw": 1.512
+   },
+   "unmatched_frac": 0.764,
+   "p50": 9.5,
+   "p95": 28.8,
+   "modes": [
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 105,
+   "n_in": 275,
+   "n_out": 479,
+   "raw_km": 31.542,
+   "out_km": 31.812,
+   "segments": 13,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 30.175,
+    "filled": 1.603,
+    "stay": 0.0,
+    "join": 0.035
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.8,
+   "p95": 18.8,
+   "modes": [
+    "drive",
+    "stay",
+    "stay",
+    "drive",
+    "stay",
+    "stay",
+    "walk",
+    "stay",
+    "walk",
+    "stay",
+    "walk",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 106,
+   "n_in": 16,
+   "n_out": 69,
+   "raw_km": 5.007,
+   "out_km": 5.162,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 5.162
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.7,
+   "p95": 15.8,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 107,
+   "n_in": 25,
+   "n_out": 101,
+   "raw_km": 9.477,
+   "out_km": 10.048,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 9.902,
+    "filled": 0.146
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.1,
+   "p95": 12.8,
+   "modes": [
+    "drive",
+    "walk"
+   ]
+  },
+  {
+   "id": 108,
+   "n_in": 17,
+   "n_out": 75,
+   "raw_km": 8.896,
+   "out_km": 9.192,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "stay": 0.0,
+    "filled": 0.485,
+    "matched": 8.709
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.5,
+   "p95": 29.6,
+   "modes": [
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 109,
+   "n_in": 15,
+   "n_out": 43,
+   "raw_km": 1.597,
+   "out_km": 1.789,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.492,
+    "filled": 0.296,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 5.1,
+   "p95": 11.8,
+   "modes": [
+    "drive",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 110,
+   "n_in": 160,
+   "n_out": 758,
+   "raw_km": 103.033,
+   "out_km": 105.117,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 105.12
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.6,
+   "p95": 7.8,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 111,
+   "n_in": 77,
+   "n_out": 381,
+   "raw_km": 36.628,
+   "out_km": 37.857,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 37.857
+   },
+   "unmatched_frac": 0.0,
+   "p50": 1.9,
+   "p95": 5.8,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 112,
+   "n_in": 9,
+   "n_out": 47,
+   "raw_km": 2.339,
+   "out_km": 2.597,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 2.597
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.0,
+   "p95": 13.5,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 113,
+   "n_in": 14,
+   "n_out": 73,
+   "raw_km": 2.473,
+   "out_km": 3.028,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 2.642,
+    "filled": 0.386,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 8.5,
+   "p95": 16.2,
+   "modes": [
+    "drive",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 114,
+   "n_in": 76,
+   "n_out": 300,
+   "raw_km": 9.944,
+   "out_km": 11.748,
+   "segments": 8,
+   "single_fix_raw": 0,
+   "straight": 1,
+   "straight_25m": 1,
+   "km": {
+    "matched": 10.632,
+    "filled": 1.044,
+    "stay": 0.0,
+    "straight": 0.075
+   },
+   "unmatched_frac": 0.008,
+   "p50": 4.7,
+   "p95": 22.1,
+   "modes": [
+    "drive",
+    "walk",
+    "stay",
+    "walk",
+    "drive",
+    "walk",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 115,
+   "n_in": 23,
+   "n_out": 34,
+   "raw_km": 0.883,
+   "out_km": 0.878,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.806,
+    "filled": 0.072,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.1,
+   "p95": 32.5,
+   "modes": [
+    "walk",
+    "stay"
+   ]
+  },
+  {
+   "id": 116,
+   "n_in": 39,
+   "n_out": 37,
+   "raw_km": 0.992,
+   "out_km": 0.917,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.648,
+    "filled": 0.269,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 6.1,
+   "p95": 15.2,
+   "modes": [
+    "walk",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 117,
+   "n_in": 15,
+   "n_out": 19,
+   "raw_km": 0.74,
+   "out_km": 0.776,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.66,
+    "filled": 0.116,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.4,
+   "p95": 9.5,
+   "modes": [
+    "walk",
+    "stay"
+   ]
+  },
+  {
+   "id": 118,
+   "n_in": 9,
+   "n_out": 12,
+   "raw_km": 0.425,
+   "out_km": 0.424,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.424
+   },
+   "unmatched_frac": 0.0,
+   "p50": 6.0,
+   "p95": 13.1,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 119,
+   "n_in": 19,
+   "n_out": 39,
+   "raw_km": 2.013,
+   "out_km": 2.109,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "stay": 0.0,
+    "filled": 0.371,
+    "matched": 1.738
+   },
+   "unmatched_frac": 0.0,
+   "p50": 7.2,
+   "p95": 26.8,
+   "modes": [
+    "stay",
+    "cycle"
+   ]
+  },
+  {
+   "id": 120,
+   "n_in": 26,
+   "n_out": 89,
+   "raw_km": 3.023,
+   "out_km": 3.653,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 1,
+   "straight_25m": 1,
+   "km": {
+    "matched": 2.82,
+    "filled": 0.771,
+    "straight": 0.061
+   },
+   "unmatched_frac": 0.02,
+   "p50": 6.4,
+   "p95": 20.5,
+   "modes": [
+    "cycle",
+    "walk"
+   ]
+  },
+  {
+   "id": 121,
+   "n_in": 9,
+   "n_out": 13,
+   "raw_km": 0.532,
+   "out_km": 0.516,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.392,
+    "filled": 0.124
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.9,
+   "p95": 29.2,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 122,
+   "n_in": 31,
+   "n_out": 77,
+   "raw_km": 3.378,
+   "out_km": 3.819,
+   "segments": 4,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 3.272,
+    "filled": 0.55,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 5.5,
+   "p95": 13.1,
+   "modes": [
+    "walk",
+    "stay",
+    "drive",
+    "stay"
+   ]
+  },
+  {
+   "id": 123,
+   "n_in": 8,
+   "n_out": 55,
+   "raw_km": 2.404,
+   "out_km": 2.947,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 2.948
+   },
+   "unmatched_frac": 0.0,
+   "p50": 6.6,
+   "p95": 20.8,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 124,
+   "n_in": 14,
+   "n_out": 26,
+   "raw_km": 1.337,
+   "out_km": 1.425,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.216,
+    "filled": 0.208,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.6,
+   "p95": 23.4,
+   "modes": [
+    "cycle",
+    "stay",
+    "cycle"
+   ]
+  },
+  {
+   "id": 125,
+   "n_in": 91,
+   "n_out": 483,
+   "raw_km": 40.074,
+   "out_km": 41.401,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 41.41
+   },
+   "unmatched_frac": 0.0,
+   "p50": 1.7,
+   "p95": 5.2,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 126,
+   "n_in": 81,
+   "n_out": 165,
+   "raw_km": 34.51,
+   "out_km": 35.151,
+   "segments": 4,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "filled": 1.53,
+    "matched": 33.655,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 5.7,
+   "p95": 23.9,
+   "modes": [
+    "cycle",
+    "stay",
+    "train",
+    "cycle"
+   ]
+  },
+  {
+   "id": 127,
+   "n_in": 27,
+   "n_out": 68,
+   "raw_km": 3.94,
+   "out_km": 4.164,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 2.775,
+    "filled": 1.397,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 11.2,
+   "p95": 28.5,
+   "modes": [
+    "drive",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 128,
+   "n_in": 47,
+   "n_out": 49,
+   "raw_km": 2.248,
+   "out_km": 1.979,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.567,
+    "filled": 0.412,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 8.8,
+   "p95": 26.7,
+   "modes": [
+    "cycle",
+    "stay",
+    "stay"
+   ]
+  },
+  {
+   "id": 129,
+   "n_in": 12,
+   "n_out": 41,
+   "raw_km": 1.583,
+   "out_km": 1.706,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 1,
+   "straight_25m": 1,
+   "km": {
+    "matched": 1.637,
+    "straight": 0.069
+   },
+   "unmatched_frac": 0.044,
+   "p50": 3.6,
+   "p95": 20.5,
+   "modes": [
+    "cycle"
+   ]
+  },
+  {
+   "id": 130,
+   "n_in": 46,
+   "n_out": 35,
+   "raw_km": 1.603,
+   "out_km": 1.194,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.075,
+    "filled": 0.119,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.5,
+   "p95": 27.7,
+   "modes": [
+    "walk",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 131,
+   "n_in": 13,
+   "n_out": 49,
+   "raw_km": 2.565,
+   "out_km": 2.757,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 2.757
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.4,
+   "p95": 24.7,
+   "modes": [
+    "cycle"
+   ]
+  },
+  {
+   "id": 132,
+   "n_in": 25,
+   "n_out": 101,
+   "raw_km": 3.194,
+   "out_km": 3.716,
+   "segments": 4,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 3.177,
+    "filled": 0.562,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.5,
+   "p95": 15.0,
+   "modes": [
+    "walk",
+    "cycle",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 133,
+   "n_in": 12,
+   "n_out": 48,
+   "raw_km": 2.614,
+   "out_km": 2.889,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 2.889
+   },
+   "unmatched_frac": 0.0,
+   "p50": 6.9,
+   "p95": 24.5,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 134,
+   "n_in": 32,
+   "n_out": 152,
+   "raw_km": 5.064,
+   "out_km": 5.66,
+   "segments": 4,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "stay": 0.0,
+    "filled": 0.842,
+    "matched": 4.832
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.7,
+   "p95": 34.0,
+   "modes": [
+    "stay",
+    "cycle",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 135,
+   "n_in": 41,
+   "n_out": 92,
+   "raw_km": 3.834,
+   "out_km": 4.034,
+   "segments": 4,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 3.554,
+    "filled": 0.48,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.1,
+   "p95": 19.8,
+   "modes": [
+    "cycle",
+    "walk",
+    "stay",
+    "stay"
+   ]
+  },
+  {
+   "id": 136,
+   "n_in": 42,
+   "n_out": 112,
+   "raw_km": 5.849,
+   "out_km": 6.456,
+   "segments": 4,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "stay": 0.0,
+    "filled": 0.49,
+    "matched": 5.966
+   },
+   "unmatched_frac": 0.0,
+   "p50": 6.3,
+   "p95": 23.5,
+   "modes": [
+    "stay",
+    "cycle",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 137,
+   "n_in": 72,
+   "n_out": 121,
+   "raw_km": 4.892,
+   "out_km": 5.325,
+   "segments": 5,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 4.465,
+    "filled": 0.866,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.8,
+   "p95": 26.4,
+   "modes": [
+    "cycle",
+    "stay",
+    "cycle",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 138,
+   "n_in": 38,
+   "n_out": 73,
+   "raw_km": 1.502,
+   "out_km": 1.715,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.716
+   },
+   "unmatched_frac": 0.0,
+   "p50": 6.5,
+   "p95": 24.0,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 139,
+   "n_in": 25,
+   "n_out": 81,
+   "raw_km": 3.519,
+   "out_km": 4.183,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 3.715,
+    "join": 0.012,
+    "filled": 0.457
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.4,
+   "p95": 18.0,
+   "modes": [
+    "walk",
+    "drive"
+   ]
+  },
+  {
+   "id": 140,
+   "n_in": 16,
+   "n_out": 54,
+   "raw_km": 1.509,
+   "out_km": 2.034,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.272,
+    "filled": 0.763,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 7.0,
+   "p95": 55.8,
+   "modes": [
+    "cycle",
+    "stay",
+    "cycle"
+   ]
+  },
+  {
+   "id": 141,
+   "n_in": 3,
+   "n_out": 7,
+   "raw_km": 0.389,
+   "out_km": 0.447,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.447
+   },
+   "unmatched_frac": 0.0,
+   "p50": 7.7,
+   "p95": 10.4,
+   "modes": [
+    "cycle"
+   ]
+  },
+  {
+   "id": 142,
+   "n_in": 4,
+   "n_out": 6,
+   "raw_km": 0.425,
+   "out_km": 0.45,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.45
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.6,
+   "p95": 9.5,
+   "modes": [
+    "cycle"
+   ]
+  },
+  {
+   "id": 143,
+   "n_in": 3,
+   "n_out": 7,
+   "raw_km": 0.484,
+   "out_km": 0.529,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.529
+   },
+   "unmatched_frac": 0.0,
+   "p50": 6.1,
+   "p95": 6.5,
+   "modes": [
+    "cycle"
+   ]
+  },
+  {
+   "id": 144,
+   "n_in": 3,
+   "n_out": 5,
+   "raw_km": 0.344,
+   "out_km": 0.371,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.371
+   },
+   "unmatched_frac": 0.0,
+   "p50": 13.0,
+   "p95": 14.5,
+   "modes": [
+    "cycle"
+   ]
+  },
+  {
+   "id": 145,
+   "n_in": 312,
+   "n_out": 827,
+   "raw_km": 45.876,
+   "out_km": 49.461,
+   "segments": 16,
+   "single_fix_raw": 1,
+   "straight": 6,
+   "straight_25m": 6,
+   "km": {
+    "matched": 34.909,
+    "filled": 12.492,
+    "stay": 0.0,
+    "straight": 0.961,
+    "raw": 1.041,
+    "join": 0.064
+   },
+   "unmatched_frac": 0.044,
+   "p50": 5.8,
+   "p95": 19.9,
+   "modes": [
+    "drive",
+    "stay",
+    "cycle",
+    "walk",
+    "stay",
+    "walk",
+    "stay",
+    "cycle",
+    "walk",
+    "stay",
+    "walk",
+    "stay",
+    "stay",
+    "walk",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 146,
+   "n_in": 17,
+   "n_out": 26,
+   "raw_km": 0.679,
+   "out_km": 0.726,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.726
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.6,
+   "p95": 19.2,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 147,
+   "n_in": 16,
+   "n_out": 26,
+   "raw_km": 0.68,
+   "out_km": 0.744,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.744
+   },
+   "unmatched_frac": 0.0,
+   "p50": 7.7,
+   "p95": 16.7,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 148,
+   "n_in": 357,
+   "n_out": 910,
+   "raw_km": 64.035,
+   "out_km": 66.644,
+   "segments": 18,
+   "single_fix_raw": 0,
+   "straight": 7,
+   "straight_25m": 7,
+   "km": {
+    "matched": 55.329,
+    "filled": 10.23,
+    "stay": 0.0,
+    "straight": 0.751,
+    "raw": 0.349,
+    "join": 0.002
+   },
+   "unmatched_frac": 0.017,
+   "p50": 5.1,
+   "p95": 19.1,
+   "modes": [
+    "drive",
+    "stay",
+    "walk",
+    "stay",
+    "cycle",
+    "stay",
+    "cycle",
+    "stay",
+    "cycle",
+    "stay",
+    "walk",
+    "stay",
+    "walk",
+    "cycle",
+    "stay",
+    "walk",
+    "stay",
+    "cycle"
+   ]
+  },
+  {
+   "id": 149,
+   "n_in": 197,
+   "n_out": 655,
+   "raw_km": 56.683,
+   "out_km": 57.852,
+   "segments": 7,
+   "single_fix_raw": 0,
+   "straight": 2,
+   "straight_25m": 2,
+   "km": {
+    "matched": 53.856,
+    "filled": 3.352,
+    "stay": 0.0,
+    "raw": 0.387,
+    "straight": 0.27
+   },
+   "unmatched_frac": 0.012,
+   "p50": 4.5,
+   "p95": 27.8,
+   "modes": [
+    "cycle",
+    "stay",
+    "walk",
+    "stay",
+    "walk",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 150,
+   "n_in": 33,
+   "n_out": 87,
+   "raw_km": 3.357,
+   "out_km": 3.613,
+   "segments": 4,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "stay": 0.0,
+    "filled": 0.538,
+    "matched": 3.077
+   },
+   "unmatched_frac": 0.0,
+   "p50": 8.7,
+   "p95": 29.5,
+   "modes": [
+    "stay",
+    "cycle",
+    "stay",
+    "cycle"
+   ]
+  },
+  {
+   "id": 151,
+   "n_in": 29,
+   "n_out": 44,
+   "raw_km": 1.238,
+   "out_km": 1.203,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.013,
+    "filled": 0.19,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.6,
+   "p95": 25.7,
+   "modes": [
+    "walk",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 152,
+   "n_in": 167,
+   "n_out": 212,
+   "raw_km": 4.407,
+   "out_km": 4.541,
+   "segments": 9,
+   "single_fix_raw": 1,
+   "straight": 2,
+   "straight_25m": 2,
+   "km": {
+    "matched": 2.758,
+    "filled": 1.34,
+    "stay": 0.0,
+    "raw": 0.345,
+    "straight": 0.099
+   },
+   "unmatched_frac": 0.101,
+   "p50": 7.5,
+   "p95": 32.0,
+   "modes": [
+    "walk",
+    "stay",
+    "stay",
+    "stay",
+    "walk",
+    "stay",
+    "stay",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 153,
+   "n_in": 17,
+   "n_out": 26,
+   "raw_km": 0.788,
+   "out_km": 0.833,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.833
+   },
+   "unmatched_frac": 0.0,
+   "p50": 9.1,
+   "p95": 17.8,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 154,
+   "n_in": 84,
+   "n_out": 157,
+   "raw_km": 34.833,
+   "out_km": 35.546,
+   "segments": 6,
+   "single_fix_raw": 0,
+   "straight": 1,
+   "straight_25m": 1,
+   "km": {
+    "matched": 34.169,
+    "filled": 1.075,
+    "stay": 0.0,
+    "straight": 0.302
+   },
+   "unmatched_frac": 0.009,
+   "p50": 6.3,
+   "p95": 28.8,
+   "modes": [
+    "cycle",
+    "stay",
+    "train",
+    "cycle",
+    "stay",
+    "cycle"
+   ]
+  },
+  {
+   "id": 155,
+   "n_in": 90,
+   "n_out": 172,
+   "raw_km": 34.647,
+   "out_km": 35.113,
+   "segments": 4,
+   "single_fix_raw": 0,
+   "straight": 1,
+   "straight_25m": 1,
+   "km": {
+    "filled": 0.873,
+    "matched": 34.152,
+    "straight": 0.09,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.003,
+   "p50": 5.3,
+   "p95": 24.0,
+   "modes": [
+    "cycle",
+    "stay",
+    "train",
+    "cycle"
+   ]
+  },
+  {
+   "id": 156,
+   "n_in": 5,
+   "n_out": 37,
+   "raw_km": 1.42,
+   "out_km": 1.659,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.659
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.3,
+   "p95": 14.7,
+   "modes": [
+    "cycle"
+   ]
+  },
+  {
+   "id": 157,
+   "n_in": 35,
+   "n_out": 108,
+   "raw_km": 3.766,
+   "out_km": 4.033,
+   "segments": 4,
+   "single_fix_raw": 0,
+   "straight": 1,
+   "straight_25m": 1,
+   "km": {
+    "stay": 0.0,
+    "straight": 0.103,
+    "matched": 3.513,
+    "filled": 0.419
+   },
+   "unmatched_frac": 0.027,
+   "p50": 5.8,
+   "p95": 35.1,
+   "modes": [
+    "stay",
+    "walk",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 158,
+   "n_in": 13,
+   "n_out": 40,
+   "raw_km": 1.907,
+   "out_km": 2.078,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.976,
+    "raw": 0.102
+   },
+   "unmatched_frac": 0.053,
+   "p50": 3.7,
+   "p95": 19.1,
+   "modes": [
+    "cycle"
+   ]
+  },
+  {
+   "id": 159,
+   "n_in": 21,
+   "n_out": 41,
+   "raw_km": 2.027,
+   "out_km": 2.212,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 2,
+   "straight_25m": 2,
+   "km": {
+    "matched": 1.997,
+    "join": 0.016,
+    "straight": 0.2
+   },
+   "unmatched_frac": 0.098,
+   "p50": 6.4,
+   "p95": 12.1,
+   "modes": [
+    "walk",
+    "cycle"
+   ]
+  },
+  {
+   "id": 160,
+   "n_in": 3,
+   "n_out": 6,
+   "raw_km": 0.425,
+   "out_km": 0.448,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.448
+   },
+   "unmatched_frac": 0.0,
+   "p50": 11.7,
+   "p95": 19.5,
+   "modes": [
+    "cycle"
+   ]
+  },
+  {
+   "id": 161,
+   "n_in": 4,
+   "n_out": 8,
+   "raw_km": 0.453,
+   "out_km": 0.484,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.484
+   },
+   "unmatched_frac": 0.0,
+   "p50": 5.2,
+   "p95": 11.0,
+   "modes": [
+    "cycle"
+   ]
+  },
+  {
+   "id": 162,
+   "n_in": 3,
+   "n_out": 7,
+   "raw_km": 0.448,
+   "out_km": 0.518,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.518
+   },
+   "unmatched_frac": 0.0,
+   "p50": 1.1,
+   "p95": 16.5,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 163,
+   "n_in": 5,
+   "n_out": 10,
+   "raw_km": 0.579,
+   "out_km": 0.623,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.623
+   },
+   "unmatched_frac": 0.0,
+   "p50": 6.8,
+   "p95": 10.9,
+   "modes": [
+    "cycle"
+   ]
+  },
+  {
+   "id": 164,
+   "n_in": 12,
+   "n_out": 38,
+   "raw_km": 1.712,
+   "out_km": 1.682,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.682
+   },
+   "unmatched_frac": 0.0,
+   "p50": 12.9,
+   "p95": 21.3,
+   "modes": [
+    "cycle"
+   ]
+  },
+  {
+   "id": 165,
+   "n_in": 6,
+   "n_out": 40,
+   "raw_km": 1.402,
+   "out_km": 1.721,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.034,
+    "filled": 0.688
+   },
+   "unmatched_frac": 0.0,
+   "p50": 12.2,
+   "p95": 33.8,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 166,
+   "n_in": 35,
+   "n_out": 38,
+   "raw_km": 1.013,
+   "out_km": 0.876,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.56,
+    "filled": 0.317,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 10.2,
+   "p95": 23.4,
+   "modes": [
+    "walk",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 167,
+   "n_in": 19,
+   "n_out": 21,
+   "raw_km": 1.082,
+   "out_km": 1.162,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 1,
+   "straight_25m": 1,
+   "km": {
+    "matched": 0.65,
+    "filled": 0.45,
+    "stay": 0.0,
+    "straight": 0.062
+   },
+   "unmatched_frac": 0.057,
+   "p50": 8.3,
+   "p95": 31.9,
+   "modes": [
+    "cycle",
+    "stay",
+    "cycle"
+   ]
+  },
+  {
+   "id": 168,
+   "n_in": 21,
+   "n_out": 22,
+   "raw_km": 1.026,
+   "out_km": 1.205,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.498,
+    "filled": 0.707,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.9,
+   "p95": 11.3,
+   "modes": [
+    "drive",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 169,
+   "n_in": 6,
+   "n_out": 16,
+   "raw_km": 1.229,
+   "out_km": 1.39,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.136,
+    "filled": 0.254
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.4,
+   "p95": 9.3,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 170,
+   "n_in": 13,
+   "n_out": 42,
+   "raw_km": 1.46,
+   "out_km": 1.552,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.552
+   },
+   "unmatched_frac": 0.0,
+   "p50": 6.3,
+   "p95": 17.8,
+   "modes": [
+    "cycle"
+   ]
+  },
+  {
+   "id": 171,
+   "n_in": 48,
+   "n_out": 75,
+   "raw_km": 2.015,
+   "out_km": 2.05,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.753,
+    "filled": 0.297,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.6,
+   "p95": 20.4,
+   "modes": [
+    "walk",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 172,
+   "n_in": 64,
+   "n_out": 45,
+   "raw_km": 1.758,
+   "out_km": 1.135,
+   "segments": 3,
+   "single_fix_raw": 1,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.787,
+    "filled": 0.177,
+    "stay": 0.0,
+    "raw": 0.171
+   },
+   "unmatched_frac": 0.097,
+   "p50": 7.5,
+   "p95": 30.9,
+   "modes": [
+    "walk",
+    "stay",
+    "stay"
+   ]
+  },
+  {
+   "id": 173,
+   "n_in": 39,
+   "n_out": 46,
+   "raw_km": 1.086,
+   "out_km": 1.044,
+   "segments": 4,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "stay": 0.0,
+    "filled": 0.436,
+    "matched": 0.608
+   },
+   "unmatched_frac": 0.0,
+   "p50": 6.1,
+   "p95": 25.0,
+   "modes": [
+    "stay",
+    "walk",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 174,
+   "n_in": 10,
+   "n_out": 43,
+   "raw_km": 1.357,
+   "out_km": 1.461,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 1,
+   "straight_25m": 1,
+   "km": {
+    "matched": 1.296,
+    "straight": 0.166
+   },
+   "unmatched_frac": 0.122,
+   "p50": 10.1,
+   "p95": 22.2,
+   "modes": [
+    "cycle"
+   ]
+  },
+  {
+   "id": 175,
+   "n_in": 36,
+   "n_out": 92,
+   "raw_km": 2.15,
+   "out_km": 2.416,
+   "segments": 4,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 2.284,
+    "filled": 0.109,
+    "join": 0.023,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 6.7,
+   "p95": 23.2,
+   "modes": [
+    "walk",
+    "cycle",
+    "walk",
+    "stay"
+   ]
+  },
+  {
+   "id": 176,
+   "n_in": 33,
+   "n_out": 39,
+   "raw_km": 1.145,
+   "out_km": 1.033,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 1,
+   "straight_25m": 1,
+   "km": {
+    "stay": 0.0,
+    "straight": 0.099,
+    "matched": 0.934
+   },
+   "unmatched_frac": 0.086,
+   "p50": 4.9,
+   "p95": 24.6,
+   "modes": [
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 177,
+   "n_in": 27,
+   "n_out": 39,
+   "raw_km": 1.095,
+   "out_km": 1.089,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.909,
+    "filled": 0.18,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 6.9,
+   "p95": 17.1,
+   "modes": [
+    "walk",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 178,
+   "n_in": 21,
+   "n_out": 99,
+   "raw_km": 4.754,
+   "out_km": 5.25,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 4.732,
+    "filled": 0.522,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 5.4,
+   "p95": 15.1,
+   "modes": [
+    "drive",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 179,
+   "n_in": 21,
+   "n_out": 69,
+   "raw_km": 1.865,
+   "out_km": 2.029,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.6,
+    "filled": 0.414,
+    "join": 0.018,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.4,
+   "p95": 44.7,
+   "modes": [
+    "walk",
+    "cycle",
+    "stay"
+   ]
+  },
+  {
+   "id": 180,
+   "n_in": 18,
+   "n_out": 71,
+   "raw_km": 1.695,
+   "out_km": 2.138,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 2,
+   "straight_25m": 2,
+   "km": {
+    "stay": 0.0,
+    "filled": 0.133,
+    "matched": 1.889,
+    "straight": 0.115
+   },
+   "unmatched_frac": 0.068,
+   "p50": 13.3,
+   "p95": 33.3,
+   "modes": [
+    "stay",
+    "cycle"
+   ]
+  },
+  {
+   "id": 181,
+   "n_in": 26,
+   "n_out": 33,
+   "raw_km": 0.914,
+   "out_km": 0.895,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 1,
+   "straight_25m": 1,
+   "km": {
+    "matched": 0.773,
+    "straight": 0.122,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.133,
+   "p50": 3.3,
+   "p95": 18.1,
+   "modes": [
+    "walk",
+    "stay"
+   ]
+  },
+  {
+   "id": 182,
+   "n_in": 16,
+   "n_out": 26,
+   "raw_km": 0.797,
+   "out_km": 0.83,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.83
+   },
+   "unmatched_frac": 0.0,
+   "p50": 6.8,
+   "p95": 20.2,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 183,
+   "n_in": 12,
+   "n_out": 16,
+   "raw_km": 0.557,
+   "out_km": 0.582,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.582
+   },
+   "unmatched_frac": 0.0,
+   "p50": 5.1,
+   "p95": 15.6,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 184,
+   "n_in": 13,
+   "n_out": 17,
+   "raw_km": 0.568,
+   "out_km": 0.612,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.612
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.3,
+   "p95": 10.2,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 185,
+   "n_in": 56,
+   "n_out": 76,
+   "raw_km": 1.956,
+   "out_km": 1.893,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.697,
+    "filled": 0.196,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.9,
+   "p95": 14.7,
+   "modes": [
+    "walk",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 186,
+   "n_in": 53,
+   "n_out": 76,
+   "raw_km": 2.154,
+   "out_km": 2.176,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.979,
+    "filled": 0.197,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.3,
+   "p95": 15.7,
+   "modes": [
+    "walk",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 187,
+   "n_in": 11,
+   "n_out": 15,
+   "raw_km": 0.507,
+   "out_km": 0.525,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.525
+   },
+   "unmatched_frac": 0.0,
+   "p50": 5.5,
+   "p95": 19.6,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 188,
+   "n_in": 14,
+   "n_out": 17,
+   "raw_km": 0.633,
+   "out_km": 0.645,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.645
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.3,
+   "p95": 11.4,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 189,
+   "n_in": 10,
+   "n_out": 106,
+   "raw_km": 6.88,
+   "out_km": 7.508,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 7.512
+   },
+   "unmatched_frac": 0.0,
+   "p50": 5.9,
+   "p95": 17.8,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 190,
+   "n_in": 15,
+   "n_out": 120,
+   "raw_km": 8.148,
+   "out_km": 8.647,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 8.654
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.3,
+   "p95": 11.6,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 191,
+   "n_in": 9,
+   "n_out": 29,
+   "raw_km": 1.232,
+   "out_km": 1.336,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 1,
+   "straight_25m": 1,
+   "km": {
+    "raw": 0.093,
+    "matched": 1.005,
+    "straight": 0.241
+   },
+   "unmatched_frac": 0.271,
+   "p50": 5.0,
+   "p95": 20.8,
+   "modes": [
+    "cycle"
+   ]
+  },
+  {
+   "id": 192,
+   "n_in": 45,
+   "n_out": 76,
+   "raw_km": 1.98,
+   "out_km": 2.021,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.862,
+    "filled": 0.159,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.1,
+   "p95": 12.8,
+   "modes": [
+    "walk",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 193,
+   "n_in": 25,
+   "n_out": 71,
+   "raw_km": 2.591,
+   "out_km": 2.693,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 2.565,
+    "join": 0.012,
+    "stay": 0.0,
+    "filled": 0.115
+   },
+   "unmatched_frac": 0.0,
+   "p50": 5.0,
+   "p95": 41.4,
+   "modes": [
+    "cycle",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 194,
+   "n_in": 40,
+   "n_out": 75,
+   "raw_km": 1.948,
+   "out_km": 2.016,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.813,
+    "filled": 0.203,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 6.4,
+   "p95": 17.3,
+   "modes": [
+    "walk",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 195,
+   "n_in": 18,
+   "n_out": 132,
+   "raw_km": 9.442,
+   "out_km": 10.749,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 10.757
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.1,
+   "p95": 20.4,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 196,
+   "n_in": 26,
+   "n_out": 169,
+   "raw_km": 11.987,
+   "out_km": 12.683,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 12.687
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.1,
+   "p95": 10.0,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 197,
+   "n_in": 23,
+   "n_out": 104,
+   "raw_km": 3.436,
+   "out_km": 3.847,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 3.399,
+    "filled": 0.455
+   },
+   "unmatched_frac": 0.0,
+   "p50": 7.0,
+   "p95": 12.7,
+   "modes": [
+    "cycle",
+    "walk"
+   ]
+  },
+  {
+   "id": 198,
+   "n_in": 48,
+   "n_out": 45,
+   "raw_km": 1.26,
+   "out_km": 0.969,
+   "segments": 6,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "stay": 0.0,
+    "filled": 0.755,
+    "matched": 0.214
+   },
+   "unmatched_frac": 0.0,
+   "p50": 9.2,
+   "p95": 24.5,
+   "modes": [
+    "stay",
+    "walk",
+    "stay",
+    "stay",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 199,
+   "n_in": 41,
+   "n_out": 65,
+   "raw_km": 2.1,
+   "out_km": 2.282,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 2.082,
+    "filled": 0.2
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.7,
+   "p95": 18.3,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 200,
+   "n_in": 11,
+   "n_out": 15,
+   "raw_km": 0.537,
+   "out_km": 0.553,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.553
+   },
+   "unmatched_frac": 0.0,
+   "p50": 1.8,
+   "p95": 18.9,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 201,
+   "n_in": 15,
+   "n_out": 31,
+   "raw_km": 0.735,
+   "out_km": 0.819,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.82
+   },
+   "unmatched_frac": 0.0,
+   "p50": 5.4,
+   "p95": 10.9,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 202,
+   "n_in": 17,
+   "n_out": 30,
+   "raw_km": 0.751,
+   "out_km": 0.829,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.829
+   },
+   "unmatched_frac": 0.0,
+   "p50": 1.2,
+   "p95": 9.1,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 203,
+   "n_in": 17,
+   "n_out": 31,
+   "raw_km": 0.724,
+   "out_km": 0.786,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.786
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.9,
+   "p95": 19.8,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 204,
+   "n_in": 185,
+   "n_out": 337,
+   "raw_km": 40.504,
+   "out_km": 40.858,
+   "segments": 9,
+   "single_fix_raw": 0,
+   "straight": 3,
+   "straight_25m": 3,
+   "km": {
+    "matched": 39.392,
+    "filled": 0.618,
+    "stay": 0.0,
+    "straight": 0.849
+   },
+   "unmatched_frac": 0.021,
+   "p50": 5.9,
+   "p95": 27.2,
+   "modes": [
+    "walk",
+    "stay",
+    "walk",
+    "stay",
+    "walk",
+    "stay",
+    "train",
+    "walk",
+    "drive"
+   ]
+  },
+  {
+   "id": 205,
+   "n_in": 90,
+   "n_out": 526,
+   "raw_km": 36.21,
+   "out_km": 38.215,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 38.098,
+    "filled": 0.122
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.3,
+   "p95": 9.5,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 206,
+   "n_in": 11,
+   "n_out": 15,
+   "raw_km": 0.559,
+   "out_km": 0.552,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.552
+   },
+   "unmatched_frac": 0.0,
+   "p50": 7.8,
+   "p95": 25.1,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 207,
+   "n_in": 10,
+   "n_out": 12,
+   "raw_km": 0.452,
+   "out_km": 0.443,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.443
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.9,
+   "p95": 6.4,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 208,
+   "n_in": 61,
+   "n_out": 115,
+   "raw_km": 2.97,
+   "out_km": 3.231,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 3.007,
+    "filled": 0.224,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.1,
+   "p95": 12.2,
+   "modes": [
+    "walk",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 209,
+   "n_in": 22,
+   "n_out": 61,
+   "raw_km": 2.918,
+   "out_km": 3.251,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 2.849,
+    "filled": 0.407,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.9,
+   "p95": 18.2,
+   "modes": [
+    "walk",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 210,
+   "n_in": 28,
+   "n_out": 98,
+   "raw_km": 4.144,
+   "out_km": 4.638,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 4.146,
+    "filled": 0.492,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.9,
+   "p95": 25.6,
+   "modes": [
+    "drive",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 211,
+   "n_in": 93,
+   "n_out": 213,
+   "raw_km": 7.825,
+   "out_km": 8.42,
+   "segments": 10,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 6.445,
+    "filled": 1.973,
+    "stay": 0.0,
+    "join": 0.007
+   },
+   "unmatched_frac": 0.0,
+   "p50": 5.7,
+   "p95": 31.4,
+   "modes": [
+    "drive",
+    "stay",
+    "drive",
+    "stay",
+    "drive",
+    "walk",
+    "stay",
+    "walk",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 212,
+   "n_in": 25,
+   "n_out": 33,
+   "raw_km": 0.983,
+   "out_km": 0.972,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 1,
+   "straight_25m": 1,
+   "km": {
+    "matched": 0.925,
+    "straight": 0.047,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.048,
+   "p50": 3.4,
+   "p95": 15.4,
+   "modes": [
+    "walk",
+    "stay"
+   ]
+  },
+  {
+   "id": 213,
+   "n_in": 68,
+   "n_out": 120,
+   "raw_km": 4.276,
+   "out_km": 4.401,
+   "segments": 5,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "stay": 0.0,
+    "filled": 0.576,
+    "matched": 3.826
+   },
+   "unmatched_frac": 0.0,
+   "p50": 5.5,
+   "p95": 26.5,
+   "modes": [
+    "stay",
+    "cycle",
+    "stay",
+    "walk",
+    "stay"
+   ]
+  },
+  {
+   "id": 214,
+   "n_in": 10,
+   "n_out": 49,
+   "raw_km": 2.507,
+   "out_km": 2.841,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 2.841
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.4,
+   "p95": 28.0,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 215,
+   "n_in": 17,
+   "n_out": 60,
+   "raw_km": 2.72,
+   "out_km": 3.052,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 2.95,
+    "filled": 0.102
+   },
+   "unmatched_frac": 0.0,
+   "p50": 5.4,
+   "p95": 32.5,
+   "modes": [
+    "drive",
+    "walk"
+   ]
+  },
+  {
+   "id": 216,
+   "n_in": 52,
+   "n_out": 147,
+   "raw_km": 6.42,
+   "out_km": 6.732,
+   "segments": 5,
+   "single_fix_raw": 0,
+   "straight": 1,
+   "straight_25m": 1,
+   "km": {
+    "matched": 5.928,
+    "filled": 0.702,
+    "straight": 0.105,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.016,
+   "p50": 5.4,
+   "p95": 18.9,
+   "modes": [
+    "walk",
+    "cycle",
+    "stay",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 217,
+   "n_in": 27,
+   "n_out": 105,
+   "raw_km": 4.457,
+   "out_km": 5.073,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 4.609,
+    "filled": 0.464,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.8,
+   "p95": 26.6,
+   "modes": [
+    "walk",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 218,
+   "n_in": 13,
+   "n_out": 50,
+   "raw_km": 2.443,
+   "out_km": 2.703,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 2.681,
+    "join": 0.022
+   },
+   "unmatched_frac": 0.0,
+   "p50": 6.5,
+   "p95": 28.2,
+   "modes": [
+    "drive",
+    "walk"
+   ]
+  },
+  {
+   "id": 219,
+   "n_in": 29,
+   "n_out": 95,
+   "raw_km": 3.28,
+   "out_km": 3.747,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 3.29,
+    "filled": 0.454,
+    "join": 0.006,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 7.5,
+   "p95": 27.8,
+   "modes": [
+    "walk",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 220,
+   "n_in": 14,
+   "n_out": 43,
+   "raw_km": 2.512,
+   "out_km": 2.721,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 1,
+   "straight_25m": 1,
+   "km": {
+    "matched": 2.208,
+    "join": 0.005,
+    "straight": 0.508
+   },
+   "unmatched_frac": 0.202,
+   "p50": 3.7,
+   "p95": 11.6,
+   "modes": [
+    "drive",
+    "walk"
+   ]
+  },
+  {
+   "id": 221,
+   "n_in": 46,
+   "n_out": 108,
+   "raw_km": 4.21,
+   "out_km": 4.479,
+   "segments": 4,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "filled": 0.672,
+    "stay": 0.0,
+    "matched": 3.812
+   },
+   "unmatched_frac": 0.0,
+   "p50": 5.1,
+   "p95": 18.2,
+   "modes": [
+    "stay",
+    "drive",
+    "stay",
+    "stay"
+   ]
+  },
+  {
+   "id": 222,
+   "n_in": 12,
+   "n_out": 54,
+   "raw_km": 3.086,
+   "out_km": 3.501,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 3.502
+   },
+   "unmatched_frac": 0.0,
+   "p50": 1.8,
+   "p95": 13.8,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 223,
+   "n_in": 24,
+   "n_out": 36,
+   "raw_km": 0.942,
+   "out_km": 1.031,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.933,
+    "filled": 0.098
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.6,
+   "p95": 19.3,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 224,
+   "n_in": 64,
+   "n_out": 60,
+   "raw_km": 1.814,
+   "out_km": 1.655,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.396,
+    "filled": 0.259,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.1,
+   "p95": 16.4,
+   "modes": [
+    "walk",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 225,
+   "n_in": 95,
+   "n_out": 430,
+   "raw_km": 33.466,
+   "out_km": 34.561,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 34.569
+   },
+   "unmatched_frac": 0.0,
+   "p50": 1.6,
+   "p95": 4.5,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 226,
+   "n_in": 31,
+   "n_out": 60,
+   "raw_km": 1.982,
+   "out_km": 2.139,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.673,
+    "filled": 0.465,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 5.1,
+   "p95": 14.0,
+   "modes": [
+    "drive",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 227,
+   "n_in": 60,
+   "n_out": 93,
+   "raw_km": 2.232,
+   "out_km": 2.361,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.885,
+    "raw": 0.476
+   },
+   "unmatched_frac": 0.213,
+   "p50": 4.6,
+   "p95": 21.3,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 228,
+   "n_in": 94,
+   "n_out": 436,
+   "raw_km": 39.955,
+   "out_km": 41.452,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 40.719,
+    "filled": 0.735,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.4,
+   "p95": 6.7,
+   "modes": [
+    "drive",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 229,
+   "n_in": 132,
+   "n_out": 162,
+   "raw_km": 3.766,
+   "out_km": 3.763,
+   "segments": 8,
+   "single_fix_raw": 0,
+   "straight": 2,
+   "straight_25m": 2,
+   "km": {
+    "matched": 2.886,
+    "filled": 0.65,
+    "stay": 0.0,
+    "straight": 0.21,
+    "join": 0.019
+   },
+   "unmatched_frac": 0.056,
+   "p50": 6.0,
+   "p95": 25.6,
+   "modes": [
+    "walk",
+    "stay",
+    "stay",
+    "walk",
+    "stay",
+    "walk",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 230,
+   "n_in": 26,
+   "n_out": 30,
+   "raw_km": 0.956,
+   "out_km": 0.804,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "stay": 0.0,
+    "filled": 0.109,
+    "matched": 0.694
+   },
+   "unmatched_frac": 0.0,
+   "p50": 9.2,
+   "p95": 22.9,
+   "modes": [
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 231,
+   "n_in": 9,
+   "n_out": 22,
+   "raw_km": 0.506,
+   "out_km": 0.568,
+   "segments": 4,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "stay": 0.0,
+    "filled": 0.444,
+    "matched": 0.125
+   },
+   "unmatched_frac": 0.0,
+   "p50": 1.8,
+   "p95": 21.1,
+   "modes": [
+    "stay",
+    "stay",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 232,
+   "n_in": 6,
+   "n_out": 15,
+   "raw_km": 0.768,
+   "out_km": 0.784,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.784
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.0,
+   "p95": 16.5,
+   "modes": [
+    "cycle"
+   ]
+  },
+  {
+   "id": 233,
+   "n_in": 8,
+   "n_out": 52,
+   "raw_km": 2.408,
+   "out_km": 2.733,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 2.74
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.2,
+   "p95": 25.3,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 234,
+   "n_in": 13,
+   "n_out": 16,
+   "raw_km": 0.628,
+   "out_km": 0.615,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.615
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.7,
+   "p95": 19.2,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 235,
+   "n_in": 14,
+   "n_out": 19,
+   "raw_km": 0.609,
+   "out_km": 0.614,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.613
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.7,
+   "p95": 20.7,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 236,
+   "n_in": 31,
+   "n_out": 53,
+   "raw_km": 2.211,
+   "out_km": 2.533,
+   "segments": 5,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.609,
+    "filled": 0.914,
+    "stay": 0.0,
+    "join": 0.009
+   },
+   "unmatched_frac": 0.0,
+   "p50": 9.0,
+   "p95": 28.3,
+   "modes": [
+    "drive",
+    "stay",
+    "drive",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 237,
+   "n_in": 24,
+   "n_out": 69,
+   "raw_km": 3.263,
+   "out_km": 3.533,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 3.327,
+    "filled": 0.206
+   },
+   "unmatched_frac": 0.0,
+   "p50": 5.2,
+   "p95": 10.1,
+   "modes": [
+    "walk",
+    "drive"
+   ]
+  },
+  {
+   "id": 238,
+   "n_in": 27,
+   "n_out": 98,
+   "raw_km": 4.036,
+   "out_km": 4.733,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 4.395,
+    "filled": 0.339,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 6.1,
+   "p95": 54.2,
+   "modes": [
+    "drive",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 239,
+   "n_in": 17,
+   "n_out": 38,
+   "raw_km": 0.835,
+   "out_km": 0.953,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.953
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.5,
+   "p95": 15.7,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 240,
+   "n_in": 25,
+   "n_out": 31,
+   "raw_km": 0.991,
+   "out_km": 0.992,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "stay": 0.0,
+    "filled": 0.092,
+    "matched": 0.899
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.9,
+   "p95": 13.0,
+   "modes": [
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 241,
+   "n_in": 24,
+   "n_out": 100,
+   "raw_km": 4.475,
+   "out_km": 5.429,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 4.746,
+    "filled": 0.683,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 6.3,
+   "p95": 15.0,
+   "modes": [
+    "drive",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 242,
+   "n_in": 17,
+   "n_out": 41,
+   "raw_km": 0.838,
+   "out_km": 1.03,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.03
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.7,
+   "p95": 22.6,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 243,
+   "n_in": 20,
+   "n_out": 37,
+   "raw_km": 0.833,
+   "out_km": 0.932,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.932
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.8,
+   "p95": 18.3,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 244,
+   "n_in": 12,
+   "n_out": 58,
+   "raw_km": 2.595,
+   "out_km": 2.976,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 2.976
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.9,
+   "p95": 12.4,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 245,
+   "n_in": 18,
+   "n_out": 102,
+   "raw_km": 3.319,
+   "out_km": 4.297,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 3.476,
+    "filled": 0.843,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 9.0,
+   "p95": 18.3,
+   "modes": [
+    "cycle",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 246,
+   "n_in": 19,
+   "n_out": 33,
+   "raw_km": 0.847,
+   "out_km": 0.897,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.898
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.7,
+   "p95": 14.0,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 247,
+   "n_in": 20,
+   "n_out": 42,
+   "raw_km": 0.919,
+   "out_km": 1.016,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.017
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.3,
+   "p95": 10.3,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 248,
+   "n_in": 15,
+   "n_out": 24,
+   "raw_km": 0.652,
+   "out_km": 0.694,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.694
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.1,
+   "p95": 9.7,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 249,
+   "n_in": 32,
+   "n_out": 159,
+   "raw_km": 5.532,
+   "out_km": 6.391,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 5.674,
+    "filled": 0.722,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.5,
+   "p95": 11.9,
+   "modes": [
+    "cycle",
+    "stay",
+    "cycle"
+   ]
+  },
+  {
+   "id": 250,
+   "n_in": 301,
+   "n_out": 600,
+   "raw_km": 44.204,
+   "out_km": 44.718,
+   "segments": 5,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 43.853,
+    "filled": 0.857,
+    "stay": 0.0,
+    "join": 0.014
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.0,
+   "p95": 5.3,
+   "modes": [
+    "drive",
+    "stay",
+    "drive",
+    "cycle",
+    "drive"
+   ]
+  },
+  {
+   "id": 251,
+   "n_in": 12,
+   "n_out": 17,
+   "raw_km": 0.557,
+   "out_km": 0.57,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.57
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.4,
+   "p95": 13.0,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 252,
+   "n_in": 13,
+   "n_out": 16,
+   "raw_km": 0.536,
+   "out_km": 0.551,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.551
+   },
+   "unmatched_frac": 0.0,
+   "p50": 6.9,
+   "p95": 26.0,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 253,
+   "n_in": 63,
+   "n_out": 101,
+   "raw_km": 4.508,
+   "out_km": 4.702,
+   "segments": 7,
+   "single_fix_raw": 1,
+   "straight": 1,
+   "straight_25m": 1,
+   "km": {
+    "matched": 3.88,
+    "filled": 0.663,
+    "stay": 0.0,
+    "raw": 0.105,
+    "straight": 0.055
+   },
+   "unmatched_frac": 0.036,
+   "p50": 5.6,
+   "p95": 23.6,
+   "modes": [
+    "drive",
+    "stay",
+    "stay",
+    "stay",
+    "drive",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 254,
+   "n_in": 12,
+   "n_out": 15,
+   "raw_km": 0.573,
+   "out_km": 0.591,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.591
+   },
+   "unmatched_frac": 0.0,
+   "p50": 8.0,
+   "p95": 19.6,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 255,
+   "n_in": 16,
+   "n_out": 31,
+   "raw_km": 1.359,
+   "out_km": 1.389,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 1.168,
+    "filled": 0.221,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 6.7,
+   "p95": 30.8,
+   "modes": [
+    "drive",
+    "stay",
+    "cycle"
+   ]
+  },
+  {
+   "id": 256,
+   "n_in": 128,
+   "n_out": 577,
+   "raw_km": 47.825,
+   "out_km": 49.478,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 49.486,
+    "join": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 1.7,
+   "p95": 4.6,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 257,
+   "n_in": 39,
+   "n_out": 129,
+   "raw_km": 6.058,
+   "out_km": 6.687,
+   "segments": 4,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "stay": 0.0,
+    "filled": 1.016,
+    "matched": 5.672
+   },
+   "unmatched_frac": 0.0,
+   "p50": 7.5,
+   "p95": 29.9,
+   "modes": [
+    "stay",
+    "drive",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 258,
+   "n_in": 39,
+   "n_out": 91,
+   "raw_km": 3.569,
+   "out_km": 3.997,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 3.547,
+    "filled": 0.45,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.3,
+   "p95": 20.8,
+   "modes": [
+    "drive",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 259,
+   "n_in": 47,
+   "n_out": 303,
+   "raw_km": 30.627,
+   "out_km": 32.011,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 32.019
+   },
+   "unmatched_frac": 0.0,
+   "p50": 1.9,
+   "p95": 3.6,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 260,
+   "n_in": 11,
+   "n_out": 49,
+   "raw_km": 2.465,
+   "out_km": 2.664,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 2.664
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.4,
+   "p95": 17.6,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 261,
+   "n_in": 48,
+   "n_out": 165,
+   "raw_km": 4.006,
+   "out_km": 4.906,
+   "segments": 5,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 3.438,
+    "filled": 1.47,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 7.7,
+   "p95": 30.5,
+   "modes": [
+    "cycle",
+    "stay",
+    "cycle",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 262,
+   "n_in": 43,
+   "n_out": 185,
+   "raw_km": 15.628,
+   "out_km": 16.396,
+   "segments": 4,
+   "single_fix_raw": 0,
+   "straight": 1,
+   "straight_25m": 1,
+   "km": {
+    "matched": 15.468,
+    "filled": 0.574,
+    "straight": 0.356
+   },
+   "unmatched_frac": 0.023,
+   "p50": 2.0,
+   "p95": 5.0,
+   "modes": [
+    "drive",
+    "walk",
+    "drive",
+    "walk"
+   ]
+  },
+  {
+   "id": 263,
+   "n_in": 49,
+   "n_out": 154,
+   "raw_km": 14.531,
+   "out_km": 15.258,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "stay": 0.0,
+    "filled": 0.693,
+    "matched": 14.565
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.5,
+   "p95": 34.6,
+   "modes": [
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 264,
+   "n_in": 16,
+   "n_out": 23,
+   "raw_km": 1.216,
+   "out_km": 1.29,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.871,
+    "filled": 0.419,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 8.8,
+   "p95": 27.1,
+   "modes": [
+    "cycle",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 265,
+   "n_in": 10,
+   "n_out": 47,
+   "raw_km": 2.424,
+   "out_km": 2.659,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 2.659
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.2,
+   "p95": 27.0,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 266,
+   "n_in": 56,
+   "n_out": 123,
+   "raw_km": 4.651,
+   "out_km": 4.977,
+   "segments": 6,
+   "single_fix_raw": 0,
+   "straight": 1,
+   "straight_25m": 1,
+   "km": {
+    "stay": 0.0,
+    "filled": 1.227,
+    "matched": 3.46,
+    "straight": 0.294
+   },
+   "unmatched_frac": 0.063,
+   "p50": 5.1,
+   "p95": 23.9,
+   "modes": [
+    "stay",
+    "walk",
+    "stay",
+    "drive",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 267,
+   "n_in": 16,
+   "n_out": 29,
+   "raw_km": 0.784,
+   "out_km": 0.812,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.811
+   },
+   "unmatched_frac": 0.0,
+   "p50": 5.4,
+   "p95": 15.7,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 268,
+   "n_in": 18,
+   "n_out": 24,
+   "raw_km": 0.81,
+   "out_km": 0.797,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 2,
+   "straight_25m": 2,
+   "km": {
+    "matched": 0.545,
+    "straight": 0.176,
+    "filled": 0.075,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.218,
+   "p50": 11.0,
+   "p95": 22.4,
+   "modes": [
+    "walk",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 269,
+   "n_in": 11,
+   "n_out": 14,
+   "raw_km": 0.507,
+   "out_km": 0.53,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.53
+   },
+   "unmatched_frac": 0.0,
+   "p50": 6.0,
+   "p95": 13.6,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 270,
+   "n_in": 17,
+   "n_out": 30,
+   "raw_km": 0.753,
+   "out_km": 0.841,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.84
+   },
+   "unmatched_frac": 0.0,
+   "p50": 7.0,
+   "p95": 21.2,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 271,
+   "n_in": 17,
+   "n_out": 30,
+   "raw_km": 0.737,
+   "out_km": 0.838,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.838
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.1,
+   "p95": 18.7,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 272,
+   "n_in": 14,
+   "n_out": 62,
+   "raw_km": 2.369,
+   "out_km": 2.711,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 1,
+   "straight_25m": 1,
+   "km": {
+    "straight": 0.11,
+    "matched": 2.601
+   },
+   "unmatched_frac": 0.047,
+   "p50": 4.2,
+   "p95": 18.1,
+   "modes": [
+    "cycle"
+   ]
+  },
+  {
+   "id": 273,
+   "n_in": 46,
+   "n_out": 106,
+   "raw_km": 4.101,
+   "out_km": 4.619,
+   "segments": 4,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "filled": 1.531,
+    "stay": 0.0,
+    "matched": 3.089
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.5,
+   "p95": 17.3,
+   "modes": [
+    "stay",
+    "drive",
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 274,
+   "n_in": 54,
+   "n_out": 111,
+   "raw_km": 3.11,
+   "out_km": 3.257,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 2.976,
+    "join": 0.021,
+    "filled": 0.261
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.3,
+   "p95": 16.7,
+   "modes": [
+    "walk",
+    "cycle",
+    "walk"
+   ]
+  },
+  {
+   "id": 275,
+   "n_in": 3,
+   "n_out": 5,
+   "raw_km": 0.556,
+   "out_km": 0.567,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.567
+   },
+   "unmatched_frac": 0.0,
+   "p50": 6.2,
+   "p95": 10.2,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 276,
+   "n_in": 273,
+   "n_out": 1407,
+   "raw_km": 223.229,
+   "out_km": 225.713,
+   "segments": 6,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 223.928,
+    "filled": 1.789,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 3.1,
+   "p95": 11.0,
+   "modes": [
+    "cycle",
+    "stay",
+    "drive",
+    "stay",
+    "cycle",
+    "stay"
+   ]
+  },
+  {
+   "id": 277,
+   "n_in": 251,
+   "n_out": 1510,
+   "raw_km": 217.878,
+   "out_km": 220.943,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 219.046,
+    "filled": 1.907
+   },
+   "unmatched_frac": 0.0,
+   "p50": 2.6,
+   "p95": 6.8,
+   "modes": [
+    "drive"
+   ]
+  },
+  {
+   "id": 278,
+   "n_in": 12,
+   "n_out": 17,
+   "raw_km": 0.597,
+   "out_km": 0.582,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.582
+   },
+   "unmatched_frac": 0.0,
+   "p50": 7.0,
+   "p95": 24.3,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 279,
+   "n_in": 14,
+   "n_out": 18,
+   "raw_km": 0.555,
+   "out_km": 0.56,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.56
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.5,
+   "p95": 30.1,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 280,
+   "n_in": 21,
+   "n_out": 56,
+   "raw_km": 2.394,
+   "out_km": 2.737,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 2.357,
+    "filled": 0.382,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 5.9,
+   "p95": 21.6,
+   "modes": [
+    "cycle",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 281,
+   "n_in": 16,
+   "n_out": 25,
+   "raw_km": 0.789,
+   "out_km": 0.832,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 0.832
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.8,
+   "p95": 12.2,
+   "modes": [
+    "walk"
+   ]
+  },
+  {
+   "id": 282,
+   "n_in": 26,
+   "n_out": 25,
+   "raw_km": 0.947,
+   "out_km": 0.841,
+   "segments": 2,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "stay": 0.0,
+    "filled": 0.114,
+    "matched": 0.727
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.4,
+   "p95": 12.9,
+   "modes": [
+    "stay",
+    "walk"
+   ]
+  },
+  {
+   "id": 283,
+   "n_in": 42,
+   "n_out": 163,
+   "raw_km": 7.584,
+   "out_km": 8.608,
+   "segments": 3,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 7.608,
+    "filled": 1.004,
+    "stay": 0.0
+   },
+   "unmatched_frac": 0.0,
+   "p50": 4.7,
+   "p95": 17.3,
+   "modes": [
+    "drive",
+    "stay",
+    "drive"
+   ]
+  },
+  {
+   "id": 284,
+   "n_in": 16,
+   "n_out": 57,
+   "raw_km": 2.819,
+   "out_km": 2.991,
+   "segments": 1,
+   "single_fix_raw": 0,
+   "straight": 0,
+   "straight_25m": 0,
+   "km": {
+    "matched": 2.991
+   },
+   "unmatched_frac": 0.0,
+   "p50": 5.3,
+   "p95": 18.3,
+   "modes": [
+    "cycle"
+   ]
+  }
+ ]
+}

@@ -19,19 +19,19 @@ from typing import Any
 
 from .geo import cumulative, decode_polyline
 
+# Matching knobs must go in "trace_options": Valhalla silently ignores them at
+# the top level (the pre-redesign engine never had its settings applied).
+# This server caps search_radius at 100 m and breakage_distance at 5000 m.
 PROFILES: dict[str, dict[str, Any]] = {
     "auto": {
         "costing": "auto",
-        "search_radius": 80,
-        "gps_accuracy": 15,
-        "breakage_distance": 3000,
+        "trace_options": {"gps_accuracy": 25, "search_radius": 100,
+                          "breakage_distance": 3000, "turn_penalty_factor": 200},
         "costing_options": {"auto": {"use_highways": 1.0, "use_tolls": 0.5}},
     },
     "bicycle": {
         "costing": "bicycle",
-        "search_radius": 100,
-        "gps_accuracy": 18,
-        "breakage_distance": 2500,
+        "trace_options": {"gps_accuracy": 25, "search_radius": 80, "breakage_distance": 2000},
         "costing_options": {"bicycle": {
             "use_trails": 1.0, "avoid_bad_surfaces": 0.0,
             "bicycle_type": "Mountain", "use_roads": 0.4, "use_hills": 1.0,
@@ -39,15 +39,19 @@ PROFILES: dict[str, dict[str, Any]] = {
     },
     "pedestrian": {
         "costing": "pedestrian",
-        "search_radius": 100,
-        "gps_accuracy": 20,
-        "breakage_distance": 2000,
+        "trace_options": {"gps_accuracy": 25, "search_radius": 80, "breakage_distance": 2000},
         "costing_options": {"pedestrian": {
             "use_tracks": 1.0, "walkway_factor": 0.8,
             "sidewalk_factor": 1.0, "max_grade": 40,
         }},
     },
 }
+MAX_RADIUS = 100
+
+
+def breakage(profile: str) -> float:
+    return float(PROFILES[profile]["trace_options"]["breakage_distance"])
+
 
 ATTRIBUTES = [
     "shape",
@@ -121,10 +125,14 @@ def post(path: str, body: dict[str, Any], timeout: float = 120.0) -> dict[str, A
     return out
 
 
-def _shape_item(p: dict[str, Any]) -> dict[str, Any]:
-    item = {"lat": float(p["lat"]), "lon": float(p["lon"])}
+def _shape_item(p: dict[str, Any], default_radius: float) -> dict[str, Any]:
+    item: dict[str, Any] = {"lat": float(p["lat"]), "lon": float(p["lon"])}
     if p.get("timestamp") is not None:
         item["time"] = int(p["timestamp"])
+    acc = p.get("accuracy")
+    if acc:
+        # Per-fix search radius follows the reported accuracy.
+        item["radius"] = int(max(30.0, min(MAX_RADIUS, 1.5 * float(acc), default_radius * 1.25)))
     return item
 
 
@@ -136,14 +144,13 @@ def match(points: list[dict[str, Any]], profile: str, timeout: float = 120.0) ->
     the edge road class/use, used for mode scoring.
     """
     cfg = PROFILES[profile]
+    r0 = cfg["trace_options"]["search_radius"]
     body = {
-        "shape": [_shape_item(p) for p in points],
+        "shape": [_shape_item(p, r0) for p in points],
         "costing": cfg["costing"],
         "costing_options": cfg["costing_options"],
         "shape_match": "map_snap",
-        "search_radius": cfg["search_radius"],
-        "gps_accuracy": cfg["gps_accuracy"],
-        "breakage_distance": cfg["breakage_distance"],
+        "trace_options": cfg["trace_options"],
         "filters": {"attributes": ATTRIBUTES, "action": "include"},
     }
     raw = post("/trace_attributes", body, timeout)

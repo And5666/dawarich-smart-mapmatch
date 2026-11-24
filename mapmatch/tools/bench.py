@@ -149,6 +149,7 @@ def trip_metrics(tid: int, raw: list[dict[str, Any]], res: dict[str, Any]) -> di
         "segments": res["segments"],
         "single_fix_raw": sum(1 for p in pieces if p["kind"] == "raw" and p["n_in"] <= 1),
         "straight": sum(1 for p in pieces if p["kind"] == "straight"),
+        "straight_25m": sum(1 for p in pieces if p["kind"] in ("straight", "join") and p["km"] >= 0.025),
         "km": {k: round(v, 3) for k, v in km.items()},
         "unmatched_frac": round((km["raw"] + km["straight"]) / max(0.01, raw_km), 3),
         "p50": round(percentile(errs, 0.5), 1), "p95": round(percentile(errs, 0.95), 1),
@@ -165,6 +166,7 @@ def summarize(ms: list[dict[str, Any]], failures: list[Any], secs: float) -> dic
     return {
         "trips": len(ms), "failures": len(failures),
         "straight": sum(m["straight"] for m in ms),
+        "straight_25m": sum(m.get("straight_25m", 0) for m in ms),
         "single_fix_raw": sum(m["single_fix_raw"] for m in ms),
         "segments_per_trip": round(sum(m["segments"] for m in ms) / max(1, len(ms)), 2),
         "trips_over_20pct_unmatched": sum(1 for m in ms if m["unmatched_frac"] > 0.2),
