@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from ..engine import valhalla
 from ..engine.api import ENGINE_VERSION, MODES
 from . import archive, auth, push, trips
+from .db import now as now_iso
 from .dawarich import DawarichError
 
 COOKIE = "mapmatch_session"
@@ -194,6 +195,21 @@ def build(app_state: Any) -> APIRouter:
             counts["push_" + p["push"]] = counts.get("push_" + p["push"], 0) + 1
             out.append(p)
         return {"trips": out, "km_by_mode": totals, "counts": counts}
+
+    @r.get("/trips/changes")
+    def trip_changes(since: str = "", u: dict[str, Any] = Depends(user)) -> dict[str, Any]:
+        """Trips changed at or after `since` (ISO time from the previous call),
+        for drawing matches live while a job runs. Clients dedupe by version."""
+        stamp = now_iso()
+        rows = db.all("SELECT * FROM trips WHERE user_id=? AND updated_at >= ? ORDER BY updated_at",
+                      (u["id"], since or stamp))
+        out = []
+        for row in rows:
+            t = dict(row)
+            p = trips.public(t)
+            p["preview"] = json.loads(t["preview"] or "[]")
+            out.append(p)
+        return {"now": stamp, "trips": out}
 
     @r.get("/points")
     def raw_points(start: int | None = None, end: int | None = None,

@@ -11,6 +11,8 @@ const FILTERS = [
   ["all", "All"], ["new", "Not matched"], ["review", "Needs review"], ["failed", "Failed"], ["original", "Not pushed"],
   ["outdated", "Edited since push"],
 ];
+// How long one trip takes to draw (instant for people who prefer reduced motion).
+const DRAW_MS = matchMedia("(prefers-reduced-motion: reduce)").matches ? 1 : 1200;
 const pref = (k, d) => { try { return localStorage.getItem(k) || d; } catch (e) { return d; } };
 const save = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* ignore */ } };
 
@@ -36,6 +38,13 @@ export function Overview() {
   const [data, setDataState] = useState(null);
   const [hot, setHot] = useState(null);
   const [allPts, setAllPts] = useState(false);
+  const job = useStore((s) => s.job);
+  // Live drawing: trips whose new match is queued or being drawn keep showing
+  // their previous (raw) line underneath until the drawing finishes.
+  const [animating, setAnimating] = useState(() => new Set());
+  const anims = useRef(new Map());   // id -> { coords, mode, start }
+  const prevShown = useRef(new Map()); // id -> trip as it was before the new match
+  const lastStart = useRef(0);
   const mapEl = useRef(null);
   const mapRef = useRef(null);
   const fitted = useRef(false);
@@ -76,7 +85,8 @@ export function Overview() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    const feats = trips.filter((t) => t.preview.length > 1).map((t) => lineFeature(t.preview, {
+    const shown = trips.map((t) => (animating.has(t.id) && prevShown.current.get(t.id)) || t);
+    const feats = shown.filter((t) => t.preview.length > 1).map((t) => lineFeature(t.preview, {
       id: t.id, mode: dominantMode(t.modes),
       label: `${day(t.start)} · ${time(t.start)}–${time(t.end)}`,
       sub: `${km(t.km)} · ${t.modes.map((m) => MODES[m.mode]?.label).join(" → ") || "raw GPS, not matched yet"}`,
@@ -106,7 +116,84 @@ export function Overview() {
       const go = () => { fitCoords(map, trips.flatMap((t) => t.preview), 40, false); fitted.current = true; };
       map.loaded() ? go() : map.once("load", go);
     }
-  }, [trips]);
+  }, [trips, animating]);
+
+  // ---- live matching: poll for newly matched trips while a job runs, draw each one
+  const dataRef = useRef(null);
+  dataRef.current = data;
+  useEffect(() => {
+    if (!job) return;
+    let since = job.created_at;
+    let stopped = false;
+    const poll = async () => {
+      try {
+        const x = await api(`/trips/changes?since=${encodeURIComponent(since)}`);
+        since = x.now;
+        const cur = new Map((dataRef.current?.trips || []).map((t) => [t.id, t]));
+        const fresh = x.trips.filter((t) => cur.has(t.id) && t.version > (cur.get(t.id).version || 0) &&
+          !anims.current.has(t.id) && t.preview.length > 1);
+        if (fresh.length) enqueue(fresh, cur);
+      } catch (e) { /* the job poller reports errors */ }
+    };
+    const timer = setInterval(() => { if (!stopped) poll(); }, 900);
+    poll();
+    return () => { stopped = true; clearInterval(timer); poll(); };
+  }, [job?.id]);
+
+  function enqueue(fresh, cur) {
+    const map = mapRef.current;
+    if (!map) return;
+    const now = performance.now();
+    // Many at once: stagger them so the map fills in as a wave, within ~4 s.
+    const step = Math.max(8, Math.min(90, 4000 / fresh.length));
+    for (const t of fresh) {
+      prevShown.current.set(t.id, cur.get(t.id));
+      lastStart.current = Math.max(now, lastStart.current + step);
+      anims.current.set(t.id, { trip: t, coords: t.preview, mode: dominantMode(t.modes), start: lastStart.current });
+    }
+    setAnimating(new Set(anims.current.keys()));
+    if (anims.current.size === fresh.length) requestAnimationFrame(frame);
+  }
+
+  function frame(ts) {
+    const map = mapRef.current;
+    if (!map) return;
+    const lines = [], heads = [], finished = [];
+    for (const [id, a] of anims.current) {
+      const p = (ts - a.start) / DRAW_MS;
+      if (p <= 0) continue;
+      if (p >= 1) { finished.push(a.trip); continue; }
+      // Ease out, then cut the line at that fraction, interpolating the tip.
+      const e = 1 - (1 - p) ** 2;
+      const f = e * (a.coords.length - 1);
+      const k = Math.floor(f);
+      const c0 = a.coords[k], c1 = a.coords[Math.min(k + 1, a.coords.length - 1)];
+      const tip = [c0[0] + (c1[0] - c0[0]) * (f - k), c0[1] + (c1[1] - c0[1]) * (f - k)];
+      const part = [...a.coords.slice(0, k + 1), tip];
+      lines.push(lineFeature(part, { mode: a.mode }));
+      heads.push({ type: "Feature", properties: { mode: a.mode }, geometry: { type: "Point", coordinates: [tip[1], tip[0]] } });
+    }
+    for (const t of finished) anims.current.delete(t.id);
+    const live = { type: "FeatureCollection", features: [...lines, ...heads] };
+    if (map._mm.overlays.has("live")) setData(map, "live", live);
+    else setOverlay(map, "live", { data: live, layers: () => {
+      const color = ["match", ["get", "mode"], ...Object.keys(MODES).flatMap((m) => [m, modeColor(m)]), modeColor("raw")];
+      return [
+        { id: "live-line", type: "line", filter: ["==", ["geometry-type"], "LineString"],
+          layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": color, "line-width": 3.5 } },
+        { id: "live-head", type: "circle", filter: ["==", ["geometry-type"], "Point"],
+          paint: { "circle-radius": 5, "circle-color": color, "circle-stroke-color": "#fff", "circle-stroke-width": 2 } },
+      ];
+    } });
+    if (finished.length) {
+      const byId = new Map(finished.map((t) => [t.id, t]));
+      setDataState((d) => d && { ...d, trips: d.trips.map((t) => byId.get(t.id) ? { ...t, ...byId.get(t.id) } : t) });
+      for (const t of finished) prevShown.current.delete(t.id);
+      setAnimating(new Set(anims.current.keys()));
+    }
+    if (anims.current.size) requestAnimationFrame(frame);
+    else lastStart.current = 0;
+  }
 
   useEffect(() => {
     const map = mapRef.current;
@@ -212,6 +299,9 @@ export function Overview() {
     </aside>
     <div class="map-wrap">
       <div class="map" ref=${mapEl}></div>
+      ${job && (job.kind === "rematch" || job.kind === "auto") && html`<div class="live-card card" aria-live="polite">
+        <span class="live-dot"></span><span><b>Map matching</b> <span class="muted num">${job.message || "starting"}</span></span>
+        <span class="bar"><i style=${`width:${job.progress}%`}></i></span></div>`}
       <div class="map-tools"><div class="card">
         <label><input type="checkbox" checked=${allPts} onChange=${(e) => setAllPts(e.target.checked)} />All GPS points</label>
       </div></div>

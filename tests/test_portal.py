@@ -227,3 +227,17 @@ def test_scheduler_runs_auto_with_push(env):
     trips = client.get("/api/trips").json()["trips"]
     assert trips and all(t["push"] == "pushed" for t in trips)
     assert not jobs.tick(), "not due again until the interval passes"
+
+
+def test_trip_changes_feed_for_live_drawing(env):
+    client, dw, jobs, db = env
+    run_job(client, jobs, "sync")
+    # Times are whole seconds and the feed repeats the boundary second, so an
+    # unmatched trip may show up here; the page only draws newer versions.
+    first = client.get("/api/trips/changes").json()
+    assert all(t["version"] == 0 for t in first["trips"])
+    job = run_job(client, jobs, "rematch", {"scope": "pending"})
+    got = client.get(f"/api/trips/changes?since={job['created_at']}").json()
+    assert len(got["trips"]) == 2
+    assert all(t["version"] == 1 and t["modes"] and len(t["preview"]) > 1 for t in got["trips"])
+    assert client.get(f"/api/trips/changes?since={got['now']}").status_code == 200
