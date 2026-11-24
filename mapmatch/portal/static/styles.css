@@ -387,3 +387,14 @@ table.t { width: 100%; border-collapse: collapse; font-size: 13px; }
   .region-edit { grid-template-columns: 1fr; }
 }
 @media (max-width: 520px) { .nav a { padding: 4px 7px; font-size: 12.5px; } .float.tc { max-width: calc(100% - 20px); } }
+@media (max-width: 520px) {
+  .bar { gap: 8px; }
+  .bar .menu > button .ell { max-width: 64px !important; }
+  .sync button { padding: 0 8px; }
+  .tv-head { gap: 8px; }
+  .tv-head .tv-title { flex-basis: calc(100% - 50px); }
+  .tv-head .chip { display: none; }
+  .strip .axis span:nth-child(2) { display: none; }
+}
+.shell, .page, .tripv { min-width: 0; max-width: 100vw; }
+.bar { overflow: hidden; }
