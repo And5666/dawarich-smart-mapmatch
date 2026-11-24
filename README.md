@@ -68,8 +68,8 @@ Standalone FastAPI app with a no-build Preact + MapLibre front end.
   dashed = routed across a gap, dotted = original GPS kept), the original and
   ignored fixes, a timeline and speed chart linked to the map, and per-segment
   mode, split, recalculate, undo, lock, push, revert and GPX/GeoJSON export,
-  plus a **Gaps** choice for that trip: route across the gaps, or keep the
-  recorded GPS across them.
+  plus **Gaps**: route every hole, keep every hole, or click any single gap —
+  in the list or on its line on the map — to decide just that one.
 - **Activity**: background jobs and a log of every change made in Dawarich.
 - **Settings**: Dawarich URL and API key (with a connection test), automatic
   runs and interval, automatic push, a start date, trip gap, gap strategy

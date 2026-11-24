@@ -146,6 +146,29 @@ def test_fill_accepts_plausible_route_and_rejects_detour(fake_valhalla):
     assert fill(a, [mid], b, "drive")["kind"] == "raw"   # keeps the fix, never a straight jump
 
 
+def test_strict_never_routes_even_with_an_empty_hole(fake_valhalla):
+    # The common case in real data: the GPS simply stopped recording, so the
+    # hole has no fixes inside it. "Keep the recorded GPS" must still not route.
+    a = {"lat": LAT0, "lon": LON0, "timestamp": T0}
+    b = {"lat": LAT0 + 0.01, "lon": LON0, "timestamp": T0 + 300}
+    assert fill(a, [], b, "drive", strength="fill")["kind"] == "filled"
+    assert fill(a, [], b, "drive", strength="strict")["kind"] == "straight"
+
+
+def test_one_hole_can_be_kept_while_others_route(fake_valhalla):
+    from mapmatch.engine.api import match_trip
+    fake_valhalla.unmatched = {10, 25}
+    pts = track([(500, 0)] * 40)
+    everything = match_trip(pts, options={"strength": "fill"})
+    holes = [p for s in everything["segments"] for p in s["pieces"] if p.get("gap")]
+    assert len(holes) == 2 and {p["kind"] for p in holes} == {"filled"}, holes
+    first = holes[0]["gap"]
+    chosen = match_trip(pts, options={"strength": "fill", "keep_gaps": [first]})
+    kinds = {tuple(p["gap"]): p["kind"] for s in chosen["segments"] for p in s["pieces"] if p.get("gap")}
+    assert kinds[tuple(first)] in ("raw", "straight"), "this one stays as recorded"
+    assert any(k == "filled" for g, k in kinds.items() if g != tuple(first)), "the other still routes"
+
+
 def test_fill_strict_does_not_route_through_unmatched_fixes(fake_valhalla):
     a, mid, b = track([(150, 0), (150, 0)])
     assert fill(a, [mid], b, "drive", strength="strict")["kind"] == "raw"

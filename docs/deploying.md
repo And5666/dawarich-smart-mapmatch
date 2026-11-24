@@ -119,14 +119,25 @@ What is not built yet: per-account switches for whether matching or pushing may
 run (today every account can match and push its own trips), and roles beyond
 admin/member. Both are natural next steps, not hidden limitations.
 
-## Gaps: routed or kept, per trip
+## Gaps: routed or kept, one at a time
 
-Each account sets a default under Settings (route across a gap, or keep what was
-recorded). A trip can override that in its editor, under **Gaps**: *Route
-across* fills missing stretches from the routing server when the timing and the
-points either side agree, *Keep GPS* draws the recorded points as they are.
-Picking one recalculates that trip only and leaves every other trip alone; the
-trip remembers the choice, and *Use my setting instead* hands it back.
+Each account sets a default under Settings: route across a gap, or keep what was
+recorded. The trip editor can override it twice over. **Route them all** and
+**Keep them all** change the whole trip; below them every hole the matcher had
+to bridge is listed with its time span and length, each with a button that
+switches that one hole and nothing else. The same choice can be made by clicking
+the gap's line on the map — a routed gap is a dashed curve, a kept one a dotted
+straight run between the points either side.
+
+Kept means kept: the line runs between the recorded points rather than along a
+road, so the trip gets shorter and may be flagged "needs a look". A gap you
+chose yourself is drawn in the warning colour so it is distinguishable from one
+nothing could route. Exceptions are stored per trip (`keep_gaps`), survive
+editing, and are cleared by **Route them all**.
+
+Because a stored match from before this existed has no per-hole detail, the
+editor asks for a re-match the first time; Settings offers **Rematch them** for
+every trip matched by an older engine.
 
 ## What is deliberately not in the image
 

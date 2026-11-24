@@ -96,6 +96,7 @@ export function TripView({ id }) {
   const mapRef = useRef(null);
   const stripRef = useRef(null);
   const editRef = useRef({ editing: false, raw: [] });
+  const gapRef = useRef(null);
 
   const load = () => api(`/trips/${id}`).then((x) => { setD(x); setErr(""); }).catch((e) => setErr(e.message));
   useEffect(() => { load(); }, [id]);
@@ -194,7 +195,9 @@ export function TripView({ id }) {
     const parts = [];
     for (const s of segs) {
       if (s.mode === "stay") continue;
-      for (const p of s.pieces) if (p.coords.length > 1) parts.push(line(p.coords, { sid: s.id, m: s.mode, k: p.kind, t0: s.t0, t1: s.t1 }));
+      for (const p of s.pieces) if (p.coords.length > 1) parts.push(line(p.coords,
+        { sid: s.id, m: s.mode, k: p.kind, kept: p.kept === true, t0: s.t0, t1: s.t1,
+          gap: p.gap ? `${p.gap[0]}-${p.gap[1]}` : null }));
     }
     const kinds = (lid, ks, dash, w = 4) => ({ id: lid, type: "line", filter: ["in", ["get", "k"], ["literal", ks]],
       layout: { ...vis(layers.matched), "line-cap": dash ? "butt" : "round", "line-join": "round" },
@@ -203,7 +206,27 @@ export function TripView({ id }) {
       { id: "m-case", type: "line", layout: { ...vis(layers.matched), "line-cap": "round", "line-join": "round" },
         paint: { "line-color": cssVar("--casing"), "line-width": 7, "line-opacity": 0.85 } },
       kinds("m-solid", ["matched", "join"], null), kinds("m-dash", ["filled"], [2, 1.4]), kinds("m-dot", ["raw", "straight"], [0.6, 1.7], 3.5),
+      // A gap you chose to keep looks different from one nothing could route.
+      { id: "m-kept", type: "line", filter: ["all", ["in", ["get", "k"], ["literal", ["raw", "straight"]]], ["==", ["get", "kept"], true]],
+        layout: { ...vis(layers.matched), "line-cap": "butt", "line-join": "round" },
+        paint: { "line-color": cssVar("--warn"), "line-width": 4, "line-dasharray": [0.6, 1.7] } },
     ] });
+    if (!map._mmGapClick) {
+      // Clicking a dashed (routed) or dotted (kept) gap switches just that hole.
+      map._mmGapClick = (e) => {
+        const f = e.features && e.features[0];
+        const g = f && f.properties && f.properties.gap;
+        if (!g) return;
+        const [g0, g1] = String(g).split("-").map(Number);
+        if (!g0 || !g1) return;
+        gapRef.current?.({ t0: g0, t1: g1, routed: f.properties.k === "filled" });
+      };
+      for (const lid of ["m-dash", "m-dot", "m-kept"]) {
+        map.on("click", lid, map._mmGapClick);
+        map.on("mouseenter", lid, () => { map.getCanvas().style.cursor = "pointer"; });
+        map.on("mouseleave", lid, () => { map.getCanvas().style.cursor = ""; });
+      }
+    }
     setOverlay(map, "selected", { data: fc([]), layers: () => [
       { id: "selected", type: "line", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": cssVar("--ink"), "line-width": 9, "line-opacity": 0.3 } },
     ] });
@@ -285,10 +308,17 @@ export function TripView({ id }) {
   const scrub = useScrub(T0, T1, pick, setCursor);
   const choose = (a, b, mode) => act("Rematching", "/range", { t0: a, t1: b, mode });
   // null = follow the account's setting again
-  const gaps = async (route) => {
+  const allGaps = async (route) => {
     const x = await act(route === null ? "Rematching" : route ? "Routing gaps" : "Keeping GPS", "/gaps", { route });
     if (x) toast(route === null ? "This trip follows your setting again" : route ? "Gaps are routed" : "Gaps keep the recorded GPS");
   };
+  // One hole at a time: keep this one as recorded, or route it.
+  const toggleGap = async (g) => {
+    const x = await act(g.routed ? "Keeping that gap" : "Routing that gap", "/gaps",
+      { t0: g.t0, t1: g.t1, route: !g.routed });
+    if (x) toast(g.routed ? "That gap keeps the recorded GPS" : "That gap is routed");
+  };
+  gapRef.current = toggleGap;
 
   if (err) return html`<div class="doc"><div class="note bad">${err}</div><p><a href="#/">Back to trips</a></p></div>`;
   if (!d) return html`<div class="doc faint">Loading…</div>`;
@@ -304,6 +334,19 @@ export function TripView({ id }) {
   const pushState = t.push === "pushed" ? "in Dawarich" : t.push === "outdated" ? "changed since pushed" : "not in Dawarich yet";
   // This trip's own choice, or the account's when it has not made one.
   const gapMode = t.gap_mode || me?.settings?.strength || "fill";
+  const hasGapInfo = segs.some((s) => (s.pieces || []).some((p) => p.gap));
+  // Every hole the filler bridged, as one entry per stretch of time.
+  const gaps = useMemo(() => {
+    const out = [];
+    for (const s of segs) for (const p of s.pieces || []) {
+      if (!p.gap) continue;
+      const [g0, g1] = p.gap;
+      const hit = out.find((g) => g.t0 <= g1 && g0 <= g.t1);
+      if (hit) { hit.km += p.km; if (p.kind === "filled") hit.routed = true; continue; }
+      out.push({ t0: g0, t1: g1, km: p.km, routed: p.kind === "filled" });
+    }
+    return out.sort((a, b) => a.t0 - b.t0);
+  }, [segs]);
 
   return html`<div class="tripv">
     <header class="tv-head">
@@ -391,19 +434,32 @@ export function TripView({ id }) {
         </section>
         <section>
           <h2>Gaps</h2>
-          <div class="seg" role="radiogroup" aria-label="What to do where the GPS drops out">
+          <div class="seg" role="radiogroup" aria-label="What to do with the gaps in this trip">
             <button class=${gapMode === "fill" ? "on" : ""} role="radio" aria-checked=${gapMode === "fill"}
-              disabled=${!!busy || !t.closed} onClick=${() => gaps(true)}>Route across</button>
+              disabled=${!!busy || !t.closed} onClick=${() => allGaps(true)}>Route them all</button>
             <button class=${gapMode === "strict" ? "on" : ""} role="radio" aria-checked=${gapMode === "strict"}
-              disabled=${!!busy || !t.closed} onClick=${() => gaps(false)}>Keep GPS</button>
+              disabled=${!!busy || !t.closed} onClick=${() => allGaps(false)}>Keep them all</button>
           </div>
           <p class="small dim" style="margin:0">${gapMode === "strict"
-            ? "A break in the signal keeps your recorded GPS as dotted lines, even when a road could join the two ends."
-            : "Missing stretches follow the road or path when the timing and the points either side agree; where they don't, your GPS is kept."}</p>
-          ${t.version > 0 && q.filled_frac > 0 && html`<p class="small faint" style="margin:0">${pct(q.filled_frac)} of this trip is routed across a gap.</p>`}
-          ${t.gap_mode ? html`<button class="sm bare" onClick=${() => gaps(null)}>Use my setting instead
-            (${me?.settings?.strength === "strict" ? "keep GPS" : "route across"})</button>`
-            : html`<p class="small faint" style="margin:0">This is your account's setting; picking one here only changes this trip.</p>`}
+            ? "A gap keeps your recorded GPS: the line runs straight between the points either side of the hole, even where a road would join them."
+            : "A gap follows the road or path when the timing and the points either side agree; where they don't, your GPS is kept."}</p>
+          ${t.version && !hasGapInfo ? html`<p class="small faint" style="margin:0">This trip was matched before gaps could be listed one by one.</p>
+            <button class="sm" disabled=${!!busy} onClick=${() => act("Rematching", "/recalculate")}>Match again to list them</button>`
+            : !gaps.length ? html`<p class="small faint" style="margin:0">${t.version
+              ? "No gaps in this trip: the signal never dropped long enough to leave one."
+              : "Match the trip to see where its gaps are."}</p>`
+            : html`<div class="gaplist">${gaps.map((g) => html`<div class="gaprow" key=${`${g.t0}-${g.t1}`}>
+                <span class="num">${time(g.t0)}–${time(g.t1)}</span>
+                <span class="faint num">${km(g.km)}</span>
+                <span class="grow"></span>
+                <button class=${`sm ${g.routed ? "" : "go"}`} disabled=${!!busy || !t.closed}
+                  title=${g.routed ? "Keep your recorded GPS across this gap" : "Route across this gap"}
+                  onClick=${() => toggleGap(g)}>${g.routed ? "Routed" : "Kept"}</button>
+              </div>`)}</div>
+              <p class="small faint" style="margin:0">${plural(gaps.length, "gap")}: click one, or its dashed line on the map, to switch that one only.</p>`}
+          ${t.gap_mode
+            ? html`<button class="sm bare" onClick=${() => allGaps(null)}>Follow my setting instead (${me?.settings?.strength === "strict" ? "keep them all" : "route them all"})</button>`
+            : html`<p class="small faint" style="margin:0">The whole-trip buttons are your account's setting; a single gap you switch stays switched.</p>`}
         </section>
         ${t.version > 0 && html`<section>
           <h2>How well it fits</h2>

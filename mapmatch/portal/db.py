@@ -152,6 +152,10 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE trips ADD COLUMN gap_mode TEXT NOT NULL DEFAULT '';
     """,
+    # 5: individual gaps that must stay as recorded
+    """
+    ALTER TABLE trips ADD COLUMN keep_gaps TEXT NOT NULL DEFAULT '[]';
+    """,
 ]
 
 

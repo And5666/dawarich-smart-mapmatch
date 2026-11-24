@@ -219,8 +219,10 @@ def match(db: Database, uid: int, trip_id: int, reason: str = "auto",
     pts = points(db, uid, trip)
     # The trip can choose for itself; otherwise the account's setting applies.
     strength = trip.get("gap_mode") or settings(db, uid).get("strength") or "fill"
+    # Holes picked out one by one in the editor stay as recorded whatever the above says.
+    keep = json.loads(trip.get("keep_gaps") or "[]")
     try:
-        result = match_trip(pts, overrides=ov, options={"strength": strength})
+        result = match_trip(pts, overrides=ov, options={"strength": strength, "keep_gaps": keep})
     except Exception as exc:  # noqa: BLE001 - recorded on the trip and shown
         with db.tx() as c:
             c.execute("UPDATE trips SET status='failed', dirty=0, error=?, updated_at=? WHERE id=?",
@@ -243,6 +245,23 @@ def set_gap_mode(db: Database, uid: int, trip_id: int, mode: str) -> dict[str, A
         raise KeyError(trip_id)
     with db.tx() as c:
         c.execute("UPDATE trips SET gap_mode=?, updated_at=? WHERE id=?", (mode, now(), trip_id))
+    return get(db, uid, trip_id)
+
+
+def set_keep_gaps(db: Database, uid: int, trip_id: int, spans: list[Any]) -> dict[str, Any]:
+    """Remember which individual holes stay as recorded: [[t0, t1], ...]."""
+    clean: list[list[int]] = []
+    for span in spans or []:
+        t0, t1 = int(span[0]), int(span[1])
+        lo, hi = (t0, t1) if t0 <= t1 else (t1, t0)
+        if not any(lo <= c[1] and c[0] <= hi for c in clean):
+            clean.append([lo, hi])
+    clean.sort()
+    trip = get(db, uid, trip_id)
+    if not trip:
+        raise KeyError(trip_id)
+    with db.tx() as c:
+        c.execute("UPDATE trips SET keep_gaps=?, updated_at=? WHERE id=?", (json.dumps(clean), now(), trip_id))
     return get(db, uid, trip_id)
 
 
@@ -345,6 +364,7 @@ def public(trip: dict[str, Any]) -> dict[str, Any]:
         "overrides": json.loads(trip["overrides"] or "[]"), "version": trip["result_version"],
         "point_edits": len(json.loads(trip.get("point_edits") or "{}")),
         "gap_mode": trip.get("gap_mode") or "",
+        "keep_gaps": json.loads(trip.get("keep_gaps") or "[]"),
         "pushed_version": pushed, "pushed_at": trip["pushed_at"],
         "engine_version": trip["engine_version"], "outdated_engine": bool(trip["result_version"]) and
         trip["engine_version"] != ENGINE_VERSION,

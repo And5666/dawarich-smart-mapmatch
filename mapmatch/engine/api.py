@@ -9,7 +9,7 @@ from .match import fit_score, match_segment
 from .modes import label, runs, summary_speed
 from .quality import deviations, path_km, percentile
 
-ENGINE_VERSION = "2.2.0"
+ENGINE_VERSION = "2.3.0"
 MODES = ("walk", "cycle", "drive", "train", "stay", "raw")
 
 
@@ -56,10 +56,16 @@ def match_trip(points: list[dict[str, Any]], overrides: list[dict[str, Any]] | N
     """Match one trip.
 
     overrides: [{"t0", "t1", "mode"}] with mode in MODES; fixes in the range
-    are forced to that mode. options: {"strength": "fill" | "strict"}.
+    are forced to that mode. options: {"strength": "fill" | "strict"} and
+    {"keep_gaps": [[t0, t1], ...]} for holes that must stay as recorded.
     """
     opts = {"strength": "fill", **(options or {})}
     strength = opts["strength"]
+    keep_ranges = [tuple(sorted((int(a), int(b)))) for a, b in (opts.get("keep_gaps") or [])]
+
+    def keep_gap(t0: int, t1: int) -> bool:
+        lo, hi = (t0, t1) if t0 <= t1 else (t1, t0)
+        return any(lo <= r1 and r0 <= hi for r0, r1 in keep_ranges)
     fixes, dropped = clean(points)
     if not fixes:
         return {"segments": [], "stream": [], "dropped": dropped, "quality": {},
@@ -92,11 +98,11 @@ def match_trip(points: list[dict[str, Any]], overrides: list[dict[str, Any]] | N
             else:
                 mode, res = _choose_road(seg_fixes, mode)
             profile = res.get("profile")
-            pieces = assemble.road_pieces(seg_fixes, mode, res, strength)
+            pieces = assemble.road_pieces(seg_fixes, mode, res, strength, keep_gap)
         segments.append({"mode": mode, "forced": is_forced, "profile": profile,
                          "n_fixes": j - i, "pieces": pieces, "key": key if is_forced else None})
 
-    segments = assemble.connect(segments, strength)
+    segments = assemble.connect(segments, strength, keep_gap)
     segments = assemble.merge_same_mode(segments)
     assemble.finish(segments)
     out = assemble.stream(segments)

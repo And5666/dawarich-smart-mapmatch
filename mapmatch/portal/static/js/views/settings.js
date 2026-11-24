@@ -85,7 +85,7 @@ export function Settings() {
             <button class=${f.strength === "strict" ? "on" : ""} role="radio" aria-checked=${f.strength === "strict"} onClick=${() => setF({ ...f, strength: "strict" })}>Keep what was recorded</button>
           </div>
           <p class="help">${f.strength === "fill" ? "Missing stretches follow the road or path when the timing and the points around them agree."
-            : "Only tiny breaks are routed. Anything else that won't match stays as your original GPS."}</p></div>
+            : "Gaps are never routed: the line runs straight between the points either side of it. A single trip can override this in its editor."}</p></div>
         <p class="help">Walks and rides only snap to a path when they clearly follow it; off-trail stretches keep your GPS. Bikes ignore one-way streets.</p>
         <div class="actions"><button class="go" disabled=${saving === "match" || !dirty(["trip_gap_min", "strength"])} onClick=${() => save("match", ["trip_gap_min", "strength"])}>Save</button>
           <button onClick=${() => startJob("rematch", { scope: "all" })}>Rematch every trip</button></div>

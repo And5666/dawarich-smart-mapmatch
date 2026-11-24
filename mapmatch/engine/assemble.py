@@ -145,8 +145,12 @@ def _fixpt(p: dict[str, Any], lat: float | None = None, lon: float | None = None
 
 
 def _filled(a: dict[str, Any], mids: list[dict[str, Any]], b: dict[str, Any], mode: str,
-            strength: str, n_in: int, vmax: float | None = None) -> dict[str, Any]:
-    f = fill(a, mids, b, mode, strength, vmax)
+            strength: str, n_in: int, vmax: float | None = None,
+            keep: Any = None) -> dict[str, Any]:
+    # keep(t0, t1) says whether this particular hole must stay as recorded, even
+    # when the trip is otherwise happy to route across gaps.
+    forced = bool(keep and keep(a["timestamp"], b["timestamp"]))
+    f = fill(a, mids, b, mode, "strict" if forced else strength, vmax)
     if f["kind"] == "raw":
         coords = [[p["lat"], p["lon"], p["timestamp"], 1] for p in (a, *mids, b)]
         pc = _piece("raw", coords, n_in)
@@ -154,12 +158,16 @@ def _filled(a: dict[str, Any], mids: list[dict[str, Any]], b: dict[str, Any], mo
         pc = _piece(f["kind"], timed(f["coords"], a["timestamp"], b["timestamp"]), n_in)
     if f.get("why"):
         pc["why"] = f["why"]
+    # The hole this piece bridges, so the editor can offer it as a gap to choose.
+    pc["gap"] = [int(a["timestamp"]), int(b["timestamp"])]
+    if forced:
+        pc["kept"] = True
     return pc
 
 
 # ---------------------------------------------------------------- segments
 def road_pieces(fixes: list[dict[str, Any]], mode: str, m: dict[str, Any],
-                strength: str) -> list[dict[str, Any]]:
+                strength: str, keep: Any = None) -> list[dict[str, Any]]:
     """Pieces for one matched movement segment, gaps already filled."""
     n = len(fixes)
     if n == 1:
@@ -183,7 +191,7 @@ def road_pieces(fixes: list[dict[str, Any]], mode: str, m: dict[str, Any],
 
     A = [k for k, a in enumerate(anchors) if a and trusted(k)]
     if not A:
-        return [_filled(_fixpt(fixes[0]), fixes[1:-1], _fixpt(fixes[-1]), mode, strength, n)]
+        return [_filled(_fixpt(fixes[0]), fixes[1:-1], _fixpt(fixes[-1]), mode, strength, n, None, keep)]
 
     def snapped(k: int) -> dict[str, Any]:
         a = anchors[k]
@@ -197,7 +205,7 @@ def road_pieces(fixes: list[dict[str, Any]], mode: str, m: dict[str, Any],
     # and from the platform, and gaps inside it are filled on foot or not at all.
     edge_mode = "walk" if mode == "train" else mode
     if A[0] > 0:
-        out.append(_filled(_fixpt(fixes[0]), fixes[1:A[0]], snapped(A[0]), edge_mode, strength, A[0], vmax))
+        out.append(_filled(_fixpt(fixes[0]), fixes[1:A[0]], snapped(A[0]), edge_mode, strength, A[0], vmax, keep))
     for k1, k2 in zip(A, A[1:]):
         a1, a2 = anchors[k1], anchors[k2]
         ok = False
@@ -222,10 +230,10 @@ def road_pieces(fixes: list[dict[str, Any]], mode: str, m: dict[str, Any],
             if ok:
                 out.append(_piece("matched", timed(seg, fixes[k1]["timestamp"], fixes[k2]["timestamp"]), k2 - k1))
         if not ok:
-            out.append(_filled(snapped(k1), fixes[k1 + 1:k2], snapped(k2), mode, strength, k2 - k1))
+            out.append(_filled(snapped(k1), fixes[k1 + 1:k2], snapped(k2), mode, strength, k2 - k1, None, keep))
     if A[-1] < n - 1:
         out.append(_filled(snapped(A[-1]), fixes[A[-1] + 1:-1], _fixpt(fixes[-1]), edge_mode, strength,
-                           n - 1 - A[-1], vmax))
+                           n - 1 - A[-1], vmax, keep))
     out = merge_pieces(out)
     acc = {int(p["timestamp"]): (p.get("accuracy") or 99.0) for p in fixes}
     for pc in out:
@@ -282,7 +290,7 @@ def _end(seg: dict[str, Any], first: bool) -> dict[str, Any]:
     return {"lat": c[0], "lon": c[1], "timestamp": c[2]}
 
 
-def connect(segments: list[dict[str, Any]], strength: str) -> list[dict[str, Any]]:
+def connect(segments: list[dict[str, Any]], strength: str, keep: Any = None) -> list[dict[str, Any]]:
     """Fill the seam between consecutive segments, attached to the moving side.
 
     Segments carrying only "via" fixes (a lone fix between two stays) are not
@@ -301,7 +309,7 @@ def connect(segments: list[dict[str, Any]], strength: str) -> list[dict[str, Any
         if not real:
             if vias:
                 mode = seam_mode({t["mode"], *via_modes})
-                pc = _filled(_fixpt(vias[0]), vias[1:], _end(t, True), mode, strength, len(vias))
+                pc = _filled(_fixpt(vias[0]), vias[1:], _end(t, True), mode, strength, len(vias), None, keep)
                 t["pieces"] = merge_pieces([pc] + t["pieces"])
         else:
             s = real[-1]
@@ -318,7 +326,7 @@ def connect(segments: list[dict[str, Any]], strength: str) -> list[dict[str, Any
                     chord = haversine(a["lat"], a["lon"], b["lat"], b["lon"])
                     mode = "walk" if chord < 1500 else "drive"
                     vmax = VMAX_KMH["drive"]
-                pc = _filled(a, vias, b, mode, strength, len(vias), vmax)
+                pc = _filled(a, vias, b, mode, strength, len(vias), vmax, keep)
                 if t["mode"] == "stay" and s["mode"] != "stay":
                     s["pieces"] = merge_pieces(s["pieces"] + [pc])
                 else:

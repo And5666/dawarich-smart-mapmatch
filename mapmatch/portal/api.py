@@ -45,9 +45,12 @@ class SplitIn(BaseModel):
 
 
 class GapsIn(BaseModel):
-    # True: route across the gaps. False: keep the recorded GPS. None: follow
-    # the account's own setting again.
+    # True: route across. False: keep the recorded GPS. None: follow the
+    # account's own setting again (trip-wide only).
     route: StrictBool | None = None
+    # With t0 and t1, the choice is for that one gap instead of the whole trip.
+    t0: int | None = None
+    t1: int | None = None
 
 
 class LockIn(BaseModel):
@@ -449,11 +452,24 @@ def build(app_state: Any) -> APIRouter:
 
     @r.post("/trips/{tid}/gaps")
     def put_gaps(tid: int, body: GapsIn, u: dict[str, Any] = Depends(user)) -> dict[str, Any]:
-        """Route this trip's gaps, or keep the recorded GPS across them."""
-        trip_or_404(u["id"], tid)
+        """Route or keep the gaps: one hole by its times, or the whole trip."""
+        trip = trip_or_404(u["id"], tid)
+        if body.t0 is not None and body.t1 is not None:
+            if body.route is None:
+                raise HTTPException(400, "say whether that gap should be routed or kept")
+            span = [min(body.t0, body.t1), max(body.t0, body.t1)]
+            keep = [k for k in json.loads(trip.get("keep_gaps") or "[]")
+                    if not (span[0] <= k[1] and k[0] <= span[1])]
+            if body.route is False:
+                keep.append(span)
+            trips.set_keep_gaps(db, u["id"], tid, keep)
+            return _rematch(u["id"], tid, "gap kept as recorded" if body.route is False else "gap routed", None)
         mode = "" if body.route is None else ("fill" if body.route else "strict")
         try:
             trips.set_gap_mode(db, u["id"], tid, mode)
+            if body.route is True:
+                # "Route across" for the whole trip drops the per-gap choices.
+                trips.set_keep_gaps(db, u["id"], tid, [])
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
         reason = {"fill": "gaps routed", "strict": "gaps kept as recorded", "": "gaps follow settings"}[mode]

@@ -259,6 +259,32 @@ def test_keeping_gaps_changes_the_route(env, fake_valhalla):
     assert filled["filled_frac"] > kept["filled_frac"], (filled, kept)
 
 
+def test_each_gap_can_be_chosen_separately(env, fake_valhalla):
+    client, dw, jobs, db = env
+    sync(client, jobs)
+    tid = client.get("/api/trips").json()["trips"][0]["id"]
+    fake_valhalla.unmatched = {5, 12}          # two holes in the trace
+    d = client.post(f"/api/trips/{tid}/recalculate", headers=H).json()
+    holes = [p for s in d["segments"] for p in s["pieces"] if p.get("gap")]
+    assert len(holes) >= 2, holes
+    first = holes[0]["gap"]
+    d = client.post(f"/api/trips/{tid}/gaps", json={"t0": first[0], "t1": first[1], "route": False},
+                    headers=H).json()
+    assert d["trip"]["keep_gaps"] == [first]
+    kinds = {tuple(p["gap"]): p["kind"] for s in d["segments"] for p in s["pieces"] if p.get("gap")}
+    assert kinds[tuple(first)] in ("raw", "straight"), "that hole keeps the recorded GPS"
+    others = [k for g, k in kinds.items() if g != tuple(first)]
+    assert "filled" in others, "the other holes still route"
+    # Switching it back forgets the exception.
+    d = client.post(f"/api/trips/{tid}/gaps", json={"t0": first[0], "t1": first[1], "route": True},
+                    headers=H).json()
+    assert d["trip"]["keep_gaps"] == []
+    # "Route them all" clears any per-gap choices too.
+    client.post(f"/api/trips/{tid}/gaps", json={"t0": first[0], "t1": first[1], "route": False}, headers=H)
+    d = client.post(f"/api/trips/{tid}/gaps", json={"route": True}, headers=H).json()
+    assert d["trip"]["keep_gaps"] == [] and d["trip"]["gap_mode"] == "fill"
+
+
 def test_accounts_are_made_by_admins(env):
     client, dw, jobs, db = env
     # Sign-up is off, so a stranger cannot register.

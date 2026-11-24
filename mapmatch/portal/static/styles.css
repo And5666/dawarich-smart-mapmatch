@@ -288,3 +288,8 @@ table.t { width: 100%; border-collapse: collapse; font-size: 13px; }
 .region-add { display: grid; gap: 10px; border-top: 1px solid var(--line); padding-top: 14px; }
 table.t tr.off td { opacity: .55; }
 .doc code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; background: var(--sunk); padding: 1px 4px; border-radius: 4px; word-break: break-all; }
+
+/* One row per gap in the trip editor. */
+.gaplist { display: grid; }
+.gaprow { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.gaprow:last-child { border-bottom: 0; }

@@ -108,6 +108,11 @@ def fill(a: dict[str, Any], mids: list[dict[str, Any]], b: dict[str, Any], mode:
 
     Returns {"kind": filled|raw|straight|join, "coords": [(lat, lon), ...]} and,
     when no route was accepted, "why" with the rejection reasons.
+
+    strength="strict" never routes a gap: the line runs between the recorded
+    points (raw when there are fixes inside the gap, straight when the hole is
+    empty). strength="fill" tries a route first, and keeps the recorded points
+    when no route fits the timing.
     """
     pts = [a, *mids, b]
     raw_path = _length([(p["lat"], p["lon"]) for p in pts])
@@ -124,10 +129,10 @@ def fill(a: dict[str, Any], mids: list[dict[str, Any]], b: dict[str, Any], mode:
     if profile and profile != "pedestrian" and chord <= SHORT_GAP_M:
         profiles.append("pedestrian")
     attempts: list[tuple[str, list[dict[str, Any]], bool]] = []
-    if not (strength == "strict" and mids):
+    if strength != "strict":
         for prof in profiles:
             attempts.append((prof, [a, b], True))
-            if mids and strength != "strict":
+            if mids:
                 attempts.append((prof, [a, *_through(mids), b], False))
     why = [] if attempts else ["strict" if profile else "no_profile"]
     for prof, locs, check in attempts:
