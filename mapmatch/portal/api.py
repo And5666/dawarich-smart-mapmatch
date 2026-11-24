@@ -56,6 +56,10 @@ class GapsIn(BaseModel):
     force: StrictBool | None = None
 
 
+class RestoreIn(BaseModel):
+    version: int
+
+
 class LockIn(BaseModel):
     locked: bool
 
@@ -435,6 +439,25 @@ def build(app_state: Any) -> APIRouter:
             raise HTTPException(400, str(exc)) from exc
         n = len(body.edits)
         return _rematch(u["id"], tid, f"{n} point{'s' if n != 1 else ''} corrected" if n else "corrections cleared", None)
+
+    @r.get("/trips/{tid}/versions/{v}")
+    def trip_version(tid: int, v: int, u: dict[str, Any] = Depends(user)) -> dict[str, Any]:
+        """An earlier version, to look at before going back to it."""
+        trip_or_404(u["id"], tid)
+        old = trips.version(db, tid, v)
+        if not old:
+            raise HTTPException(404, "that version is no longer kept")
+        res = old.pop("result")
+        return {**old, "segments": res["segments"], "quality": res.get("quality", {})}
+
+    @r.post("/trips/{tid}/restore")
+    def restore_version(tid: int, body: RestoreIn, u: dict[str, Any] = Depends(user)) -> dict[str, Any]:
+        trip_or_404(u["id"], tid)
+        try:
+            trips.restore(db, u["id"], tid, body.version)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return _detail(u["id"], tid)
 
     @r.post("/trips/{tid}/undo")
     def undo(tid: int, u: dict[str, Any] = Depends(user)) -> dict[str, Any]:

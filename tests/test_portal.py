@@ -533,3 +533,18 @@ def test_match_selected_and_range(env):
     run_job(client, jobs, "rematch", {"scope": "range", "start": ts[1]["start"], "end": ts[1]["end"]})
     got = {t["id"]: t["version"] for t in client.get("/api/trips").json()["trips"]}
     assert got[ts[0]["id"]] == 1 and got[ts[1]["id"]] == 1
+
+
+def test_history_opens_an_old_version_and_goes_back_to_it(env):
+    client, dw, jobs, db = env
+    sync(client, jobs)
+    tid = client.get("/api/trips").json()["trips"][0]["id"]
+    v1 = client.get(f"/api/trips/{tid}").json()["trip"]["version"]
+    t = client.post(f"/api/trips/{tid}/gaps", json={"route": False}, headers=H).json()["trip"]
+    assert t["gap_mode"] == "strict"
+    old = client.get(f"/api/trips/{tid}/versions/{v1}").json()
+    assert old["version"] == v1 and old["segments"] and old["choices"]["gap_mode"] == ""
+    d = client.post(f"/api/trips/{tid}/restore", json={"version": v1}, headers=H).json()
+    assert d["trip"]["gap_mode"] == "", "the trip's choices come back with the version"
+    assert d["trip"]["version"] == t["version"] + 1 and d["history"][0]["reason"] == f"back to v{v1}"
+    assert client.get(f"/api/trips/{tid}/versions/999").status_code == 404

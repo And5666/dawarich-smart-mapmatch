@@ -171,6 +171,10 @@ MIGRATIONS: list[str] = [
       PRIMARY KEY(user_id, ts, lat_e6, lon_e6)
     ) WITHOUT ROWID;
     """,
+    # 8: what the trip's own choices were when each version was made
+    """
+    ALTER TABLE trip_results ADD COLUMN choices TEXT NOT NULL DEFAULT '{}';
+    """,
 ]
 
 

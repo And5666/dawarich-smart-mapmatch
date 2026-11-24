@@ -192,14 +192,23 @@ def refresh_previews(db: Database) -> int:
     return n
 
 
+CHOICES = ("gap_mode", "keep_gaps", "force_route", "force_gaps", "point_edits")
+
+
+def choices_of(trip: dict[str, Any]) -> dict[str, Any]:
+    """The trip's own settings that shaped a match, kept with each version so
+    going back to it brings them back too."""
+    return {k: trip.get(k) for k in CHOICES if k in trip}
+
+
 def store(db: Database, trip: dict[str, Any], result: dict[str, Any], overrides: list[dict[str, Any]],
           reason: str) -> int:
     version = int(trip["result_version"]) + 1
     with db.tx() as c:
         c.execute("INSERT INTO trip_results(trip_id, version, reason, engine_version, overrides, quality,"
-                  " result_gz, created_at) VALUES (?,?,?,?,?,?,?,?)",
+                  " result_gz, created_at, choices) VALUES (?,?,?,?,?,?,?,?,?)",
                   (trip["id"], version, reason, result["engine_version"], json.dumps(overrides),
-                   json.dumps(result["quality"]), pack(result), now()))
+                   json.dumps(result["quality"]), pack(result), now(), json.dumps(choices_of(trip))))
         # Old versions go, except the one Dawarich holds: a later push of a
         # neighbouring trip re-posts it.
         c.execute("DELETE FROM trip_results WHERE trip_id=? AND version <= ? AND version IS NOT"
@@ -322,16 +331,45 @@ def history(db: Database, trip_id: int) -> list[dict[str, Any]]:
         " WHERE trip_id=? ORDER BY version DESC", (trip_id,))]
 
 
+def version(db: Database, trip_id: int, v: int) -> dict[str, Any] | None:
+    row = db.one("SELECT * FROM trip_results WHERE trip_id=? AND version=?", (trip_id, v))
+    if not row:
+        return None
+    return {"version": row["version"], "reason": row["reason"], "created_at": row["created_at"],
+            "engine_version": row["engine_version"], "overrides": json.loads(row["overrides"] or "[]"),
+            "choices": json.loads(row["choices"] or "{}"), "result": unpack(row["result_gz"])}
+
+
+def restore(db: Database, uid: int, trip_id: int, v: int) -> int:
+    """Make an earlier version current again, with the choices it was made
+    with, as a new version (so this is undoable too)."""
+    trip = get(db, uid, trip_id)
+    if not trip:
+        raise KeyError(trip_id)
+    old = version(db, trip_id, v)
+    if not old:
+        raise ValueError(f"version {v} is no longer kept")
+    ch = old["choices"]
+    if ch:
+        sets = [k for k in CHOICES if k in ch and ch[k] is not None]
+        if sets:
+            with db.tx() as c:
+                c.execute(f"UPDATE trips SET {', '.join(f'{k}=?' for k in sets)} WHERE id=?",
+                          (*[ch[k] for k in sets], trip_id))
+            trip = get(db, uid, trip_id)
+    return store(db, trip, old["result"], old["overrides"], f"back to v{v}")
+
+
 def undo(db: Database, uid: int, trip_id: int) -> int:
     """Make the previous result current again (as a new version, so undo is undoable)."""
     trip = get(db, uid, trip_id)
     if not trip:
         raise KeyError(trip_id)
-    prev = db.one("SELECT * FROM trip_results WHERE trip_id=? AND version < ? ORDER BY version DESC LIMIT 1",
+    prev = db.one("SELECT version FROM trip_results WHERE trip_id=? AND version < ? ORDER BY version DESC LIMIT 1",
                   (trip_id, trip["result_version"]))
     if not prev:
         raise ValueError("nothing to undo")
-    return store(db, trip, unpack(prev["result_gz"]), json.loads(prev["overrides"]), f"undo to v{prev['version']}")
+    return restore(db, uid, trip_id, int(prev["version"]))
 
 
 def range_override(trip: dict[str, Any], t0: int, t1: int, mode: str) -> list[dict[str, Any]]:
