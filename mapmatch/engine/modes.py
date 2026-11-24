@@ -175,11 +175,13 @@ def label(fixes: list[dict[str, Any]], overrides: list[dict[str, Any]] | None = 
         for k in range(a, b):
             labels[k] = "stay"
             stay_id[k] = sid
-    for ov in overrides or []:
+    ov_id = [-1] * n
+    for oi, ov in enumerate(overrides or []):
         for k, p in enumerate(fixes):
             if int(ov["t0"]) <= p["timestamp"] <= int(ov["t1"]):
                 labels[k] = ov["mode"]
                 forced[k] = True
+                ov_id[k] = oi
 
     rails = near_rail(fixes)
     # Viterbi per leg: maximal runs that are neither stay nor forced. Speeds
@@ -195,7 +197,10 @@ def label(fixes: list[dict[str, Any]], overrides: list[dict[str, Any]] | None = 
         labels[i:j] = _viterbi(speeds(fixes[i:j]), rails[i:j])
         i = j
     _merge_short(fixes, labels, forced)
-    keys = [f"stay{stay_id[k]}" if labels[k] == "stay" and not forced[k] else labels[k] for k in range(n)]
+    # Each override is its own run, so a split segment keeps both halves even
+    # while they share a mode.
+    keys = [f"ov{ov_id[k]}:{labels[k]}" if forced[k] else
+            f"stay{stay_id[k]}" if labels[k] == "stay" else labels[k] for k in range(n)]
     return labels, forced, keys
 
 

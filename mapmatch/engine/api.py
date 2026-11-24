@@ -67,7 +67,7 @@ def match_trip(points: list[dict[str, Any]], overrides: list[dict[str, Any]] | N
     labels, forced, keys = label(fixes, overrides)
 
     segments: list[dict[str, Any]] = []
-    for _key, i, j in runs(keys):
+    for key, i, j in runs(keys):
         mode = labels[i]
         seg_fixes = fixes[i:j]
         is_forced = any(forced[i:j])
@@ -75,7 +75,7 @@ def match_trip(points: list[dict[str, Any]], overrides: list[dict[str, Any]] | N
         if mode not in ("stay", "raw") and len(seg_fixes) == 1 and not is_forced:
             # A lone fix between stays: a waypoint of the seam, not a segment.
             segments.append({"mode": mode, "forced": False, "profile": None, "n_fixes": 1,
-                             "pieces": [], "via": seg_fixes})
+                             "pieces": [], "via": seg_fixes, "key": key})
             continue
         if mode == "stay":
             pieces = assemble.stay_pieces(seg_fixes)
@@ -94,7 +94,7 @@ def match_trip(points: list[dict[str, Any]], overrides: list[dict[str, Any]] | N
             profile = res.get("profile")
             pieces = assemble.road_pieces(seg_fixes, mode, res, strength)
         segments.append({"mode": mode, "forced": is_forced, "profile": profile,
-                         "n_fixes": j - i, "pieces": pieces})
+                         "n_fixes": j - i, "pieces": pieces, "key": key if is_forced else None})
 
     segments = assemble.connect(segments, strength)
     segments = assemble.merge_same_mode(segments)

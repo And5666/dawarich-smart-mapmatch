@@ -250,7 +250,7 @@ def merge_same_mode(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for s in segments:
         if out and out[-1]["mode"] == s["mode"] and s["mode"] != "stay" and \
-                out[-1].get("forced") == s.get("forced"):
+                out[-1].get("key") == s.get("key"):
             q = out[-1]
             q["pieces"] = merge_pieces(q["pieces"] + s["pieces"])
             q["n_fixes"] += s["n_fixes"]
