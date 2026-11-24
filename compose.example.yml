@@ -1,0 +1,38 @@
+# Mapmatch next to an existing Dawarich + Valhalla stack.
+# Copy to compose.yml (or merge into your Dawarich compose file) and adjust.
+services:
+  mapmatch:
+    build: .
+    image: mapmatch:latest
+    container_name: mapmatch
+    restart: unless-stopped
+    environment:
+      # How the container reaches Dawarich and Valhalla on the docker network.
+      DAWARICH_URL: http://dawarich_app:3000
+      # Set when Dawarich only answers for its public hostname (APPLICATION_HOSTS).
+      DAWARICH_HOST_HEADER: ""
+      VALHALLA_URL: http://dawarich-valhalla:8002
+      # First admin; only used while no admin exists.
+      PORTAL_ADMIN_USER: admin
+      PORTAL_ADMIN_PASSWORD: change-me-please
+      # Serve under a path behind a reverse proxy, e.g. /mapmatch. Empty = site root.
+      PORTAL_BASE_PATH: ""
+      # Set to 1 when the portal is reached over https.
+      PORTAL_SECURE_COOKIE: "0"
+      # Start in dry-run: pushes are planned and logged but Dawarich is not changed.
+      # Set to 0 once you have checked a few trips.
+      PUSH_DRY_RUN: "1"
+      MATCH_WORKERS: "4"
+    volumes:
+      # SQLite database with the archive of original GPS points. Back this up.
+      - ./mapmatch-data:/data
+    ports:
+      - "8080:8080"
+    networks:
+      - dawarich
+
+networks:
+  dawarich:
+    external: true
+    # The network your Dawarich and Valhalla containers are on (`docker network ls`).
+    name: dawarich

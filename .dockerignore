@@ -1,0 +1,6 @@
+*
+!pyproject.toml
+!mapmatch/
+!data/rail_shapes.json.gz
+!data/rail_stations.json.gz
+**/__pycache__

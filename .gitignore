@@ -11,3 +11,6 @@ bench/cache/
 .venv/
 .pytest_cache/
 bench/report/
+build/
+*.egg-info/
+portal-data/

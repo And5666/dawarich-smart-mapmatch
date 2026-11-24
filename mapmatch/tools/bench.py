@@ -1,10 +1,10 @@
 """Benchmark the matcher on a Dawarich CSV export.
 
     VALHALLA_URL=http://host:8002 python -m mapmatch.tools.bench \
-        --csv data/test-account-points.csv --engine new --trips tracker
+        --csv data/test-account-points.csv --trips tracker --compare bench/old-tracker.json
 
 --trips tracker  one trip per tracker_id (the account's existing route ids),
-                 "*-loose" points left out; like-for-like with the old engine.
+                 "*-loose" points left out; comparable with bench/old-tracker.json.
 --trips auto     the whole stream, split by the new engine's own segmenter.
 
 Writes bench/<engine>-<trips>.json (ids and metrics only, no coordinates) and
@@ -28,51 +28,9 @@ from mapmatch.engine.quality import deviations, path_km, percentile
 ROOT = Path(__file__).resolve().parents[2]
 
 
-# ---------------------------------------------------------------- engines
-def run_old(points: list[dict[str, Any]], tid: int) -> dict[str, Any]:
-    """The pre-redesign smartmap pipeline, normalized for comparison."""
-    sys.path.insert(0, str(ROOT))
-    import smartmap.valhalla as sv
-    from mapmatch.engine import valhalla as nv
-
-    def _post(path, body, timeout):  # share the response cache, keep the old error type
-        try:
-            return nv.post(path, body, timeout)
-        except nv.ValhallaError as exc:
-            raise sv.ValhallaError(str(exc)) from exc
-    sv._post = _post
-    from smartmap.assemble import build_track
-    from smartmap.connectors import add_connectors, repair_internal_gaps, rescue_raw_parts
-    from smartmap.infer import infer_track
-    from smartmap.stream import from_parts
-
-    pts = [{k: p[k] for k in ("lat", "lon", "timestamp", "accuracy", "velocity", "altitude")} for p in points]
-    tr = infer_track(pts)
-    built = build_track(tid, tr)
-    built["_raw_points"] = tr["fixes"]
-    repair_internal_gaps(built)
-    rescue_raw_parts(built)
-    add_connectors(built)
-    stream = from_parts(built)
-    pieces = []
-    for p in built["parts"]:
-        mode, eng = p["mode"], p["engine"]
-        if mode == "connector":
-            kind = "straight" if "straight" in p["label"] else "filled"
-        elif mode == "stationary":
-            kind = "stay"
-        elif mode == "raw":
-            kind = "raw"
-        elif eng.startswith(("repaired", "rescued")):
-            kind = "filled"
-        else:
-            kind = "matched"
-        pieces.append({"mode": mode, "kind": kind, "km": p["distance"], "n_in": p.get("n_in", 0),
-                       "coords": p["points"]})
-    segs = [p for p in pieces if p["mode"] != "connector"]
-    return {"pieces": pieces, "segments": len(segs), "stream": stream}
-
-
+# ---------------------------------------------------------------- engine
+# The pre-redesign engine (smartmap/) was removed after this harness
+# recorded its results in bench/old-tracker.json; use --compare to diff.
 def run_new(points: list[dict[str, Any]], tid: int) -> dict[str, Any]:
     from mapmatch.engine.api import match_trip
     res = match_trip(points)
@@ -198,7 +156,8 @@ const l=document.getElementById('l');R.forEach(r=>{let d=document.createElement(
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--csv", default=str(ROOT / "data/test-account-points.csv"))
-    ap.add_argument("--engine", choices=("old", "new"), default="new")
+    ap.add_argument("--engine", choices=("new",), default="new")
+    ap.add_argument("--compare", default="", help="earlier bench JSON to print deltas against")
     ap.add_argument("--trips", choices=("tracker", "auto"), default="tracker")
     ap.add_argument("--only", default="", help="comma-separated trip ids")
     ap.add_argument("--workers", type=int, default=8)
@@ -209,8 +168,6 @@ def main(argv: list[str] | None = None) -> int:
 
     points = gio.read_csv(args.csv)
     if args.trips == "auto":
-        if args.engine == "old":
-            ap.error("--trips auto needs --engine new")
         trips = trips_auto(points)
         agree = agreement([t for _, t in trips], points)
     else:
@@ -219,7 +176,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.only:
         keep = {int(x) for x in args.only.split(",")}
         trips = [t for t in trips if t[0] in keep]
-    run = run_old if args.engine == "old" else run_new
+    run = run_new
     print(f"{len(trips)} trips, {sum(len(t) for _, t in trips)} fixes, engine={args.engine}", flush=True)
 
     t0 = time.time()
@@ -255,6 +212,12 @@ def main(argv: list[str] | None = None) -> int:
                      "pieces": [{k: p[k] for k in ("mode", "kind", "km", "coords")} for p in r["pieces"]]})
     html_report(out / "report" / f"{name}.html", rows)
     print(json.dumps(summary, indent=1))
+    if args.compare:
+        base = json.load(open(args.compare))["summary"]
+        print(f"\n{'metric':28s} {'before':>10s} {'now':>10s}")
+        for k, v in summary.items():
+            if isinstance(v, (int, float)) and k in base and k != "seconds":
+                print(f"{k:28s} {base[k]!s:>10s} {v!s:>10s}")
     print(f"wrote {out / (name + '.json')} and {out / 'report' / (name + '.html')}")
     return 0
 
