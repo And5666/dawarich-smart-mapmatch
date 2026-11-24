@@ -38,7 +38,9 @@ mapmatch, coloured by mode (blue driving, green cycling).*
 Before mapmatch changes anything in Dawarich, it copies every original point
 into its own archive. Nothing in mapmatch ever deletes from that archive.
 Pushing a trip replaces its points in Dawarich with the matched route, and
-reverting puts the original points back exactly as they were. You can do that
+tidies the stops either side of it: the GPS jitter while you were stopped
+becomes one point where you were, at arrival, departure and every half hour.
+Reverting puts the original points back exactly as they were. You can do that
 for one trip, or for all of them with **Revert everything** in Settings.
 
 Even so, **back up your Dawarich database before your first push**. mapmatch

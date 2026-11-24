@@ -83,6 +83,58 @@ def _tracker(fixes: list[dict[str, Any]]) -> str:
     return c.most_common(1)[0][0] if c else ""
 
 
+STOP_REACH_S = 6 * 3600     # how far a stop at either end of the history reaches
+STOP_JOIN_M = 150.0         # fixes this close to a stop's centre belong to it
+STOP_EVERY_S = 1800         # one point per half hour while stopped
+BAD_FIX_M = 100.0           # a lone fix worse than this is noise, not a place
+
+
+def _runs(loose: list[dict[str, Any]], rows: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    """Fixes outside every trip, split wherever a trip lies between them."""
+    wins = sorted((t["start_ts"], t["end_ts"]) for t in rows)
+    out: list[list[dict[str, Any]]] = []
+    for p in loose:
+        ts = p["timestamp"]
+        if any(a <= ts <= b for a, b in wins):
+            continue
+        if out and not any(out[-1][-1]["timestamp"] < a and b < ts for a, b in wins):
+            out[-1].append(p)
+        else:
+            out.append([p])
+    return out
+
+
+def tidy_stops(run: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The fixes recorded while stopped, as clean points: each place you were
+    becomes its centre, at arrival and departure and every half hour between.
+    A lone fix too inaccurate to be a place is dropped (the archive keeps it)."""
+    from ..engine.geo import haversine
+    from ..engine.stays import centroid
+    clusters: list[list[dict[str, Any]]] = []
+    for p in run:
+        if clusters:
+            good = [q for q in clusters[-1] if (q.get("accuracy") or 20.0) <= BAD_FIX_M] or clusters[-1]
+            lat, lon = centroid(good)
+            if haversine(lat, lon, p["lat"], p["lon"]) <= max(STOP_JOIN_M, 1.5 * (p.get("accuracy") or 20.0)):
+                clusters[-1].append(p)
+                continue
+        clusters.append([p])
+    out: list[dict[str, Any]] = []
+    for c in clusters:
+        good = [q for q in c if (q.get("accuracy") or 20.0) <= BAD_FIX_M]
+        if not good:
+            continue
+        lat, lon = centroid(good)
+        dev = _tracker(c)
+        t0, t1 = c[0]["timestamp"], c[-1]["timestamp"]
+        stamps = sorted({t0, t1, *range(t0 + STOP_EVERY_S, t1, STOP_EVERY_S)})
+        out += [{"lat": lat, "lon": lon, "timestamp": ts, "accuracy": 10.0, "tracker": dev, "ours": True,
+                 "mode": "stay"} for ts in stamps]
+    # Two stops can share a second at their join; Dawarich wants one point a second.
+    seen: set[int] = set()
+    return [p for p in out if not (p["timestamp"] in seen or seen.add(p["timestamp"]))]
+
+
 def apply(db: Database, cfg: Any, uid: int, changes: dict[int, bool], transport: Any = None,
           also: list[int] | None = None, progress: Callable[[int, str], None] | None = None,
           keep_going: bool = False, extra_spans: list[tuple[int, int]] | None = None) -> dict[str, Any]:
@@ -111,7 +163,18 @@ def apply(db: Database, cfg: Any, uid: int, changes: dict[int, bool], transport:
             shown[t["id"]] = t["result_version"] if changes[t["id"]] else None
         else:
             shown[t["id"]] = t["pushed_version"]
-    seeds = [(byid[t]["start_ts"], byid[t]["end_ts"]) for t in [*changes, *(also or [])] if t in byid]
+    # Each trip's window reaches back to the trip before and on to the one
+    # after, so the stops either side of it are rewritten with it.
+    order = [t["id"] for t in rows]
+    pos = {tid: i for i, tid in enumerate(order)}
+
+    def reach_of(tid: int) -> tuple[int, int]:
+        i = pos[tid]
+        a = rows[i - 1]["end_ts"] if i > 0 else rows[i]["start_ts"] - STOP_REACH_S
+        b = rows[i + 1]["start_ts"] if i + 1 < len(rows) else rows[i]["end_ts"] + STOP_REACH_S
+        return min(a, rows[i]["start_ts"]), max(b, rows[i]["end_ts"])
+
+    seeds = [reach_of(t) for t in [*changes, *(also or [])] if t in byid]
     seeds += [(int(a), int(b)) for a, b in (extra_spans or [])]
     dry = cfg.push_dry_run
     summary = {"dry_run": dry, "spans": 0, "deleted": 0, "posted": 0, "matched_points": 0,
@@ -154,10 +217,22 @@ def apply(db: Database, cfg: Any, uid: int, changes: dict[int, bool], transport:
                 posts += stream
                 n_matched += len(stream)
                 covered.append((t["start_ts"], t["end_ts"]))
-            for p in fixes:
-                ts = p["timestamp"]
-                if not any(c <= ts <= d for c, d in covered):
-                    posts.append({**p, "tracker": p["tracker_id"], "ours": False})
+            loose = [p for p in fixes if not any(c <= p["timestamp"] <= d for c, d in covered)]
+            # GPS inside a trip that isn't pushed goes back exactly as recorded.
+            posts += [{**p, "tracker": p["tracker_id"], "ours": False} for p in loose
+                      if any(t["start_ts"] <= p["timestamp"] <= t["end_ts"] for t in rows)]
+            for run in _runs(loose, rows):
+                # A stop next to a pushed trip is tidied: one clean point where
+                # you were, at arrival, departure and every half hour. A stop
+                # between trips that both show their original GPS stays as is.
+                before = max((t for t in rows if t["end_ts"] < run[0]["timestamp"]), key=lambda t: t["end_ts"], default=None)
+                after = min((t for t in rows if t["start_ts"] > run[-1]["timestamp"]), key=lambda t: t["start_ts"], default=None)
+                if any(t is not None and shown.get(t["id"]) for t in (before, after)):
+                    tidy = tidy_stops(run)
+                    posts += tidy
+                    n_matched += len(tidy)
+                else:
+                    posts += [{**p, "tracker": p["tracker_id"], "ours": False} for p in run]
             ids = [int(p["id"]) for p in remote if p.get("id") is not None]
             summary["deleted"] += len(ids)
             summary["posted"] += len(posts)

@@ -151,6 +151,13 @@ their matched points on the device the GPS came from (marked as mapmatch's by
 their Wi-Fi name); everything else goes back as the original fixes on their own
 device. Points Dawarich's anomaly filter had hidden are fetched and archived too.
 
+The stops on either side of a pushed trip are tidied as well. The fixes your
+phone recorded while you were stopped wander tens to hundreds of metres, and
+Dawarich draws every one, so a stop would otherwise show as a star of spikes.
+Each place you stopped becomes one point at its centre, at arrival, at departure
+and every half hour between; a lone fix worse than 100 m is left out. A stop
+between two trips that both show their original GPS is left exactly as it was.
+
 Every point in the window is in the archive before anything is deleted. If
 Dawarich stops answering between the delete and the write, the portal says so
 on every page and **Put them back** writes the missing points again from the

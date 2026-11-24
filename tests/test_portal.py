@@ -98,9 +98,12 @@ def test_push_edit_push_revert_round_trip(env):
     originals = dw.originals()
     sync(client, jobs)
     n_archive = archive_count(db)
-    trip = client.get("/api/trips").json()["trips"][-1]   # oldest first after reversing
+    listing = client.get("/api/trips").json()["trips"]
+    trip = listing[-1]   # oldest first after reversing
     tid = trip["id"]
-    outside = {k for k in originals if not trip["start"] <= k[0] <= trip["end"]}
+    # A push rewrites the trip and tidies the stops up to the next trip.
+    nxt = min((t["start"] for t in listing if t["start"] > trip["end"]), default=trip["end"] + 6 * 3600)
+    outside = {k for k in originals if not trip["start"] - 6 * 3600 <= k[0] < nxt}
 
     r = client.post(f"/api/trips/{tid}/push", headers=H)
     assert r.status_code == 200, r.text
@@ -548,3 +551,22 @@ def test_history_opens_an_old_version_and_goes_back_to_it(env):
     assert d["trip"]["gap_mode"] == "", "the trip's choices come back with the version"
     assert d["trip"]["version"] == t["version"] + 1 and d["history"][0]["reason"] == f"back to v{v1}"
     assert client.get(f"/api/trips/{tid}/versions/999").status_code == 404
+
+
+def test_push_tidies_the_stops_beside_a_trip_and_revert_restores_them(env):
+    """Jitter while stopped becomes one clean point per stop (every half hour);
+    a revert of the trip puts every recorded fix back."""
+    client, dw, jobs, db = env
+    originals = dw.originals()
+    sync(client, jobs)
+    listing = client.get("/api/trips").json()["trips"]
+    trip = listing[-1]
+    nxt = min(t["start"] for t in listing if t["start"] > trip["end"])
+    stop = [k for k in originals if trip["end"] < k[0] < nxt]
+    assert len(stop) > 20, "the fake day has 40 minutes of jitter at the office"
+    assert client.post(f"/api/trips/{trip['id']}/push", headers=H).status_code == 200
+    tidied = [p for p in dw.ours() if trip["end"] < p["timestamp"] < nxt]
+    assert 2 <= len(tidied) <= 4 and len({(p["latitude"], p["longitude"]) for p in tidied}) == 1
+    assert not [k for k in dw.originals() if trip["end"] < k[0] < nxt]
+    assert client.post(f"/api/trips/{trip['id']}/revert", headers=H).status_code == 200
+    assert dw.originals() == originals and not dw.ours()

@@ -109,7 +109,7 @@ export function Settings() {
       <div class="body">
         <div class="stack">
           <b>Repair tracks</b>
-          <p class="help">Rewrites every trip mapmatch has changed so Dawarich draws it cleanly: matched points on the same device as your GPS, originals back on theirs, and no straight lines left from old tracks. Pushed trips stay pushed.</p>
+          <p class="help">Rewrites every trip mapmatch has changed so Dawarich draws it cleanly: matched points on the same device as your GPS, the stops beside pushed trips tidied, and no straight lines left from old tracks. Pushed trips stay pushed.</p>
           <div class="actions"><${Confirm} disabled=${running || !me.dawarich_linked} armedLabel="Rewrite those trips in Dawarich?" onConfirm=${() => startJob("repair")}>Repair tracks<//></div>
         </div>
         <div class="stack" style="border-top:1px solid var(--line);padding-top:14px">
