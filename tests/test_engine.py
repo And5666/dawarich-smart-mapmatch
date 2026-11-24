@@ -309,3 +309,16 @@ def test_slow_scramble_is_walking_not_a_string_of_stays():
                t0=pause[-1]["timestamp"] + 120, dt=120)
     labels, _, _ = label(climb + pause + on)
     assert "stay" not in labels and set(labels) == {"walk"}
+
+
+def test_stop_to_trip_link_follows_the_road_between_their_times(fake_valhalla):
+    from mapmatch.portal.push import link
+    fake_valhalla.route_detour = 1.2          # a road with a bend in it
+    a = {"lat": LAT0, "lon": LON0, "timestamp": T0, "tracker": "phone"}
+    b = {"lat": LAT0, "lon": LON0 + 0.015, "timestamp": T0 + 300}
+    pts = link(a, b, "drive")
+    assert pts, "a routed link"
+    assert all(T0 < p["timestamp"] < T0 + 300 for p in pts)
+    assert [p["timestamp"] for p in pts] == sorted({p["timestamp"] for p in pts})
+    assert all(p["ours"] and p["tracker"] == "phone" for p in pts)
+    assert link(a, {**a, "timestamp": T0 + 60}) == [], "nothing to draw for a few metres"

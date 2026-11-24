@@ -104,10 +104,11 @@ def _runs(loose: list[dict[str, Any]], rows: list[dict[str, Any]]) -> list[list[
     return out
 
 
-def tidy_stops(run: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The fixes recorded while stopped, as clean points: each place you were
-    becomes its centre, at arrival and departure and every half hour between.
-    A lone fix too inaccurate to be a place is dropped (the archive keeps it)."""
+def tidy_stops(run: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    """The fixes recorded while stopped, as clean points, one list per place:
+    each place you were becomes its centre, at arrival and departure and every
+    half hour between. A lone fix too inaccurate to be a place is dropped (the
+    archive keeps it)."""
     from ..engine.geo import haversine
     from ..engine.stays import centroid
     clusters: list[list[dict[str, Any]]] = []
@@ -119,7 +120,8 @@ def tidy_stops(run: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 clusters[-1].append(p)
                 continue
         clusters.append([p])
-    out: list[dict[str, Any]] = []
+    out: list[list[dict[str, Any]]] = []
+    last = -1
     for c in clusters:
         good = [q for q in c if (q.get("accuracy") or 20.0) <= BAD_FIX_M]
         if not good:
@@ -127,12 +129,55 @@ def tidy_stops(run: list[dict[str, Any]]) -> list[dict[str, Any]]:
         lat, lon = centroid(good)
         dev = _tracker(c)
         t0, t1 = c[0]["timestamp"], c[-1]["timestamp"]
-        stamps = sorted({t0, t1, *range(t0 + STOP_EVERY_S, t1, STOP_EVERY_S)})
-        out += [{"lat": lat, "lon": lon, "timestamp": ts, "accuracy": 10.0, "tracker": dev, "ours": True,
-                 "mode": "stay"} for ts in stamps]
-    # Two stops can share a second at their join; Dawarich wants one point a second.
-    seen: set[int] = set()
-    return [p for p in out if not (p["timestamp"] in seen or seen.add(p["timestamp"]))]
+        stamps = [t for t in sorted({t0, t1, *range(t0 + STOP_EVERY_S, t1, STOP_EVERY_S)}) if t > last]
+        if not stamps:
+            continue
+        last = stamps[-1]
+        out.append([{"lat": lat, "lon": lon, "timestamp": ts, "accuracy": 10.0, "tracker": dev, "ours": True,
+                     "mode": "stay"} for ts in stamps])
+    return out
+
+
+LINK_MIN_M = 25.0
+
+
+def link(a: dict[str, Any], b: dict[str, Any], mode: str | None = None) -> list[dict[str, Any]]:
+    """Points along the road from a to b, strictly between their times, so
+    Dawarich doesn't draw a straight line from a stop to where a trip begins.
+    Empty when no believable route exists (the straight line then stays)."""
+    from ..engine.assemble import timed
+    from ..engine.fill import fill
+    from ..engine.geo import haversine
+    dt = int(b["timestamp"]) - int(a["timestamp"])
+    d = haversine(a["lat"], a["lon"], b["lat"], b["lon"])
+    if dt < 2 or d < LINK_MIN_M:
+        return []
+    if mode not in ("walk", "cycle", "drive"):
+        v = d / dt * 3.6
+        mode = "drive" if v > 25 else "cycle" if v > 9 else "walk"
+    ends = [{"lat": x["lat"], "lon": x["lon"], "timestamp": int(x["timestamp"])} for x in (a, b)]
+    try:
+        f = fill(ends[0], [], ends[1], mode, "fill")
+    except Exception:  # noqa: BLE001 - a missing link is only cosmetic
+        return []
+    if f.get("kind") != "filled":
+        return []
+    out, last = [], int(a["timestamp"])
+    for lat, lon, ts, _ in timed(f["coords"], a["timestamp"], b["timestamp"])[1:-1]:
+        t = int(round(ts))
+        if last < t < int(b["timestamp"]):
+            out.append({"lat": lat, "lon": lon, "timestamp": t, "accuracy": 10.0, "tracker": a.get("tracker"),
+                        "ours": True, "mode": mode})
+            last = t
+    return out
+
+
+def _first_mode(res: dict[str, Any], last: bool = False) -> str:
+    segs = [sg["mode"] for sg in res.get("segments", []) if sg["mode"] not in ("stay", "raw")]
+    if not segs:
+        return "walk"
+    m = segs[-1] if last else segs[0]
+    return "walk" if m == "train" else m
 
 
 def apply(db: Database, cfg: Any, uid: int, changes: dict[int, bool], transport: Any = None,
@@ -200,6 +245,7 @@ def apply(db: Database, cfg: Any, uid: int, changes: dict[int, bool], transport:
             inside = [t for t in rows if t["start_ts"] <= b and a <= t["end_ts"]]
             posts: list[dict[str, Any]] = []
             covered: list[tuple[int, int]] = []
+            streams: dict[int, tuple[list[dict[str, Any]], dict[str, Any]]] = {}
             n_matched = 0
             for t in inside:
                 ver = shown.get(t["id"])
@@ -215,6 +261,7 @@ def apply(db: Database, cfg: Any, uid: int, changes: dict[int, bool], transport:
                 if len(stream) < 2:
                     raise ValueError(f"the match of trip {t['id']} is empty")
                 posts += stream
+                streams[t["id"]] = (stream, res)
                 n_matched += len(stream)
                 covered.append((t["start_ts"], t["end_ts"]))
             loose = [p for p in fixes if not any(c <= p["timestamp"] <= d for c, d in covered)]
@@ -228,7 +275,18 @@ def apply(db: Database, cfg: Any, uid: int, changes: dict[int, bool], transport:
                 before = max((t for t in rows if t["end_ts"] < run[0]["timestamp"]), key=lambda t: t["end_ts"], default=None)
                 after = min((t for t in rows if t["start_ts"] > run[-1]["timestamp"]), key=lambda t: t["start_ts"], default=None)
                 if any(t is not None and shown.get(t["id"]) for t in (before, after)):
-                    tidy = tidy_stops(run)
+                    places = tidy_stops(run)
+                    tidy = [q for c in places for q in c]
+                    # Join the places to each other and to the pushed trips
+                    # either side along the road, not with straight lines.
+                    for c0, c1 in zip(places, places[1:]):
+                        tidy += link(c0[-1], c1[0])
+                    if places and before is not None and before["id"] in streams:
+                        st, res = streams[before["id"]]
+                        tidy += link(st[-1], places[0][0], _first_mode(res, last=True))
+                    if places and after is not None and after["id"] in streams:
+                        st, res = streams[after["id"]]
+                        tidy += link(places[-1][-1], st[0], _first_mode(res))
                     posts += tidy
                     n_matched += len(tidy)
                 else:
