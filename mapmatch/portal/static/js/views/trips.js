@@ -103,16 +103,16 @@ export function Trips() {
     const data = fc(feats);
     if (map._mm.overlays.has("trips")) setData(map, "trips", data);
     else setOverlay(map, "trips", { data, layers: () => [
-      { id: "trips-casing", type: "line", filter: ["!=", ["get", "m"], "none"], layout: { "line-cap": "round", "line-join": "round" },
-        paint: { "line-color": cssVar("--casing"), "line-width": 5.5, "line-opacity": 0.85 } },
+      { id: "trips-casing", type: "line", layout: { "line-cap": "round", "line-join": "round" },
+        paint: { "line-color": cssVar("--casing"), "line-width": ["case", ["==", ["get", "m"], "none"], 5, 5.5], "line-opacity": 0.9 } },
       { id: "trips-hot", type: "line", filter: ["==", ["get", "tid"], -1], layout: { "line-cap": "round", "line-join": "round" },
         paint: { "line-color": cssVar("--ink"), "line-width": 9, "line-opacity": 0.3 } },
       { id: "trips-raw", type: "line", filter: ["==", ["get", "m"], "none"], layout: { "line-join": "round" },
-        paint: { "line-color": cssVar("--m-none"), "line-width": 2.2, "line-dasharray": [2, 1.6] } },
+        paint: { "line-color": cssVar("--m-none"), "line-width": 2.6, "line-dasharray": [2.2, 1.4] } },
       { id: "trips-line", type: "line", filter: ["!=", ["get", "m"], "none"], layout: { "line-cap": "round", "line-join": "round" },
         paint: { "line-color": colorExpr(), "line-width": 3 } },
     ] });
-    if (!fitted.current && feats.length) {
+    if (!fitted.current && feats.length && !anims.current.size) {
       const go = () => { fitCoords(map, trips.flatMap((t) => t.preview.flatMap((p) => p.c)), 40, false); fitted.current = true; };
       map.loaded() ? go() : map.once("load", go);
     }
@@ -149,7 +149,10 @@ export function Trips() {
         const x = await api(`/trips/changes?since=${encodeURIComponent(since)}`);
         since = x.now;
         const cur = new Map((dataRef.current?.trips || []).map((t) => [t.id, t]));
-        const fresh = x.trips.filter((t) => cur.has(t.id) && t.version > (cur.get(t.id).version || 0) && !anims.current.has(t.id) && t.preview.length);
+        // New trips (appearing while a sync downloads) and newly matched ones are drawn in.
+        const fresh = x.trips.filter((t) => !anims.current.has(t.id) && t.preview.length &&
+          t.closed && (!cur.has(t.id) || t.version > (cur.get(t.id).version || 0)) && (!a || t.end >= a) && (!b || t.start <= b));
+        if (!dataRef.current) setTrips({ trips: [], counts: {}, km_by_mode: {} });
         if (fresh.length) enqueue(fresh, cur);
       } catch (e) { /* the job poller reports errors */ }
     };
@@ -202,7 +205,14 @@ export function Trips() {
     ] });
     if (done.length) {
       const by = new Map(done.map((t) => [t.id, t]));
-      setTrips((d) => d && { ...d, trips: d.trips.map((t) => (by.has(t.id) ? { ...t, ...by.get(t.id) } : t)) });
+      setTrips((d) => {
+        const base = d || { trips: [], counts: {}, km_by_mode: {} };
+        const known = new Set(base.trips.map((t) => t.id));
+        const added = done.filter((t) => !known.has(t.id));
+        const merged = base.trips.map((t) => (by.has(t.id) ? { ...t, ...by.get(t.id) } : t)).concat(added);
+        merged.sort((x, y) => y.start - x.start);
+        return { ...base, trips: merged };
+      });
       for (const t of done) before.current.delete(t.id);
       setDrawing(new Set(anims.current.keys()));
     }
@@ -223,8 +233,8 @@ export function Trips() {
     }
     return g;
   }, [trips]);
-  const matching = job && (job.kind === "rematch" || job.kind === "auto");
-  const noData = data && data.trips.length === 0;
+  const matching = job && ["rematch", "auto", "sync", "import_csv"].includes(job.kind);
+  const noData = data && data.trips.length === 0 && !job;
   const periodLabel = PERIODS.find((p) => p[0] === period)?.[1].toLowerCase() || "";
 
   return html`<div class=${`trips ${selecting ? "selecting" : ""}`}>
@@ -291,7 +301,7 @@ export function Trips() {
     <div class="map-wrap">
       <div class="map" ref=${mapEl}></div>
       ${matching && html`<div class="float bc" aria-live="polite"><span class="pulse"></span>
-        <span>Matching <span class="dim num">${job.message || ""}</span></span><span class="meter"><i style=${`width:${job.progress}%`}></i></span></div>`}
+        <span>${job.kind === "rematch" ? "Matching" : "Downloading"} <span class="dim num">${job.message || ""}</span></span><span class="meter"><i style=${`width:${job.progress}%`}></i></span></div>`}
       ${noData && html`<div class="empty"><div>
         <h2>No trips yet</h2>
         <p>Sync downloads your GPS points from Dawarich and splits them into trips. Nothing is matched or changed yet.</p>

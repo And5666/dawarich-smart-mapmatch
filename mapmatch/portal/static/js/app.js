@@ -26,7 +26,7 @@ function Connect() {
   async function submit(e) {
     e.preventDefault();
     setBusy(true); setErr("");
-    try { await api("/connect", { method: "POST", body: { api_key: key } }); await loadMe(); watchJobs(); location.hash = "#/"; }
+    try { location.hash = "#/"; await api("/connect", { method: "POST", body: { api_key: key } }); await loadMe(); watchJobs(); }
     catch (x) { setErr(x.message); }
     finally { setBusy(false); }
   }

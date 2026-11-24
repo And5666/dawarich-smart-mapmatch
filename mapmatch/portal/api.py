@@ -112,7 +112,11 @@ def build(app_state: Any) -> APIRouter:
             raise HTTPException(502, f"Couldn't reach Dawarich: {msg}") from exc
         uid = auth.connect(db, cfg.dawarich_url, key, who)
         set_cookie(response, auth.new_session(db, uid, cfg.session_days))
-        return {"ok": True}
+        first = archive.stats(db, uid)["points"] == 0
+        if first:
+            # First time: download everything straight away (no matching).
+            jobs.enqueue(uid, "sync")
+        return {"ok": True, "first_sync": first}
 
     @r.post("/logout")
     def logout(request: Request, response: Response) -> dict[str, Any]:

@@ -157,19 +157,29 @@ class Jobs:
         synced_to = int(s.get("synced_to") or 0)
         frm = max(synced_to - 48 * 3600, start or 0) if synced_to else start
         progress(2, "downloading points from Dawarich")
-        with push.client_for(self.db, self.cfg, uid, self.transport) as dw:
-            raw = dw.points(frm, None, lambda p, n: progress(min(40, 2 + int(38 * p / max(1, n))),
-                                                              f"downloading page {p}/{n}"))
         from .dawarich import is_mapmatch
-        originals = [p for p in raw if not is_mapmatch(p)]
-        new = archive.add_api(self.db, uid, originals)
-        latest = max((int(p["timestamp"]) for p in raw), default=synced_to)
+        gap = int(s.get("trip_gap_min") or 30)
+        totals = {"new_points": 0, "created": 0, "updated": 0, "removed": 0, "dirtied": 0}
+        latest = synced_to
+
+        def page(batch: list[dict[str, Any]], p: int, n: int) -> None:
+            # Archive and split each page as it arrives, so trips appear on the
+            # map while a long first download is still running.
+            nonlocal latest
+            originals = [x for x in batch if not is_mapmatch(x)]
+            new = archive.add_api(self.db, uid, originals)
+            latest = max([latest] + [int(x["timestamp"]) for x in batch])
+            seg = trips.segment(self.db, uid, gap, [int(x["timestamp"]) for x in originals] if new else [])
+            totals["new_points"] += new
+            for k, v in seg.items():
+                totals[k] += v
+            progress(min(97, 2 + int(95 * p / max(1, n))), f"downloaded {p}/{n} pages, {totals['created']} trips so far")
+
+        with push.client_for(self.db, self.cfg, uid, self.transport) as dw:
+            dw.points(frm, None, on_page=page)
         with self.db.tx() as c:
             c.execute("UPDATE settings SET synced_to=? WHERE user_id=?", (max(latest, synced_to), uid))
-        progress(42, f"archived {new} new points; splitting trips")
-        new_ts = [int(p["timestamp"]) for p in originals] if new else []
-        seg = trips.segment(self.db, uid, int(s.get("trip_gap_min") or 30), new_ts)
-        return {"new_points": new, **seg}
+        return totals
 
     def _match_pending(self, uid: int, progress: Callable[[int, str], None], lo: int, hi: int,
                        only_ids: list[int] | None = None) -> dict[str, int]:

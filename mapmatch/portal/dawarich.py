@@ -53,8 +53,10 @@ class Client:
         return r
 
     def points(self, start: int | None = None, end: int | None = None,
-               progress: Callable[[int, int], None] | None = None) -> list[dict[str, Any]]:
-        """All points in [start, end], oldest first, with ids and tracker ids."""
+               progress: Callable[[int, int], None] | None = None,
+               on_page: Callable[[list[dict[str, Any]], int, int], None] | None = None) -> list[dict[str, Any]]:
+        """All points in [start, end], oldest first, with ids and tracker ids.
+        `on_page(batch, page, pages)` sees each page as it arrives."""
         out: list[dict[str, Any]] = []
         page = 1
         while True:
@@ -69,6 +71,8 @@ class Client:
                 raise DawarichError("unexpected points response")
             out.extend(batch)
             pages = int(r.headers.get("x-total-pages") or 1)
+            if on_page:
+                on_page(batch, page, pages)
             if progress:
                 progress(page, pages)
             if page >= pages or not batch:

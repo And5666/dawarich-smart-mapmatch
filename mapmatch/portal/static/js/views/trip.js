@@ -186,8 +186,10 @@ export function TripView({ id }) {
     const vis = (on) => ({ visibility: on ? "visible" : "none" });
     // the original track, exactly as recorded
     setOverlay(map, "track", { data: fc(raw.length > 1 ? [line(raw.map((p) => [p.lat, p.lon]), {})] : []), layers: () => [
+      { id: "track-case", type: "line", layout: { ...vis(layers.track || !segs.length), "line-join": "round", "line-cap": "round" },
+        paint: { "line-color": cssVar("--casing"), "line-width": 5.5, "line-opacity": 0.9 } },
       { id: "track", type: "line", layout: { ...vis(layers.track || !segs.length), "line-join": "round", "line-cap": "round" },
-        paint: { "line-color": cssVar("--ink-3"), "line-width": 2.2, "line-opacity": 0.9 } },
+        paint: { "line-color": cssVar("--m-none"), "line-width": 2.6, "line-dasharray": [2.2, 1.4] } },
     ] });
     const parts = [];
     for (const s of segs) {
