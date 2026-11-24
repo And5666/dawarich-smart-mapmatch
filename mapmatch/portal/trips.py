@@ -11,7 +11,7 @@ from . import archive
 from .db import Database, now, pack, unpack
 
 KEEP_RESULTS = 15
-PREVIEW_POINTS = 160
+PREVIEW_POINTS = 100
 
 
 # ---------------------------------------------------------------- segmentation
