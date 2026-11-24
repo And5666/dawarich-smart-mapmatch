@@ -27,7 +27,7 @@ export function createMap(el, theme, { center = [-0.9, 51.35], zoom = 9 } = {}) 
 }
 
 export function setMapTheme(map, theme) {
-  if (!map || map._mm.theme === theme) return;
+  if (gone(map) || map._mm.theme === theme) return;
   map._mm.theme = theme;
   if (map._mm.fellBack) { applyAll(map); return; }
   // diff:false forces a full reload, which drops our layers; put them back
@@ -39,12 +39,17 @@ export function setMapTheme(map, theme) {
 
 // overlay: { data: GeoJSON, layers: () => [layer specs] } — layers is a function so
 // colours are re-read from CSS after a theme change.
+// A map that has been removed (the page navigated away) has no style left.
+const gone = (map) => !map || map._removed || !map.style;
+
 export function setOverlay(map, id, overlay) {
+  if (gone(map)) return;
   map._mm.overlays.set(id, overlay);
   if (map.isStyleLoaded()) apply(map, id, overlay);
 }
 
 export function setData(map, id, data) {
+  if (gone(map)) return;
   const o = map._mm.overlays.get(id);
   if (!o) return;
   o.data = data;
@@ -53,6 +58,7 @@ export function setData(map, id, data) {
 }
 
 function applyAll(map) {
+  if (gone(map)) return;
   for (const [id, o] of map._mm.overlays) apply(map, id, o);
 }
 

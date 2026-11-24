@@ -46,6 +46,8 @@ class FakeDawarich:
         if q.get("api_key") != self.api_key:
             return httpx.Response(401, json={"error": "unauthorized"})
         path = request.url.path
+        if request.method == "GET" and path == "/api/v1/users/me":
+            return httpx.Response(200, json={"user": {"id": 7, "email": "rider@example.com"}})
         if request.method == "GET" and path == "/api/v1/points":
             pts = sorted(self.points.values(), key=lambda p: (p["timestamp"], p["id"]))
             if "start_at" in q:

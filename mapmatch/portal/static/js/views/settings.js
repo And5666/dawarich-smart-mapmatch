@@ -1,39 +1,33 @@
-// Settings: Dawarich connection, automation, matching, data, danger zone.
-import { html, useState, useEffect, useRef, api, useStore, store, toast, Icon, ConfirmButton, ago, full } from "../lib.js";
+// Settings: automation, matching, import, originals, undo-everything, system.
+import { html, useState, useEffect, useRef, api, useStore, store, toast, Icon, Confirm, ago, full, plural } from "../lib.js";
 import { loadMe, startJob, watchJobs } from "../session.js";
 
 export function Settings() {
   const me = useStore((s) => s.me);
   const s = me?.settings || {};
   const [f, setF] = useState(null);
-  const [key, setKey] = useState("");
-  const [test, setTest] = useState(null);
   const [saving, setSaving] = useState("");
   const [typed, setTyped] = useState("");
+  const [sys, setSys] = useState(null);
   const fileRef = useRef(null);
   useEffect(() => { if (me && !f) setF({ ...s }); }, [me]);
-  if (!f) return html`<div class="content muted">Loading…</div>`;
+  useEffect(() => { api("/system").then(setSys).catch(() => {}); }, []);
+  if (!f) return html`<div class="doc faint">Loading…</div>`;
   const upd = (k) => (e) => setF({ ...f, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value });
+  const dirty = (keys) => keys.some((k) => String(f[k]) !== String(s[k]));
 
-  async function save(section, fields) {
+  async function save(section, keys) {
     setSaving(section);
     try {
       const body = {};
-      for (const k of fields) body[k] = f[k];
-      if (section === "connection" && key.trim()) body.api_key = key.trim();
-      if ("interval_min" in body) body.interval_min = Number(body.interval_min);
-      if ("trip_gap_min" in body) body.trip_gap_min = Number(body.trip_gap_min);
+      for (const k of keys) body[k] = f[k];
+      for (const k of ["interval_min", "trip_gap_min"]) if (k in body) body[k] = Number(body[k]);
       await api("/settings", { method: "PUT", body });
-      setKey("");
       await loadMe();
       setF({ ...store.get().me.settings });
       toast("Saved");
-    } catch (e) { toast(e.message, "error"); }
+    } catch (e) { toast(e.message, "bad"); }
     finally { setSaving(""); }
-  }
-  async function testConn() {
-    setTest({ busy: true });
-    try { setTest(await api("/settings/test", { method: "POST" })); } catch (e) { setTest({ ok: false, message: e.message }); }
   }
   async function upload() {
     const file = fileRef.current?.files?.[0];
@@ -41,77 +35,84 @@ export function Settings() {
     const form = new FormData();
     form.append("file", file);
     setSaving("csv");
-    try { await api("/import/csv", { method: "POST", form }); toast("Import started; see the status in the top bar"); watchJobs(); fileRef.current.value = ""; }
-    catch (e) { toast(e.message, "error"); }
+    try { await api("/import/csv", { method: "POST", form }); toast("Importing; progress is in the top bar"); watchJobs(); fileRef.current.value = ""; }
+    catch (e) { toast(e.message, "bad"); }
     finally { setSaving(""); }
   }
   const arch = me.archive || {};
+  const host = (sys?.dawarich || "").replace(/^https?:\/\//, "");
 
-  return html`<div class="content">
+  return html`<div class="doc">
     <h1>Settings</h1>
-    <p class="lead">Connect Dawarich, decide how much runs on its own, and tune how trips are matched.</p>
-    <div class="stack" style="gap:20px">
+    <p class="lede">Signed in as <b>${me.name}</b>${host ? html` on ${host}` : ""}.</p>
 
-      <div class="card"><header><h2>Dawarich connection</h2><p>The portal reads your points with this key and, when you push, writes matched trips back to the same account.</p></header>
-        <div class="body">
-          <label class="field"><span>Dawarich URL</span><input value=${f.dawarich_url} onInput=${upd("dawarich_url")} placeholder=${s.default_dawarich_url} />
-            <p class="hint">Leave empty to use the server default (${s.default_dawarich_url}).</p></label>
-          <label class="field"><span>API key</span><input type="password" value=${key} onInput=${(e) => setKey(e.target.value)} autocomplete="off"
-            placeholder=${s.api_key_set ? `Saved (${s.api_key_hint}). Paste a new key to replace it.` : "From Dawarich → Account → API key"} />
-            <p class="hint">Stored on this server only.</p></label>
-          ${test && !test.busy && html`<div class=${`callout ${test.ok ? "info" : "danger"}`}><${Icon} name=${test.ok ? "check" : "alert"} size="sm" />${test.message}</div>`}
+    <section>
+      <header><h2>Automatic runs</h2><p>Off by default. Nothing is pushed to Dawarich unless you turn that on too.</p></header>
+      <div class="body">
+        <label class="check"><input type="checkbox" checked=${f.auto_enabled} onChange=${upd("auto_enabled")} />Sync and match new trips on a schedule</label>
+        <div class="row" style="flex-wrap:wrap;gap:16px">
+          <label class="field"><span>Every</span><div class="row"><input type="number" min="15" max="10080" style="width:90px" value=${f.interval_min} onInput=${upd("interval_min")} /><span class="dim">minutes</span></div></label>
+          <label class="field"><span>Ignore data before</span><input type="date" style="width:170px" value=${f.start_date} onInput=${upd("start_date")} /></label>
         </div>
-        <div class="foot"><button class="primary" disabled=${saving === "connection"} onClick=${() => save("connection", ["dawarich_url"])}>Save</button>
-          <button disabled=${!s.api_key_set || test?.busy} onClick=${testConn}>${test?.busy ? "Testing…" : "Test connection"}</button></div></div>
+        <label class="check"><input type="checkbox" checked=${f.auto_push} onChange=${upd("auto_push")} />Also push finished trips to Dawarich</label>
+        <p class="help">${f.auto_push ? "Each finished trip's points in Dawarich are replaced with its matched route. Locked trips are skipped, and your original GPS stays here so any trip can be put back."
+          : "Matched trips stay here until you push them."}</p>
+        ${s.last_error && html`<div class="note bad">The last run failed: ${s.last_error}</div>`}
+        <div class="actions"><button class="go" disabled=${saving === "auto" || !dirty(["auto_enabled", "interval_min", "start_date", "auto_push"])}
+          onClick=${() => save("auto", ["auto_enabled", "interval_min", "start_date", "auto_push"])}>Save</button>
+          <span class="help" style="align-self:center">Last run ${ago(s.last_run)}</span></div>
+      </div>
+    </section>
 
-      <div class="card"><header><h2>Automation</h2><p>On a schedule the portal fetches new points, splits them into trips and matches them. Pushing to Dawarich is a separate choice.</p></header>
-        <div class="body">
-          <label class="switch"><input type="checkbox" checked=${f.auto_enabled} onChange=${upd("auto_enabled")} />Run automatically</label>
-          <div class="grid2">
-            <label class="field"><span>Every (minutes)</span><input type="number" min="15" max="10080" value=${f.interval_min} onInput=${upd("interval_min")} /></label>
-            <label class="field"><span>Only process data from</span><input type="date" value=${f.start_date} onInput=${upd("start_date")} />
-              <p class="hint">Empty means all of it.</p></label>
+    <section>
+      <header><h2>Matching</h2><p>Applies to trips matched from now on.</p></header>
+      <div class="body">
+        <label class="field"><span>A trip ends after a stop or a gap of</span>
+          <div class="row"><input type="number" min="5" max="1440" style="width:90px" value=${f.trip_gap_min} onInput=${upd("trip_gap_min")} /><span class="dim">minutes</span></div></label>
+        <div class="field"><span>When the GPS drops out</span>
+          <div class="seg" role="radiogroup">
+            <button class=${f.strength === "fill" ? "on" : ""} role="radio" aria-checked=${f.strength === "fill"} onClick=${() => setF({ ...f, strength: "fill" })}>Route across the gap</button>
+            <button class=${f.strength === "strict" ? "on" : ""} role="radio" aria-checked=${f.strength === "strict"} onClick=${() => setF({ ...f, strength: "strict" })}>Keep what was recorded</button>
           </div>
-          <label class="switch"><input type="checkbox" checked=${f.auto_push} onChange=${upd("auto_push")} />Push finished trips to Dawarich automatically</label>
-          <p class="hint">${f.auto_push ? "Each finished trip's points in Dawarich are replaced by its matched route. Locked trips are skipped, and every original stays in the archive so any trip can be reverted."
-            : "Matched trips wait here until you push them, one by one or all at once."}</p>
-          ${s.last_error && html`<div class="callout danger"><${Icon} name="alert" size="sm" />Last run failed: ${s.last_error}</div>`}
-          <p class="hint">Last run: <span title=${s.last_run ? full(s.last_run) : ""}>${ago(s.last_run)}</span>.</p>
-        </div>
-        <div class="foot"><button class="primary" disabled=${saving === "auto"} onClick=${() => save("auto", ["auto_enabled", "interval_min", "start_date", "auto_push"])}>Save</button>
-          <button disabled=${!s.api_key_set} onClick=${() => startJob("sync")}><${Icon} name="sync" size="sm" />Sync now</button>
-          <button onClick=${() => startJob("push_all")} disabled=${!s.api_key_set}><${Icon} name="push" size="sm" />Push all matched trips</button></div></div>
+          <p class="help">${f.strength === "fill" ? "Missing stretches follow the road or path when the timing and the points around them agree."
+            : "Only tiny breaks are routed. Anything else that won't match stays as your original GPS."}</p></div>
+        <p class="help">Walks and rides only snap to a path when they clearly follow it; off-trail stretches keep your GPS. Bikes ignore one-way streets.</p>
+        <div class="actions"><button class="go" disabled=${saving === "match" || !dirty(["trip_gap_min", "strength"])} onClick=${() => save("match", ["trip_gap_min", "strength"])}>Save</button>
+          <button onClick=${() => startJob("rematch", { scope: "all" })}>Rematch every trip</button></div>
+      </div>
+    </section>
 
-      <div class="card"><header><h2>Matching</h2><p>Changes apply to trips matched from now on. Use “Rematch all” to redo existing ones.</p></header>
-        <div class="body">
-          <label class="field"><span>A trip ends after</span>
-            <div class="row"><input type="number" min="5" max="1440" style="width:110px" value=${f.trip_gap_min} onInput=${upd("trip_gap_min")} /><span class="muted">minutes without movement or data</span></div></label>
-          <div class="field"><span class="small" style="font-weight:600;color:var(--muted)">When GPS drops out</span>
-            <div class="seg-ctl" role="radiogroup">
-              <button class=${f.strength === "fill" ? "on" : ""} role="radio" aria-checked=${f.strength === "fill"} onClick=${() => setF({ ...f, strength: "fill" })}>Route across gaps</button>
-              <button class=${f.strength === "strict" ? "on" : ""} role="radio" aria-checked=${f.strength === "strict"} onClick=${() => setF({ ...f, strength: "strict" })}>Only what was recorded</button>
-            </div>
-            <p class="hint">${f.strength === "fill" ? "Missing stretches are routed along roads and paths when the route fits the time and the fixes around it."
-              : "Only short breaks in the matched line are routed; anything with recorded fixes that will not match stays as the original GPS."}</p></div>
-        </div>
-        <div class="foot"><button class="primary" disabled=${saving === "match"} onClick=${() => save("match", ["trip_gap_min", "strength"])}>Save</button>
-          <button onClick=${() => startJob("rematch", { scope: "all" })}><${Icon} name="recalc" size="sm" />Rematch all trips</button></div></div>
+    <section>
+      <header><h2>Your original GPS</h2><p>Every point read from Dawarich is kept here unchanged. Nothing here ever deletes it.</p></header>
+      <div class="body">
+        <div class="stat"><div><b class="num">${(arch.points || 0).toLocaleString()}</b><span>points kept</span></div>
+          <div><b class="num">${arch.first ? new Date(arch.first * 1000).toLocaleDateString() : "–"}</b><span>oldest</span></div>
+          <div><b class="num">${arch.last ? new Date(arch.last * 1000).toLocaleDateString() : "–"}</b><span>newest</span></div></div>
+        <label class="field"><span>Import a CSV export</span><input type="file" accept=".csv,text/csv" ref=${fileRef} />
+          <p class="help">Columns: timestamp, lat, lon, and optionally accuracy, velocity, altitude. Points already here are skipped.</p></label>
+        <div class="actions"><button disabled=${saving === "csv"} onClick=${upload}>Import</button></div>
+      </div>
+    </section>
 
-      <div class="card"><header><h2>Original GPS archive</h2><p>Every point read from Dawarich or imported is kept here, unchanged. Nothing in the portal deletes from it.</p></header>
-        <div class="body">
-          <div class="quality"><div class="kpi"><b class="num">${(arch.points || 0).toLocaleString()}</b><span>original points</span></div>
-            <div class="kpi"><b class="num">${arch.first ? new Date(arch.first * 1000).toLocaleDateString() : "–"}</b><span>oldest</span></div>
-            <div class="kpi"><b class="num">${arch.last ? new Date(arch.last * 1000).toLocaleDateString() : "–"}</b><span>newest</span></div></div>
-          <label class="field"><span>Import a CSV export</span><input type="file" accept=".csv,text/csv" ref=${fileRef} />
-            <p class="hint">Columns: timestamp, lat, lon, and optionally tracker_id, accuracy, velocity, altitude. Duplicates are skipped.</p></label>
-        </div>
-        <div class="foot"><button disabled=${saving === "csv"} onClick=${upload}><${Icon} name="upload" size="sm" />Import</button></div></div>
+    <section>
+      <header><h2>Undo everything</h2><p>Puts the original GPS back in Dawarich for every trip you pushed.</p></header>
+      <div class="body">
+        <label class="field"><span>Type <b>REVERT</b> to enable</span><input value=${typed} onInput=${(e) => setTyped(e.target.value)} style="max-width:160px" /></label>
+        <div class="actions"><${Confirm} cls="danger" disabled=${typed !== "REVERT"} armedLabel="This changes Dawarich. Sure?"
+          onConfirm=${() => { setTyped(""); startJob("revert_all"); }}>Revert all pushed trips<//></div>
+      </div>
+    </section>
 
-      <div class="card" style="border-color:color-mix(in srgb, var(--danger) 40%, var(--border))"><header><h2>Undo everything in Dawarich</h2>
-        <p>Put the original GPS back for every pushed trip and remove all matched points the portal wrote.</p></header>
-        <div class="body"><label class="field"><span>Type REVERT to enable</span><input value=${typed} onInput=${(e) => setTyped(e.target.value)} style="max-width:200px" /></label></div>
-        <div class="foot"><${ConfirmButton} cls="danger" disabled=${typed !== "REVERT" || !s.api_key_set} confirmLabel="This changes Dawarich. Confirm?"
-          onConfirm=${() => { setTyped(""); startJob("revert_all"); }}><${Icon} name="undo" size="sm" />Revert all pushed trips<//></div></div>
-    </div>
+    <section>
+      <header><h2>System</h2><p>The services this server uses.</p></header>
+      <div class="body">
+        ${!sys ? html`<p class="help">Checking…</p>` : html`
+          ${sys.valhalla?.error ? html`<div class="note bad">The map-matching service (Valhalla) is unreachable: ${sys.valhalla.error}</div>`
+            : html`<div class="note good">Map matching (Valhalla ${sys.valhalla?.version}) is up${sys.valhalla?.tileset_last_modified ? `; map data from ${new Date(sys.valhalla.tileset_last_modified * 1000).toLocaleDateString()}` : ""}.</div>`}
+          ${sys.dry_run && html`<div class="note warn">Dry run is on (PUSH_DRY_RUN): pushes are planned and logged, but Dawarich is not changed.</div>`}
+          <p class="help">Matcher version ${sys.engine}.${sys.outdated_trips ? ` ${plural(sys.outdated_trips, "trip")} were matched by an older version.` : ""}</p>
+          ${sys.outdated_trips > 0 && html`<div class="actions"><button onClick=${() => startJob("rematch", { scope: "outdated" })}>Rematch them</button></div>`}`}
+      </div>
+    </section>
   </div>`;
 }

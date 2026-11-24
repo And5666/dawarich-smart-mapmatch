@@ -47,6 +47,30 @@ def create_user(db: Database, username: str, password: str, is_admin: bool = Fal
     return uid
 
 
+def connect(db: Database, base_url: str, api_key: str, me: dict[str, Any]) -> int:
+    """Find or create the portal account for a Dawarich user, by its key.
+
+    The key is the sign-in: whoever holds a valid key for this Dawarich gets
+    that Dawarich user's portal account, and the key is kept for syncing.
+    """
+    host = base_url.split("://", 1)[-1].rstrip("/")
+    username = f"dawarich:{host}:{me['id']}"
+    name = me.get("email") or f"user {me['id']}"
+    with db.tx() as c:
+        row = c.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
+        if row:
+            uid = int(row["id"])
+            c.execute("UPDATE users SET display_name=? WHERE id=?", (name, uid))
+        else:
+            first = c.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0
+            cur = c.execute("INSERT INTO users(username, password, is_admin, display_name, created_at)"
+                            " VALUES (?,?,?,?,?)", (username, "!", 1 if first else 0, name, now()))
+            uid = int(cur.lastrowid)
+            c.execute("INSERT INTO settings(user_id) VALUES (?)", (uid,))
+        c.execute("UPDATE settings SET api_key=?, dawarich_url=? WHERE user_id=?", (api_key, base_url, uid))
+    return uid
+
+
 def bootstrap_admin(db: Database, username: str, password: str) -> None:
     """Create the first admin from the environment. Ignored once any admin exists."""
     if not password or db.one("SELECT 1 FROM users WHERE is_admin=1"):

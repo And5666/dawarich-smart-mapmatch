@@ -199,10 +199,11 @@ class Jobs:
                     raise
         return {"matched": done, "failed": failed}
 
-    def _push_pending(self, uid: int, progress: Callable[[int, str], None], lo: int, hi: int) -> dict[str, int]:
+    def _push_pending(self, uid: int, progress: Callable[[int, str], None], lo: int, hi: int,
+                      only: set[int] | None = None) -> dict[str, int]:
         start = self._start_ts(uid) or 0
         ids = [t for t in push.pending_push(self.db, uid)
-               if (trips.get(self.db, uid, t) or {}).get("start_ts", 0) >= start]
+               if (trips.get(self.db, uid, t) or {}).get("start_ts", 0) >= start and (only is None or t in only)]
         ok = bad = 0
         for k, tid in enumerate(ids, 1):
             try:
@@ -247,6 +248,19 @@ class Jobs:
     def _job_rematch(self, uid: int, params: dict[str, Any], progress: Any, jid: str) -> None:
         scope = params.get("scope", "all")
         sql = "SELECT id FROM trips WHERE user_id=? AND locked=0"
+        if scope == "ids":
+            # Chosen trips: only the caller's own, never locked ones.
+            want = {int(x) for x in params.get("ids") or []}
+            rows = [r for r in self.db.all(sql + " ORDER BY start_ts", (uid,)) if r["id"] in want]
+            self._finish(uid, progress, self._match_pending(uid, progress, 2, 99, [r["id"] for r in rows]))
+            return
+        if scope == "range":
+            # Every trip overlapping a time range (unix seconds, either end open).
+            a, b = params.get("start"), params.get("end")
+            rows = self.db.all(sql + " AND end_ts >= ? AND start_ts <= ? ORDER BY start_ts",
+                               (uid, int(a or 0), int(b or 2**62)))
+            self._finish(uid, progress, self._match_pending(uid, progress, 2, 99, [r["id"] for r in rows]))
+            return
         if scope == "pending":
             # Trips never matched, or whose points changed since.
             self._finish(uid, progress, self._match_pending(uid, progress, 2, 99))
@@ -260,7 +274,8 @@ class Jobs:
         self._finish(uid, progress, summary)
 
     def _job_push_all(self, uid: int, params: dict[str, Any], progress: Any, jid: str) -> None:
-        self._finish(uid, progress, self._push_pending(uid, progress, 2, 99))
+        only = {int(x) for x in params["ids"]} if params.get("ids") else None
+        self._finish(uid, progress, self._push_pending(uid, progress, 2, 99, only))
 
     def _job_revert_all(self, uid: int, params: dict[str, Any], progress: Any, jid: str) -> None:
         rows = self.db.all("SELECT id FROM trips WHERE user_id=? AND pushed_version IS NOT NULL ORDER BY start_ts", (uid,))

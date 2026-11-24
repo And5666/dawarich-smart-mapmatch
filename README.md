@@ -93,8 +93,8 @@ cp compose.example.yml compose.yml   # set URLs, admin password, network
 docker compose up -d --build
 ```
 
-Then open the portal, sign in as the admin, add your Dawarich API key under
-Settings, press **Test connection**, then **Sync now**. You will see your raw
+Then open the portal and connect with your Dawarich API key: the key is the
+sign-in (no separate accounts or passwords). Press **Sync**, then **Match**. You will see your raw
 trips; press **Map match** (or open a trip and match just that one) when ready.
 
 | Variable | Default | |
@@ -104,7 +104,6 @@ trips; press **Map match** (or open a trip and match just that one) when ready.
 | `VALHALLA_URL` | `http://127.0.0.1:8002` | Valhalla with tiles for your area |
 | `PORTAL_DATA` | `/data` | SQLite database and archive. **Back this up.** |
 | `PORTAL_BASE_PATH` | – | e.g. `/mapmatch` when served under a path |
-| `PORTAL_ADMIN_USER` / `PORTAL_ADMIN_PASSWORD` | `admin` / – | first admin, created only if no admin exists |
 | `PORTAL_SECURE_COOKIE` | `0` | `1` behind https |
 | `PUSH_DRY_RUN` | `0` | `1` plans pushes without changing Dawarich |
 | `MATCH_WORKERS` | `4` | parallel trip matching |

@@ -14,7 +14,7 @@ from .db import Database, now, pack, unpack
 
 KEEP_RESULTS = 15
 PREVIEW_TOLERANCE_M = 4.0
-PREVIEW_VERSION = "2"
+PREVIEW_VERSION = "3"
 
 
 # ---------------------------------------------------------------- segmentation
@@ -49,7 +49,7 @@ def segment(db: Database, uid: int, gap_min: int, new_ts: list[int] | None = Non
         # Until a trip is matched, its preview and distance come from the raw fixes.
         return {"start_ts": trip[0]["timestamp"], "end_ts": end, "n_points": len(trip),
                 "closed": 1 if (latest > end + gap or now_ts > end + gap) else 0,
-                "preview": json.dumps(_preview(trip)), "km": round(path_km(trip), 3)}
+                "preview": json.dumps(raw_preview(trip)), "km": round(path_km(trip), 3)}
 
     found: list[dict[str, Any]] = []
     if first_start is not None:
@@ -104,7 +104,38 @@ def get(db: Database, uid: int, trip_id: int) -> dict[str, Any] | None:
 
 
 def points(db: Database, uid: int, trip: dict[str, Any]) -> list[dict[str, Any]]:
-    return archive.window(db, uid, trip["start_ts"], trip["end_ts"])
+    """The trip's fixes as the matcher should see them: the archived originals
+    with the user's corrections applied. The archive itself is never changed;
+    a moved fix is trusted (5 m), a removed one is left out."""
+    edits = json.loads(trip.get("point_edits") or "{}")
+    out = []
+    for p in archive.window(db, uid, trip["start_ts"], trip["end_ts"]):
+        e = edits.get(str(p["id"]))
+        if e is None:
+            out.append(p)
+        elif e != "x":
+            out.append({**p, "lat": float(e[0]), "lon": float(e[1]), "accuracy": 5.0})
+    return out
+
+
+def set_point_edits(db: Database, uid: int, trip_id: int, edits: dict[str, Any]) -> None:
+    trip = get(db, uid, trip_id)
+    if not trip:
+        raise KeyError(trip_id)
+    ids = {str(p["id"]) for p in archive.window(db, uid, trip["start_ts"], trip["end_ts"])}
+    clean: dict[str, Any] = {}
+    for k, v in (edits or {}).items():
+        if str(k) not in ids:
+            raise ValueError(f"point {k} is not part of this trip")
+        if v == "x":
+            clean[str(k)] = "x"
+        else:
+            lat, lon = float(v[0]), float(v[1])
+            if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                raise ValueError("bad coordinates")
+            clean[str(k)] = [round(lat, 7), round(lon, 7)]
+    with db.tx() as c:
+        c.execute("UPDATE trips SET point_edits=?, updated_at=? WHERE id=?", (json.dumps(clean), now(), trip_id))
 
 
 def _summary(result: dict[str, Any]) -> list[dict[str, Any]]:
@@ -119,12 +150,27 @@ def _summary(result: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
-def _preview(stream: list[dict[str, Any]]) -> list[list[float]]:
-    """The trip's line for the overview map: simplified by shape (every point
-    within PREVIEW_TOLERANCE_M of the real route), never by count, so a
-    matched route still follows the roads when zoomed in."""
-    pts = simplify([(p["lat"], p["lon"]) for p in stream], PREVIEW_TOLERANCE_M)
+def _simplified(coords: list[Any]) -> list[list[float]]:
+    pts = simplify([(c[0], c[1]) for c in coords], PREVIEW_TOLERANCE_M)
     return [[round(lat, 6), round(lon, 6)] for lat, lon in pts]
+
+
+def raw_preview(fixes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Overview line for an unmatched trip: its raw fixes, one grey part."""
+    return [{"m": "none", "c": _simplified([(p["lat"], p["lon"]) for p in fixes])}]
+
+
+def matched_preview(result: dict[str, Any]) -> list[dict[str, Any]]:
+    """Overview line for a matched trip: one part per segment, so each is drawn
+    in its own mode colour. Simplified by shape (within 4 m), never by count."""
+    parts = []
+    for s in result["segments"]:
+        if s["mode"] == "stay":
+            continue
+        coords = [c for p in s["pieces"] for c in p["coords"]]
+        if len(coords) >= 2:
+            parts.append({"m": s["mode"], "c": _simplified(coords)})
+    return parts
 
 
 def refresh_previews(db: Database) -> int:
@@ -136,9 +182,9 @@ def refresh_previews(db: Database) -> int:
     for t in db.all("SELECT * FROM trips"):
         t = dict(t)
         res = result(db, t)
-        pts = res["stream"] if res else archive.window(db, t["user_id"], t["start_ts"], t["end_ts"])
+        prev = matched_preview(res) if res else raw_preview(archive.window(db, t["user_id"], t["start_ts"], t["end_ts"]))
         with db.tx() as c:
-            c.execute("UPDATE trips SET preview=? WHERE id=?", (json.dumps(_preview(pts)), t["id"]))
+            c.execute("UPDATE trips SET preview=? WHERE id=?", (json.dumps(prev), t["id"]))
         n += 1
     with db.tx() as c:
         c.execute("INSERT INTO site(key, value) VALUES ('preview_version', ?)"
@@ -159,7 +205,7 @@ def store(db: Database, trip: dict[str, Any], result: dict[str, Any], overrides:
                   " overrides=?, km=?, modes=?, quality=?, preview=?, updated_at=? WHERE id=?",
                   (result["engine_version"], version, json.dumps(overrides), result["quality"].get("km", 0.0),
                    json.dumps(_summary(result)), json.dumps(result["quality"]),
-                   json.dumps(_preview(result["stream"])), now(), trip["id"]))
+                   json.dumps(matched_preview(result)), now(), trip["id"]))
     return version
 
 
@@ -222,16 +268,28 @@ def undo(db: Database, uid: int, trip_id: int) -> int:
     return store(db, trip, unpack(prev["result_gz"]), json.loads(prev["overrides"]), f"undo to v{prev['version']}")
 
 
+def range_override(trip: dict[str, Any], t0: int, t1: int, mode: str) -> list[dict[str, Any]]:
+    """Overrides after pinning [t0, t1] to a mode. Earlier overrides keep the
+    parts that fall outside the new range."""
+    t0, t1 = sorted((int(t0), int(t1)))
+    out = []
+    for o in json.loads(trip["overrides"]):
+        if o["t1"] < t0 or o["t0"] > t1:
+            out.append(o)
+            continue
+        if o["t0"] < t0:
+            out.append({**o, "t1": t0 - 1})
+        if o["t1"] > t1:
+            out.append({**o, "t0": t1 + 1})
+    out.append({"t0": t0, "t1": t1, "mode": mode})
+    return sorted(out, key=lambda o: o["t0"])
+
+
 def segment_override(trip: dict[str, Any], res: dict[str, Any], seg_id: int, mode: str) -> list[dict[str, Any]]:
-    """Overrides after setting one segment's mode. Existing overrides that the
-    segment covers are replaced; the rest are kept."""
     seg = next((s for s in res["segments"] if s["id"] == seg_id), None)
     if seg is None:
         raise KeyError(seg_id)
-    t0, t1 = int(seg["t0"]), int(seg["t1"])
-    ov = [o for o in json.loads(trip["overrides"]) if o["t1"] < t0 or o["t0"] > t1]
-    ov.append({"t0": t0, "t1": t1, "mode": mode})
-    return sorted(ov, key=lambda o: o["t0"])
+    return range_override(trip, seg["t0"], seg["t1"], mode)
 
 
 def split_override(trip: dict[str, Any], res: dict[str, Any], ts: int) -> list[dict[str, Any]]:
@@ -239,10 +297,8 @@ def split_override(trip: dict[str, Any], res: dict[str, Any], ts: int) -> list[d
     seg = next((s for s in res["segments"] if s["t0"] < ts < s["t1"]), None)
     if seg is None:
         raise ValueError("no segment spans that time")
-    ov = [o for o in json.loads(trip["overrides"]) if o["t1"] < seg["t0"] or o["t0"] > seg["t1"]]
-    ov += [{"t0": seg["t0"], "t1": ts - 1, "mode": seg["mode"]},
-           {"t0": ts, "t1": seg["t1"], "mode": seg["mode"]}]
-    return sorted(ov, key=lambda o: o["t0"])
+    ov = range_override(trip, seg["t0"], ts - 1, seg["mode"])
+    return range_override({**trip, "overrides": json.dumps(ov)}, ts, seg["t1"], seg["mode"])
 
 
 def needs_review(q: dict[str, Any]) -> bool:
@@ -270,6 +326,7 @@ def public(trip: dict[str, Any]) -> dict[str, Any]:
         "dirty": bool(trip["dirty"]), "error": trip["error"], "km": trip["km"],
         "modes": json.loads(trip["modes"] or "[]"), "quality": q,
         "overrides": json.loads(trip["overrides"] or "[]"), "version": trip["result_version"],
+        "point_edits": len(json.loads(trip.get("point_edits") or "{}")),
         "pushed_version": pushed, "pushed_at": trip["pushed_at"],
         "engine_version": trip["engine_version"], "outdated_engine": bool(trip["result_version"]) and
         trip["engine_version"] != ENGINE_VERSION,

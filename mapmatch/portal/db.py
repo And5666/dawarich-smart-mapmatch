@@ -128,6 +128,11 @@ MIGRATIONS: list[str] = [
     CREATE INDEX jobs_user ON jobs(user_id, created_at);
     INSERT INTO site(key, value) VALUES ('signup', '0');
     """,
+    # 2: sign-in with a Dawarich API key; per-trip point corrections
+    """
+    ALTER TABLE users ADD COLUMN display_name TEXT NOT NULL DEFAULT '';
+    ALTER TABLE trips ADD COLUMN point_edits TEXT NOT NULL DEFAULT '{}';
+    """,
 ]
 
 

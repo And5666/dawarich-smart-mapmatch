@@ -15,21 +15,14 @@ from ..engine import valhalla
 from ..engine.api import ENGINE_VERSION, MODES
 from . import archive, auth, push, trips
 from .db import now as now_iso
-from .dawarich import DawarichError
+from .dawarich import Client, DawarichError
 
 COOKIE = "mapmatch_session"
 MAX_UPLOAD = 64 * 1024 * 1024
 MAX_POINTS = 250_000
 
 
-class Credentials(BaseModel):
-    username: str
-    password: str
-
-
 class SettingsIn(BaseModel):
-    dawarich_url: str | None = None
-    api_key: str | None = None
     auto_enabled: bool | None = None
     interval_min: int | None = Field(None, ge=15, le=7 * 24 * 60)
     auto_push: bool | None = None
@@ -59,8 +52,18 @@ class JobIn(BaseModel):
     params: dict[str, Any] = {}
 
 
-class SignupIn(BaseModel):
-    enabled: bool
+class ConnectIn(BaseModel):
+    api_key: str
+
+
+class RangeIn(BaseModel):
+    t0: int
+    t1: int
+    mode: str
+
+
+class PointEditsIn(BaseModel):
+    edits: dict[str, Any]
 
 
 
@@ -79,11 +82,6 @@ def build(app_state: Any) -> APIRouter:
             raise HTTPException(403, "missing X-Portal header")
         return u
 
-    def admin(u: dict[str, Any] = Depends(user)) -> dict[str, Any]:
-        if not u["is_admin"]:
-            raise HTTPException(403, "admin only")
-        return u
-
     def trip_or_404(uid: int, tid: int) -> dict[str, Any]:
         t = trips.get(db, uid, tid)
         if not t:
@@ -96,23 +94,23 @@ def build(app_state: Any) -> APIRouter:
 
     # ------------------------------------------------------------ auth
 
-    @r.post("/login")
-    def login(body: Credentials, response: Response) -> dict[str, Any]:
-        u = auth.authenticate(db, body.username, body.password)
-        if not u:
-            time.sleep(0.4)
-            raise HTTPException(401, "wrong username or password")
-        set_cookie(response, auth.new_session(db, u["id"], cfg.session_days))
-        return {"ok": True}
-
-    @r.post("/signup")
-    def signup(body: Credentials, response: Response) -> dict[str, Any]:
-        if not auth.signup_enabled(db):
-            raise HTTPException(403, "sign-up is turned off")
+    @r.post("/connect")
+    def connect(body: ConnectIn, response: Response) -> dict[str, Any]:
+        """Sign in with a Dawarich API key: the key both identifies the account
+        and is what the portal syncs with."""
+        key = body.api_key.strip()
+        if not key or len(key) > 200:
+            raise HTTPException(400, "Paste the API key from your Dawarich account page")
         try:
-            uid = auth.create_user(db, body.username.strip(), body.password)
-        except ValueError as exc:
-            raise HTTPException(400, str(exc)) from exc
+            with Client(cfg.dawarich_url, key, cfg.dawarich_host_header, transport=jobs.transport) as dw:
+                who = dw.me()
+        except DawarichError as exc:
+            time.sleep(0.4)
+            msg = str(exc)
+            if "rejected" in msg:
+                raise HTTPException(401, "Dawarich didn't accept that key. Check it on your Dawarich account page.") from exc
+            raise HTTPException(502, f"Couldn't reach Dawarich: {msg}") from exc
+        uid = auth.connect(db, cfg.dawarich_url, key, who)
         set_cookie(response, auth.new_session(db, uid, cfg.session_days))
         return {"ok": True}
 
@@ -124,12 +122,12 @@ def build(app_state: Any) -> APIRouter:
 
     @r.get("/public")
     def public_info() -> dict[str, Any]:
-        return {"signup": auth.signup_enabled(db), "engine": ENGINE_VERSION}
+        return {"dawarich": cfg.dawarich_url, "engine": ENGINE_VERSION}
 
     @r.get("/me")
     def me(u: dict[str, Any] = Depends(user)) -> dict[str, Any]:
         s = trips.settings(db, u["id"])
-        return {"username": u["username"], "is_admin": bool(u["is_admin"]),
+        return {"name": u.get("display_name") or u["username"], "is_admin": bool(u["is_admin"]),
                 "settings": _public_settings(s, cfg), "archive": archive.stats(db, u["id"]),
                 "dry_run": cfg.push_dry_run, "engine": ENGINE_VERSION, "modes": list(MODES)}
 
@@ -146,9 +144,6 @@ def build(app_state: Any) -> APIRouter:
                 raise HTTPException(400, "start date must be YYYY-MM-DD") from exc
         if "strength" in data and data["strength"] not in ("fill", "strict"):
             raise HTTPException(400, "strength must be fill or strict")
-        if "dawarich_url" in data and data["dawarich_url"] and \
-                not data["dawarich_url"].startswith(("http://", "https://")):
-            raise HTTPException(400, "Dawarich URL must start with http:// or https://")
         for k, v in data.items():
             sets[k] = (1 if v else 0) if isinstance(v, bool) else (v.strip() if isinstance(v, str) else v)
         if sets:
@@ -226,6 +221,7 @@ def build(app_state: Any) -> APIRouter:
         t = trip_or_404(uid, tid)
         res = trips.result(db, t)
         raw = archive.window(db, uid, t["start_ts"], t["end_ts"])
+        edits = json.loads(t.get("point_edits") or "{}")
         ids = db.all("SELECT id FROM trips WHERE user_id=? ORDER BY start_ts", (uid,))
         order = [x["id"] for x in ids]
         k = order.index(tid)
@@ -233,7 +229,8 @@ def build(app_state: Any) -> APIRouter:
             "trip": trips.public(t),
             "segments": res["segments"] if res else [],
             "dropped": res.get("dropped", []) if res else [],
-            "raw": [{k2: p[k2] for k2 in ("lat", "lon", "timestamp", "accuracy", "velocity", "tracker_id")} for p in raw],
+            "raw": [{**{k2: p[k2] for k2 in ("id", "lat", "lon", "timestamp", "accuracy", "velocity")},
+                     "edit": edits.get(str(p["id"]))} for p in raw],
             "history": [{**h, "overrides": json.loads(h["overrides"]), "quality": json.loads(h["quality"])}
                         for h in trips.history(db, tid)],
             "prev": order[k - 1] if k > 0 else None,
@@ -293,6 +290,29 @@ def build(app_state: Any) -> APIRouter:
     def recalculate(tid: int, u: dict[str, Any] = Depends(user)) -> dict[str, Any]:
         t = trip_or_404(u["id"], tid)
         return _rematch(u["id"], tid, "map match" if not t["result_version"] else "recalculate", [])
+
+    @r.post("/trips/{tid}/range")
+    def set_range(tid: int, body: RangeIn, u: dict[str, Any] = Depends(user)) -> dict[str, Any]:
+        """Pin any stretch of a trip (not just a whole segment) to a mode."""
+        t = trip_or_404(u["id"], tid)
+        if body.mode not in MODES:
+            raise HTTPException(400, "unknown mode")
+        if body.t1 - body.t0 < 1 and body.t0 - body.t1 < 1:
+            raise HTTPException(400, "select a longer stretch")
+        ov = trips.range_override(t, max(body.t0, t["start_ts"]), min(body.t1, t["end_ts"]), body.mode)
+        return _rematch(u["id"], tid, f"part set to {body.mode}", ov)
+
+    @r.put("/trips/{tid}/points")
+    def put_points(tid: int, body: PointEditsIn, u: dict[str, Any] = Depends(user)) -> dict[str, Any]:
+        """Move or leave out GPS fixes for this trip, then rematch. The archived
+        originals are untouched; send {} to undo every correction."""
+        trip_or_404(u["id"], tid)
+        try:
+            trips.set_point_edits(db, u["id"], tid, body.edits)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        n = len(body.edits)
+        return _rematch(u["id"], tid, f"{n} point{'s' if n != 1 else ''} corrected" if n else "corrections cleared", None)
 
     @r.post("/trips/{tid}/undo")
     def undo(tid: int, u: dict[str, Any] = Depends(user)) -> dict[str, Any]:
@@ -401,25 +421,13 @@ def build(app_state: Any) -> APIRouter:
         rows = db.all("SELECT * FROM pushes WHERE user_id=? ORDER BY id DESC LIMIT 100", (u["id"],))
         return {"pushes": [{**dict(x), "detail": json.loads(x["detail"] or "{}")} for x in rows]}
 
-    # ------------------------------------------------------------ admin
-    @r.get("/admin")
-    def admin_info(_: dict[str, Any] = Depends(admin)) -> dict[str, Any]:
-        users = db.all("SELECT u.id, u.username, u.is_admin, u.created_at, s.auto_enabled, s.last_run, s.last_error,"
-                       " (SELECT COUNT(*) FROM points p WHERE p.user_id=u.id) AS points,"
-                       " (SELECT COUNT(*) FROM trips t WHERE t.user_id=u.id) AS trips"
-                       " FROM users u LEFT JOIN settings s ON s.user_id=u.id ORDER BY u.id")
-        outdated = db.one("SELECT COUNT(*) n FROM trips WHERE result_version > 0 AND engine_version != ?",
-                          (ENGINE_VERSION,))["n"]
-        return {"users": [dict(x) for x in users], "signup": auth.signup_enabled(db),
-                "valhalla": valhalla.status(), "engine": ENGINE_VERSION, "outdated_trips": outdated,
-                "dry_run": cfg.push_dry_run}
-
-
-    @r.post("/admin/signup")
-    def admin_signup(body: SignupIn, _: dict[str, Any] = Depends(admin)) -> dict[str, Any]:
-        with db.tx() as c:
-            c.execute("UPDATE site SET value=? WHERE key='signup'", ("1" if body.enabled else "0",))
-        return {"signup": body.enabled}
+    # ------------------------------------------------------------ system
+    @r.get("/system")
+    def system(u: dict[str, Any] = Depends(user)) -> dict[str, Any]:
+        outdated = db.one("SELECT COUNT(*) n FROM trips WHERE user_id=? AND result_version > 0 AND engine_version != ?",
+                          (u["id"], ENGINE_VERSION))["n"]
+        return {"valhalla": valhalla.status(), "engine": ENGINE_VERSION, "outdated_trips": outdated,
+                "dry_run": cfg.push_dry_run, "dawarich": cfg.dawarich_url}
 
     return r
 

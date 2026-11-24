@@ -32,12 +32,10 @@ def day(t0: int) -> list[dict]:
 def env(tmp_path, fake_valhalla):
     dw = FakeDawarich()
     dw.seed(day(1_780_000_000))
-    cfg = Config(data_dir=tmp_path, base_path="/", dawarich_url="http://dawarich.test",
-                 admin_user="admin", admin_password="adminpass1", scheduler=False)
+    cfg = Config(data_dir=tmp_path, base_path="/", dawarich_url="http://dawarich.test", scheduler=False)
     app = create_app(cfg, transport=dw.transport, start_workers=False)
     client = TestClient(app)
-    assert client.post("/api/login", json={"username": "admin", "password": "adminpass1"}).status_code == 200
-    client.put("/api/settings", json={"api_key": "secret"}, headers=H)
+    assert client.post("/api/connect", json={"api_key": "secret"}).status_code == 200
     jobs = app.state.portal.jobs
     return client, dw, jobs, app.state.portal.db
 
@@ -68,7 +66,8 @@ def test_sync_only_stores_raw_points(env, fake_valhalla):
     trips = client.get("/api/trips").json()
     assert len(trips["trips"]) == 2 and trips["counts"] == {"new": 2, "push_original": 2}
     t = trips["trips"][0]
-    assert t["modes"] == [] and len(t["preview"]) >= 2 and t["km"] > 1   # raw line and distance
+    assert t["modes"] == [] and t["km"] > 1
+    assert [p["m"] for p in t["preview"]] == ["none"] and len(t["preview"][0]["c"]) >= 2   # one grey raw line
     d = client.get(f"/api/trips/{t['id']}").json()
     assert d["segments"] == [] and len(d["raw"]) == t["n_points"]
     assert client.post(f"/api/trips/{t['id']}/push", headers=H).status_code == 400   # nothing to push yet
@@ -190,11 +189,11 @@ def test_late_point_marks_trip_dirty_and_rematches(env):
 
 
 def test_csv_import(tmp_path, fake_valhalla):
-    cfg = Config(data_dir=tmp_path, base_path="/mm", dawarich_url="http://x", admin_user="admin",
-                 admin_password="adminpass1", scheduler=False)
-    app = create_app(cfg, start_workers=False)
+    dw = FakeDawarich()
+    cfg = Config(data_dir=tmp_path, base_path="/mm", dawarich_url="http://x", scheduler=False)
+    app = create_app(cfg, transport=dw.transport, start_workers=False)
     c = TestClient(app)
-    c.post("/mm/api/login", json={"username": "admin", "password": "adminpass1"})
+    assert c.post("/mm/api/connect", json={"api_key": "secret"}).status_code == 200
     rows = ["tracker_id,timestamp,lat,lon,accuracy,velocity,altitude"]
     rows += [f"phone,{p['timestamp']},{p['lat']},{p['lon']},8,," for p in day(1_780_000_000)]
     r = c.post("/mm/api/import/csv", files={"file": ("pts.csv", "\n".join(rows), "text/csv")}, headers=H)
@@ -208,15 +207,16 @@ def test_csv_import(tmp_path, fake_valhalla):
 def test_auth_rules(env):
     client, dw, jobs, db = env
     assert client.put("/api/settings", json={"auto_push": True}).status_code == 403   # no X-Portal header
-    assert client.post("/api/signup", json={"username": "bob", "password": "longenough"}).status_code == 403
-    client.post("/api/admin/signup", json={"enabled": True}, headers=H)
+    assert client.get("/api/me").json()["name"] == "rider@example.com"
+    stranger = TestClient(client.app)
+    assert stranger.get("/api/me").status_code == 401
+    assert stranger.post("/api/connect", json={"api_key": "wrong"}).status_code == 401
+    # The same key signs back into the same account.
     sync(client, jobs)
     tid = client.get("/api/trips").json()["trips"][0]["id"]
-    other = TestClient(client.app)
-    assert other.post("/api/signup", json={"username": "bob", "password": "longenough"}).status_code == 200
-    assert other.get(f"/api/trips/{tid}").status_code == 404     # not bob's trip
-    assert other.get("/api/admin").status_code == 403
-    assert TestClient(client.app).get("/api/me").status_code == 401
+    again = TestClient(client.app)
+    assert again.post("/api/connect", json={"api_key": "secret"}).status_code == 200
+    assert again.get(f"/api/trips/{tid}").status_code == 200
 
 
 def test_scheduler_runs_auto_with_push(env):
@@ -241,3 +241,55 @@ def test_trip_changes_feed_for_live_drawing(env):
     assert len(got["trips"]) == 2
     assert all(t["version"] == 1 and t["modes"] and len(t["preview"]) > 1 for t in got["trips"])
     assert client.get(f"/api/trips/changes?since={got['now']}").status_code == 200
+
+
+def test_preview_has_one_coloured_part_per_segment(env):
+    client, dw, jobs, db = env
+    sync(client, jobs)
+    for t in client.get("/api/trips").json()["trips"]:
+        assert [p["m"] for p in t["preview"]] == [m["mode"] for m in t["modes"]]
+
+
+def test_range_mode_pins_part_of_a_segment(env):
+    client, dw, jobs, db = env
+    sync(client, jobs)
+    tid = client.get("/api/trips").json()["trips"][0]["id"]
+    d = client.get(f"/api/trips/{tid}").json()
+    seg = max(d["segments"], key=lambda s: s["t1"] - s["t0"])
+    a = seg["t0"] + (seg["t1"] - seg["t0"]) // 3
+    b = seg["t0"] + 2 * (seg["t1"] - seg["t0"]) // 3
+    d = client.post(f"/api/trips/{tid}/range", json={"t0": a, "t1": b, "mode": "train"}, headers=H).json()
+    assert d["trip"]["overrides"] == [{"t0": a, "t1": b, "mode": "train"}]
+    assert any(s["mode"] == "train" and s["forced"] for s in d["segments"])
+    # a second range inside the first keeps the outer parts of the first
+    d = client.post(f"/api/trips/{tid}/range", json={"t0": a + 60, "t1": a + 120, "mode": "walk"}, headers=H).json()
+    assert [o["mode"] for o in d["trip"]["overrides"]] == ["train", "walk", "train"]
+
+
+def test_point_edits_change_the_match_not_the_archive(env):
+    client, dw, jobs, db = env
+    sync(client, jobs)
+    n = archive_count(db)
+    tid = client.get("/api/trips").json()["trips"][0]["id"]
+    d = client.get(f"/api/trips/{tid}").json()
+    p, q = d["raw"][5], d["raw"][6]
+    edits = {str(p["id"]): [p["lat"] + 0.0003, p["lon"]], str(q["id"]): "x"}
+    d2 = client.put(f"/api/trips/{tid}/points", json={"edits": edits}, headers=H).json()
+    assert d2["trip"]["point_edits"] == 2 and d2["raw"][5]["edit"] == [round(p["lat"] + 0.0003, 7), round(p["lon"], 7)]
+    assert d2["raw"][5]["lat"] == p["lat"], "the archived original is unchanged"
+    assert archive_count(db) == n
+    assert client.put(f"/api/trips/{tid}/points", json={"edits": {"999999": "x"}}, headers=H).status_code == 400
+    d3 = client.put(f"/api/trips/{tid}/points", json={"edits": {}}, headers=H).json()
+    assert d3["trip"]["point_edits"] == 0
+
+
+def test_match_selected_and_range(env):
+    client, dw, jobs, db = env
+    run_job(client, jobs, "sync")
+    ts = sorted(client.get("/api/trips").json()["trips"], key=lambda t: t["start"])
+    run_job(client, jobs, "rematch", {"scope": "ids", "ids": [ts[0]["id"]]})
+    got = {t["id"]: t["version"] for t in client.get("/api/trips").json()["trips"]}
+    assert got[ts[0]["id"]] == 1 and got[ts[1]["id"]] == 0
+    run_job(client, jobs, "rematch", {"scope": "range", "start": ts[1]["start"], "end": ts[1]["end"]})
+    got = {t["id"]: t["version"] for t in client.get("/api/trips").json()["trips"]}
+    assert got[ts[0]["id"]] == 1 and got[ts[1]["id"]] == 1

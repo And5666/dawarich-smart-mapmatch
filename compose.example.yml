@@ -12,9 +12,6 @@ services:
       # Set when Dawarich only answers for its public hostname (APPLICATION_HOSTS).
       DAWARICH_HOST_HEADER: ""
       VALHALLA_URL: http://dawarich-valhalla:8002
-      # First admin; only used while no admin exists.
-      PORTAL_ADMIN_USER: admin
-      PORTAL_ADMIN_PASSWORD: change-me-please
       # Serve under a path behind a reverse proxy, e.g. /mapmatch. Empty = site root.
       PORTAL_BASE_PATH: ""
       # Set to 1 when the portal is reached over https.

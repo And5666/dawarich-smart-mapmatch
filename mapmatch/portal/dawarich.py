@@ -76,6 +76,14 @@ class Client:
             page += 1
         return out
 
+    def me(self) -> dict[str, Any]:
+        """The Dawarich account this key belongs to."""
+        r = self._req("GET", "/api/v1/users/me")
+        user = (r.json() or {}).get("user") or {}
+        if not user.get("id"):
+            raise DawarichError("Dawarich did not say who this key belongs to")
+        return user
+
     def count(self) -> int:
         r = self._req("GET", "/api/v1/points", params={"per_page": 1, "page": 1})
         total = r.headers.get("x-total-count")

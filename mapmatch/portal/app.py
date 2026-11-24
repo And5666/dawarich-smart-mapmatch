@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import api, auth, trips
+from . import api, trips
 from .config import Config
 from .db import Database
 from .jobs import Jobs
@@ -26,7 +26,6 @@ def create_app(cfg: Config | None = None, transport: Any = None, start_workers: 
     cfg = cfg or Config()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     db = Database(cfg.db_path)
-    auth.bootstrap_admin(db, cfg.admin_user, cfg.admin_password)
     trips.refresh_previews(db)
     jobs = Jobs(db, cfg, transport)
     state = SimpleNamespace(db=db, cfg=cfg, jobs=jobs)
