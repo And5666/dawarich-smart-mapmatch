@@ -365,3 +365,59 @@ def test_closely_logged_ride_at_town_driving_speed_is_cycling():
     # through town, so sparse slow driving is left to the speed model.
     town = track([(280, 0)] * 40)                      # 34 km/h, every 30 s
     assert set(label(town)[0]) == {"drive"}
+
+
+# ---------------------------------------------------------------- GPX tracks (no accuracy)
+def _bodies(monkeypatch, fake):
+    seen = []
+
+    def post(path, body, timeout=120.0):
+        seen.append(body)
+        return fake(path, body, timeout)
+    monkeypatch.setattr(valhalla, "post", post)
+    return seen
+
+
+def test_gpx_track_is_searched_narrowly_but_phone_track_is_not(monkeypatch):
+    # Valhalla prefers a road among its candidates even when a cycle track is
+    # a metre from the fix and the road ten: only a narrow search keeps a
+    # precise GPX ride on the track.
+    from conftest import FakeValhalla
+    seen = _bodies(monkeypatch, FakeValhalla())
+    valhalla.match(track([(5, 0)] * 20, dt=1, accuracy=None), "bicycle")
+    body = seen[-1]
+    assert {p.get("radius") for p in body["shape"]} == {valhalla.NO_ACCURACY_RADIUS}
+    assert body["trace_options"]["gps_accuracy"] == valhalla.NARROW_GPS_ACCURACY
+    valhalla.match(track([(5, 0)] * 20, dt=1, accuracy=None), "bicycle", wide=True)
+    assert "radius" not in seen[-1]["shape"][0]
+    valhalla.match(track([(50, 0)] * 20, accuracy=8.0), "bicycle")
+    body = seen[-1]
+    assert {p["radius"] for p in body["shape"]} == {30}
+    assert body["trace_options"]["gps_accuracy"] == valhalla.PROFILES["bicycle"]["trace_options"]["gps_accuracy"]
+
+
+def test_narrow_search_falls_back_to_wide_when_it_loses_the_trace(monkeypatch):
+    from conftest import FakeValhalla
+    from mapmatch.engine import match as M
+
+    class Picky(FakeValhalla):
+        def _trace(self, body):
+            # The narrow search finds nothing for most of the ride.
+            narrow = body["shape"][0].get("radius") == valhalla.NO_ACCURACY_RADIUS
+            self.unmatched = set(range(2, 15)) if narrow else set()
+            return super()._trace(body)
+    seen = _bodies(monkeypatch, Picky())
+    res = M._match_chunk(track([(5, 0)] * 20, dt=1, accuracy=None), "bicycle")
+    assert len(seen) == 2 and all(res["anchors"])
+    seen = _bodies(monkeypatch, FakeValhalla())
+    M._match_chunk(track([(5, 0)] * 20, dt=1, accuracy=None), "bicycle")
+    assert len(seen) == 1                                    # nothing lost: no second call
+
+
+def test_gpx_out_and_back_along_a_cycle_track_is_kept(fake_valhalla):
+    # Out 80 m along a spur and back: fixes with no accuracy on it are a real
+    # detour, not a stray fix, so the line keeps it.
+    steps = [(50, 0)] * 4 + [(0, 20)] * 4 + [(0, -20)] * 4 + [(50, 0)] * 4
+    res = match_trip(track(steps, dt=10, accuracy=None))
+    north = max(c[0] for s in res["segments"] for p in s["pieces"] for c in p["coords"])
+    assert (north - LAT0) * 111_320 > 60

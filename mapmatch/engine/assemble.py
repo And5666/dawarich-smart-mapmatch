@@ -7,6 +7,7 @@ from typing import Any
 from .fill import TRAIL_DEV_M, TRAIL_MODES, VMAX_KMH, fill, max_deviation
 from .geo import haversine, point_at, subline
 from .stays import centroid
+from .valhalla import unreported
 
 SIMPLIFY_M = 2.0
 TRAIL_ANCHOR_M = 15.0
@@ -54,15 +55,21 @@ SPUR_MIN_M = 15.0     # shallower out-and-backs are just a wobble
 SPUR_MAX_M = 300.0
 SPUR_CLOSE_M = 12.0   # out and back legs this close count as the same road
 SPUR_KEEP_ACC_M = 15.0
+# In a GPX-style track (no accuracies reported) a fix is not known to be poor:
+# three of them on the excursion are as good as two accurate ones, since one
+# stray fix cannot leave three behind on a side road. A cycle track with a
+# turn-round at its end was otherwise cut out of every such ride.
+SPUR_KEEP_UNKNOWN = 3
 
 
-def remove_spurs(coords: list[list[float]], acc_by_ts: dict[int, float]) -> list[list[float]]:
+def remove_spurs(coords: list[list[float]], acc_by_ts: dict[int, float | None]) -> list[list[float]]:
     """Cut out-and-back excursions from a timed line.
 
     A poor fix that lands on a side road makes the matched line run down it
     and straight back. Where the line turns round sharply and retraces itself
     for 15-300 m, the excursion is removed, unless two or more accurate fixes
-    (≤15 m) lie on it: then it was a real detour and is kept.
+    (≤15 m), or three with no accuracy reported, lie on it: then it was a real
+    detour and is kept.
     """
     while len(coords) >= 3:
         lat0 = coords[0][0]
@@ -96,7 +103,10 @@ def remove_spurs(coords: list[list[float]], acc_by_ts: dict[int, float]) -> list
                 continue
             lo, hi = apex - depth, apex + depth
             inside = [c for c, a in zip(coords, cum) if c[3] and lo < a < hi]
-            if sum(1 for c in inside if acc_by_ts.get(int(c[2]), 99.0) <= SPUR_KEEP_ACC_M) >= 2:
+            accs = [acc_by_ts.get(int(c[2]), 99.0) for c in inside]
+            good = sum(1 for x in accs if x is not None and x <= SPUR_KEEP_ACC_M)
+            unknown = sum(1 for x in accs if x is None)
+            if good >= 2 or good + unknown >= SPUR_KEEP_UNKNOWN:
                 continue
             cut = (lo, hi)
             break
@@ -242,7 +252,10 @@ def road_pieces(fixes: list[dict[str, Any]], mode: str, m: dict[str, Any],
         out.append(_filled(snapped(A[-1]), fixes[A[-1] + 1:-1], _fixpt(fixes[-1]), edge_mode, strength,
                            n - 1 - A[-1], vmax, keep, force))
     out = merge_pieces(out)
-    acc = {int(p["timestamp"]): (p.get("accuracy") or 99.0) for p in fixes}
+    # In a phone track a fix without an accuracy is suspect; in a GPX-style
+    # track (no accuracies at all) it is simply not reported.
+    missing = None if unreported(fixes) else 99.0
+    acc = {int(p["timestamp"]): (p.get("accuracy") or missing) for p in fixes}
     for pc in out:
         if pc["kind"] in ("matched", "filled") and len(pc["coords"]) >= 3:
             pc["coords"] = remove_spurs(pc["coords"], acc)

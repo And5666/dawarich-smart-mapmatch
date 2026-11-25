@@ -16,6 +16,9 @@ CHUNK = 200
 OVERLAP = 6
 RUN_GAP_S = 600
 MIN_SPLIT = 6
+# Share of fixes the narrow search (fixes without an accuracy) may leave
+# unmatched before the chunk is also tried at the profile's wide radius.
+WIDE_RETRY_UNMATCHED = 0.2
 
 
 def _runs_by_gap(fixes: list[dict[str, Any]], profile: str) -> list[tuple[int, int]]:
@@ -32,12 +35,32 @@ def _runs_by_gap(fixes: list[dict[str, Any]], profile: str) -> list[tuple[int, i
     return out
 
 
+def _narrow_or_wide(fixes: list[dict[str, Any]], profile: str) -> dict[str, Any]:
+    """GPX-style chunks are searched narrowly first (see
+    valhalla.NO_ACCURACY_RADIUS); if that loses much of the trace, the wide
+    search is tried too and the better fit kept."""
+    if not valhalla.unreported(fixes):
+        return valhalla.match(fixes, profile)
+    try:
+        res = valhalla.match(fixes, profile)
+    except valhalla.ValhallaError:
+        return valhalla.match(fixes, profile, wide=True)
+    lost = sum(1 for a in res["anchors"] if a is None) / max(1, len(fixes))
+    if lost <= WIDE_RETRY_UNMATCHED:
+        return res
+    try:
+        wide = valhalla.match(fixes, profile, wide=True)
+    except valhalla.ValhallaError:
+        return res
+    return wide if fit_score(fixes, wide) > fit_score(fixes, res) else res
+
+
 def _match_chunk(fixes: list[dict[str, Any]], profile: str) -> dict[str, Any]:
     """Match, halving the chunk when Valhalla cannot snap it at all."""
     if len(fixes) < 2:
         return {"pieces": [], "anchors": [None] * len(fixes)}
     try:
-        return valhalla.match(fixes, profile)
+        return _narrow_or_wide(fixes, profile)
     except valhalla.ValhallaError:
         if len(fixes) <= MIN_SPLIT:
             return {"pieces": [], "anchors": [None] * len(fixes)}

@@ -53,6 +53,21 @@ PROFILES: dict[str, dict[str, Any]] = {
     },
 }
 MAX_RADIUS = 100
+# Fixes that report no accuracy (GPX from a bike computer or a watch) are
+# usually the most precise of all, logged every second. Among the candidates in
+# its search radius Valhalla prefers a road: a road 9 m away beats the cycle
+# track a metre from the fix. The only lever that works is the radius itself,
+# and the server never searches less than gps_accuracy, so both are narrowed
+# when most of a request is such fixes (a phone track with the odd fix missing
+# its accuracy is searched as before). Holes the narrow search leaves are
+# routed by fill.py, and match.py retries wide where it loses the trace.
+NO_ACCURACY_RADIUS = 10
+NARROW_GPS_ACCURACY = 5
+
+
+def unreported(points: list[dict[str, Any]]) -> bool:
+    """Most fixes report no accuracy: a GPX-style track."""
+    return sum(1 for p in points if not p.get("accuracy")) * 2 > len(points)
 
 
 def breakage(profile: str) -> float:
@@ -146,7 +161,7 @@ def post(path: str, body: dict[str, Any], timeout: float = 120.0) -> dict[str, A
     return out
 
 
-def _shape_item(p: dict[str, Any], default_radius: float) -> dict[str, Any]:
+def _shape_item(p: dict[str, Any], default_radius: float, narrow: bool = False) -> dict[str, Any]:
     item: dict[str, Any] = {"lat": float(p["lat"]), "lon": float(p["lon"])}
     if p.get("timestamp") is not None:
         item["time"] = int(p["timestamp"])
@@ -154,11 +169,17 @@ def _shape_item(p: dict[str, Any], default_radius: float) -> dict[str, Any]:
     if acc:
         # Per-fix search radius follows the reported accuracy.
         item["radius"] = int(max(30.0, min(MAX_RADIUS, 1.5 * float(acc), default_radius * 1.25)))
+    elif narrow:
+        item["radius"] = NO_ACCURACY_RADIUS
     return item
 
 
-def match(points: list[dict[str, Any]], profile: str, timeout: float = 120.0) -> dict[str, Any]:
+def match(points: list[dict[str, Any]], profile: str, timeout: float = 120.0,
+          wide: bool = False) -> dict[str, Any]:
     """Map-match points with one profile.
+
+    A GPX-style request (see unreported) is searched narrowly unless
+    wide=True, which uses the profile's radius as for any other track.
 
     Returns {"pieces": [{"poly", "cum"}], "anchors": [anchor | None per point]}.
     An anchor is {"piece", "arc", "lat", "lon", "dist", "kind"} where kind is
@@ -166,12 +187,16 @@ def match(points: list[dict[str, Any]], profile: str, timeout: float = 120.0) ->
     """
     cfg = PROFILES[profile]
     r0 = cfg["trace_options"]["search_radius"]
+    trace_options = cfg["trace_options"]
+    narrow = not wide and unreported(points)
+    if narrow:
+        trace_options = {**trace_options, "gps_accuracy": NARROW_GPS_ACCURACY}
     body = {
-        "shape": [_shape_item(p, r0) for p in points],
+        "shape": [_shape_item(p, r0, narrow) for p in points],
         "costing": cfg["costing"],
         "costing_options": cfg["costing_options"],
         "shape_match": "map_snap",
-        "trace_options": cfg["trace_options"],
+        "trace_options": trace_options,
         "filters": {"attributes": ATTRIBUTES, "action": "include"},
     }
     raw = post("/trace_attributes", body, timeout)
