@@ -19,12 +19,17 @@ PREVIEW_VERSION = "3"
 
 # ---------------------------------------------------------------- segmentation
 def segment(db: Database, uid: int, gap_min: int, new_ts: list[int] | None = None,
-            now_ts: int | None = None) -> dict[str, int]:
+            now_ts: int | None = None, settle: bool = True) -> dict[str, int]:
     """Bring the trips table up to date with the archive.
 
     Closed trips are frozen. New points inside a closed trip mark it dirty;
     the open tail (after the last closed trip) and any history before the
-    first trip are (re)split.
+    first trip are (re)split. settle=False is for a download still in
+    progress: a trip then only closes when later points prove the gap, not
+    because the clock says it is old (that cut long rides at every page).
+    Closed trips that follow each other closer than the trip gap, and that
+    nobody has pushed or edited, are split again, which joins the ones
+    that should never have been cut.
     """
     now_ts = int(now_ts or time.time())
     gap = gap_min * 60
@@ -32,6 +37,7 @@ def segment(db: Database, uid: int, gap_min: int, new_ts: list[int] | None = Non
     rows = db.all("SELECT * FROM trips WHERE user_id=? ORDER BY start_ts", (uid,))
     closed = [r for r in rows if r["closed"]]
     open_ = [dict(r) for r in rows if not r["closed"]]
+    cut = _cut_chains(closed, gap)
 
     if new_ts:
         with db.tx() as c:
@@ -48,7 +54,7 @@ def segment(db: Database, uid: int, gap_min: int, new_ts: list[int] | None = Non
         end = trip[-1]["timestamp"]
         # Until a trip is matched, its preview and distance come from the raw fixes.
         return {"start_ts": trip[0]["timestamp"], "end_ts": end, "n_points": len(trip),
-                "closed": 1 if (latest > end + gap or now_ts > end + gap) else 0,
+                "closed": 1 if (latest > end + gap or (settle and now_ts > end + gap)) else 0,
                 "preview": json.dumps(raw_preview(trip)), "km": round(path_km(trip), 3)}
 
     found: list[dict[str, Any]] = []
@@ -61,6 +67,10 @@ def segment(db: Database, uid: int, gap_min: int, new_ts: list[int] | None = Non
                 found.append(m)
     tail = archive.window(db, uid, (last_closed_end + 1) if last_closed_end is not None else None, None)
     found.extend(make(t) for t in split_trips(tail, gap_s=gap, stay_s=gap))
+    for chain in cut:
+        span = archive.window(db, uid, chain[0]["start_ts"], chain[-1]["end_ts"])
+        found.extend({**make(t), "closed": 1} for t in split_trips(span, gap_s=gap, stay_s=gap))
+        open_.extend(dict(r) for r in chain)
 
     with db.tx() as c:
         used: set[int] = set()
@@ -90,6 +100,25 @@ def segment(db: Database, uid: int, gap_min: int, new_ts: list[int] | None = Non
             c.execute("DELETE FROM trips WHERE id=?", (o["id"],))
             stats["removed"] += 1
     return stats
+
+
+def _cut_chains(closed: list[Any], gap: int) -> list[list[Any]]:
+    """Runs of closed trips less than a trip gap apart that can be re-split."""
+    def free(r: Any) -> bool:
+        return r["pushed_version"] is None and not r["locked"] and \
+            (r["overrides"] or "[]") == "[]" and (r["point_edits"] or "{}") == "{}"
+    out: list[list[Any]] = []
+    cur: list[Any] = []
+    for r in closed:
+        if cur and free(r) and r["start_ts"] - cur[-1]["end_ts"] < gap:
+            cur.append(r)
+            continue
+        if len(cur) > 1:
+            out.append(cur)
+        cur = [r] if free(r) else []
+    if len(cur) > 1:
+        out.append(cur)
+    return out
 
 
 # ---------------------------------------------------------------- matching

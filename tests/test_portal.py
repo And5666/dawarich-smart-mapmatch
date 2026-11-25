@@ -572,3 +572,25 @@ def test_push_tidies_the_stops_beside_a_trip_and_revert_restores_them(env):
     assert not [k for k in dw.originals() if trip["end"] < k[0] < nxt]
     assert client.post(f"/api/trips/{trip['id']}/revert", headers=H).status_code == 200
     assert dw.originals() == originals and not dw.ours()
+
+
+def test_a_long_old_ride_is_one_trip_across_download_pages(env, monkeypatch):
+    from mapmatch.portal import dawarich, trips
+    client, dw, jobs, db = env
+    monkeypatch.setattr(dawarich, "PAGE", 100)
+    t0 = 1_700_000_000                                   # years old: the clock says every trip is over
+    dw.points.clear()
+    dw.seed(track([(5, 0)] * 450, t0=t0, dt=1))         # a 7.5 min ride, logged every second
+    run_job(client, jobs, "sync")
+    rows = db.all("SELECT * FROM trips ORDER BY start_ts")
+    assert len(rows) == 1 and rows[0]["n_points"] == 451 and rows[0]["closed"]
+
+    # Trips already cut by the old sync are joined again on the next one.
+    with db.tx() as c:
+        mid = t0 + 200
+        c.execute("UPDATE trips SET end_ts=?, n_points=201 WHERE id=?", (mid, rows[0]["id"]))
+        c.execute("INSERT INTO trips(user_id, start_ts, end_ts, n_points, closed, created_at, updated_at)"
+                  " VALUES (?,?,?,?,1,'x','x')", (rows[0]["user_id"], mid + 1, t0 + 450, 250))
+    trips.segment(db, rows[0]["user_id"], 30)
+    again = db.all("SELECT * FROM trips ORDER BY start_ts")
+    assert [(r["id"], r["n_points"]) for r in again] == [(rows[0]["id"], 451)]

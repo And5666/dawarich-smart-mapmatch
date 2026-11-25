@@ -167,7 +167,8 @@ class Jobs:
             originals, _ = archive.split_remote(self.db, uid, batch)
             new = archive.add_api(self.db, uid, originals)
             latest = max([latest] + [int(x["timestamp"]) for x in batch])
-            seg = trips.segment(self.db, uid, gap, [int(x["timestamp"]) for x in originals] if new else [])
+            seg = trips.segment(self.db, uid, gap, [int(x["timestamp"]) for x in originals] if new else [],
+                                settle=p >= n)
             totals["new_points"] += new
             for k, v in seg.items():
                 totals[k] += v
