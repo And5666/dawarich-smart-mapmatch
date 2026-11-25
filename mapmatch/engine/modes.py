@@ -27,6 +27,12 @@ VMAX_KMH = {"walk": 16.0, "cycle": 50.0, "drive": 200.0, "train": 260.0}
 REF_DT_S = 30.0
 # A train that never gets going is a ride or a drive beside the railway.
 TRAIN_MIN_P90_KMH = 40.0
+# A car gets above 45 km/h somewhere; a road bike holds 25-35 km/h for an
+# hour without doing so. Only a closely logged drive shows its top speed:
+# a fix every 30 s can miss every fast moment of a drive through town.
+CYCLE_TOP_KMH = 45.0
+DENSE_DT_S = 10
+DENSE_MIN_FIXES = 20
 
 
 def speeds(fixes: list[dict[str, Any]]) -> list[float]:
@@ -163,6 +169,20 @@ def _fast_trains(leg: list[dict[str, Any]], out: list[str]) -> bool:
     return True
 
 
+def _slow_drives_are_rides(leg: list[dict[str, Any]], v: list[float], out: list[str]) -> None:
+    """Closely logged "driving" that never passes cycling speed is a ride."""
+    idx = [k for k, m in enumerate(out) if m == "drive"]
+    if len(idx) < DENSE_MIN_FIXES:
+        return
+    dts = sorted(leg[k]["timestamp"] - leg[k - 1]["timestamp"] for k in idx if k > 0)
+    if not dts or dts[len(dts) // 2] > DENSE_DT_S:
+        return
+    top = sorted(v[k] for k in idx)
+    if top[min(len(top) - 1, int(len(top) * 0.98))] <= CYCLE_TOP_KMH:
+        for k in idx:
+            out[k] = "cycle"
+
+
 def runs(labels: list[str]) -> list[tuple[str, int, int]]:
     out = []
     i = 0
@@ -247,6 +267,7 @@ def label(fixes: list[dict[str, Any]], overrides: list[dict[str, Any]] | None = 
         out = _viterbi(v, rails[i:j], w)
         if any(m == "train" for m, _, _ in runs(out)) and not _fast_trains(leg, out):
             out = _viterbi(v, rails[i:j], w, tuple(m for m in MODES if m != "train"))
+        _slow_drives_are_rides(leg, v, out)
         labels[i:j] = out
         i = j
     _merge_short(fixes, labels, forced)
