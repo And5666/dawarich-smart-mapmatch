@@ -5,7 +5,7 @@ import math
 from typing import Any
 
 from .fill import TRAIL_DEV_M, TRAIL_MODES, VMAX_KMH, fill, max_deviation
-from .geo import haversine, point_at, subline
+from .geo import dist_point_segment, haversine, point_at, subline
 from .stays import centroid
 from .valhalla import unreported
 
@@ -261,6 +261,55 @@ def road_pieces(fixes: list[dict[str, Any]], mode: str, m: dict[str, Any],
             pc["coords"] = remove_spurs(pc["coords"], acc)
             pc["km"] = round(length_m(pc["coords"]) / 1000.0, 4)
     return out
+
+
+# ---------------------------------------------------------------- recorded
+# A watch or bike computer logging every second or two draws a cleaner line
+# than any map: the cycle track it was on, the side of the road, the corner
+# it cut. Such stretches are kept exactly as recorded; only the holes in them
+# go through the gap filler.
+PRECISE_MAX_DT_S = 5          # median time between fixes
+PRECISE_MIN_FIXES = 30
+PRECISE_WOBBLE_M = 4.0        # p90 distance of a fix from the line through its neighbours
+PRECISE_MAX_ACC_M = 15.0      # median reported accuracy, when there is one
+HOLE_M = 100.0                # consecutive fixes this far apart leave a hole
+HOLE_S = 60                   # ...or this long apart, once they have moved
+
+
+def precise(fixes: list[dict[str, Any]]) -> bool:
+    """Is this stretch already more detailed than a matched line would be?"""
+    n = len(fixes)
+    if n < PRECISE_MIN_FIXES:
+        return False
+    dts = sorted(b["timestamp"] - a["timestamp"] for a, b in zip(fixes, fixes[1:]))
+    if dts[len(dts) // 2] > PRECISE_MAX_DT_S:
+        return False
+    accs = sorted(float(p["accuracy"]) for p in fixes if p.get("accuracy"))
+    if len(accs) * 2 > n and accs[len(accs) // 2] > PRECISE_MAX_ACC_M:
+        return False
+    wobble = sorted(dist_point_segment(fixes[k]["lat"], fixes[k]["lon"], fixes[k - 1]["lat"], fixes[k - 1]["lon"],
+                                       fixes[k + 1]["lat"], fixes[k + 1]["lon"]) for k in range(1, n - 1))
+    return wobble[int(len(wobble) * 0.9)] <= PRECISE_WOBBLE_M
+
+
+def recorded_pieces(fixes: list[dict[str, Any]], mode: str, strength: str,
+                    keep: Any = None, force: Any = None) -> list[dict[str, Any]]:
+    """The fixes themselves as the line, with the holes in them filled."""
+    runs: list[list[dict[str, Any]]] = [[fixes[0]]]
+    for a, b in zip(fixes, fixes[1:]):
+        d = haversine(a["lat"], a["lon"], b["lat"], b["lon"])
+        if d > HOLE_M or (b["timestamp"] - a["timestamp"] > HOLE_S and d > 30.0):
+            runs.append([b])
+        else:
+            runs[-1].append(b)
+    out: list[dict[str, Any]] = []
+    for k, run in enumerate(runs):
+        if k:
+            out.append(_filled(_fixpt(runs[k - 1][-1]), [], _fixpt(run[0]), mode, strength, 1,
+                               VMAX_KMH.get(mode, 200.0), keep, force))
+        if len(run) >= 2:
+            out.append(_piece("recorded", [[p["lat"], p["lon"], p["timestamp"], 1] for p in run], len(run)))
+    return merge_pieces(out)
 
 
 def raw_pieces(fixes: list[dict[str, Any]]) -> list[dict[str, Any]]:

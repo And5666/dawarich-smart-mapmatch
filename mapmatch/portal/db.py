@@ -175,6 +175,10 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE trip_results ADD COLUMN choices TEXT NOT NULL DEFAULT '{}';
     """,
+    # 9: snap a detailed (watch, bike computer) track to the map instead of keeping it
+    """
+    ALTER TABLE trips ADD COLUMN snap_recorded INTEGER NOT NULL DEFAULT 0;
+    """,
 ]
 
 

@@ -56,6 +56,11 @@ class GapsIn(BaseModel):
     force: StrictBool | None = None
 
 
+class RecordedIn(BaseModel):
+    # True: snap the detailed stretches to the map. False: keep them as recorded.
+    snap: StrictBool
+
+
 class RestoreIn(BaseModel):
     version: int
 
@@ -515,6 +520,13 @@ def build(app_state: Any) -> APIRouter:
                   "strict": "gaps kept as recorded",
                   "": "gaps follow settings"}[mode]
         return _rematch(u["id"], tid, reason, None)
+
+    @r.put("/trips/{tid}/recorded")
+    def put_recorded(tid: int, body: RecordedIn, u: dict[str, Any] = Depends(user)) -> dict[str, Any]:
+        """Keep a detailed track as recorded, or snap it to the map anyway."""
+        trip_or_404(u["id"], tid)
+        trips.set_snap_recorded(db, u["id"], tid, body.snap)
+        return _rematch(u["id"], tid, "snapped to the map" if body.snap else "kept as recorded", None)
 
     @r.post("/trips/{tid}/push")
     def push_one(tid: int, u: dict[str, Any] = Depends(user)) -> dict[str, Any]:

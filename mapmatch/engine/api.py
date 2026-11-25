@@ -9,7 +9,7 @@ from .match import fit_score, match_segment
 from .modes import label, runs, summary_speed
 from .quality import deviations, path_km, percentile
 
-ENGINE_VERSION = "2.5.0"
+ENGINE_VERSION = "2.6.0"
 MODES = ("walk", "cycle", "drive", "train", "stay", "raw")
 
 
@@ -59,13 +59,17 @@ def match_trip(points: list[dict[str, Any]], overrides: list[dict[str, Any]] | N
     are forced to that mode. options: {"strength": "fill" | "strict"},
     {"keep_gaps": [[t0, t1], ...]} for holes that must stay as recorded, and
     {"force_route": bool, "force_gaps": [...]} for holes the user insists on
-    routing even though the plausibility gate would refuse them.
+    routing even though the plausibility gate would refuse them, and
+    {"snap_recorded": bool} to match detailed tracks instead of keeping them.
     """
     opts = {"strength": "fill", **(options or {})}
     strength = opts["strength"]
     keep_ranges = [tuple(sorted((int(a), int(b)))) for a, b in (opts.get("keep_gaps") or [])]
     force_ranges = [tuple(sorted((int(a), int(b)))) for a, b in (opts.get("force_gaps") or [])]
     force_all = bool(opts.get("force_route"))
+    # Detailed tracks (a watch, a bike computer) are kept as recorded unless
+    # the trip asks for them to be snapped to the map anyway.
+    snap = bool(opts.get("snap_recorded"))
 
     def keep_gap(t0: int, t1: int) -> bool:
         lo, hi = (t0, t1) if t0 <= t1 else (t1, t0)
@@ -97,6 +101,10 @@ def match_trip(points: list[dict[str, Any]], overrides: list[dict[str, Any]] | N
             pieces = assemble.stay_pieces(seg_fixes)
         elif mode == "raw":
             pieces = assemble.raw_pieces(seg_fixes)
+        elif mode != "train" and not snap and assemble.precise(seg_fixes):
+            # Already a better line than the map would give: keep it.
+            profile = "recorded"
+            pieces = assemble.recorded_pieces(seg_fixes, mode, strength, keep_gap, force_gap)
         else:
             if mode == "train":
                 res = match_segment(seg_fixes, "train")
@@ -138,6 +146,7 @@ def quality(fixes: list[dict[str, Any]], segments: list[dict[str, Any]],
         "raw_km": round(raw_km, 3),
         "km": round(path_km(out), 3),
         "matched_frac": round(km.get("matched", 0.0) / moving, 3) if moving else 0.0,
+        "recorded_frac": round(km.get("recorded", 0.0) / moving, 3) if moving else 0.0,
         "filled_frac": round(km.get("filled", 0.0) / moving, 3) if moving else 0.0,
         "raw_frac": round((km.get("raw", 0.0) + km.get("straight", 0.0)) / moving, 3) if moving else 0.0,
         "p50": round(percentile(errs, 0.5), 1),

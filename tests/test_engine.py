@@ -421,3 +421,29 @@ def test_gpx_out_and_back_along_a_cycle_track_is_kept(fake_valhalla):
     res = match_trip(track(steps, dt=10, accuracy=None))
     north = max(c[0] for s in res["segments"] for p in s["pieces"] for c in p["coords"])
     assert (north - LAT0) * 111_320 > 60
+
+
+def test_detailed_track_is_kept_as_recorded(fake_valhalla):
+    # A watch logging every second, weaving along a cycle track.
+    steps = [(5, 0.6 if k % 20 < 10 else -0.6) for k in range(400)]
+    pts = track(steps, dt=1, accuracy=None)
+    out = match_trip(pts)
+    kinds = {p["kind"] for s in out["segments"] for p in s["pieces"]}
+    assert kinds == {"recorded"} and not fake_valhalla.calls
+    line = [c for s in out["segments"] for p in s["pieces"] for c in p["coords"]]
+    assert len(line) == len(pts) and all(abs(c[0] - p["lat"]) < 1e-9 for c, p in zip(line, pts))
+    assert out["quality"]["recorded_frac"] == 1.0 and out["quality"]["raw_frac"] == 0.0
+    # The trip can still ask to be snapped.
+    snapped = match_trip(pts, options={"snap_recorded": True})
+    assert "recorded" not in {p["kind"] for s in snapped["segments"] for p in s["pieces"]}
+
+
+def test_phone_track_and_holes_in_a_detailed_one():
+    from mapmatch.engine.assemble import precise, recorded_pieces
+    assert not precise(track([(150, 0)] * 40))                          # every 30 s
+    assert not precise(track([(5, 12 if k % 2 else -12) for k in range(60)], dt=1))   # dense but jittery
+    a = track([(5, 0)] * 60, dt=1)
+    b = track([(5, 0)] * 60, start=(a[-1]["lat"], a[-1]["lon"] + 0.004), t0=a[-1]["timestamp"] + 40, dt=1)
+    pcs = recorded_pieces(a + b, "cycle", "strict")
+    assert [p["kind"] for p in pcs][0] == "recorded" and [p["kind"] for p in pcs][-1] == "recorded"
+    assert any(p.get("gap") for p in pcs)                               # the tunnel is a gap to choose

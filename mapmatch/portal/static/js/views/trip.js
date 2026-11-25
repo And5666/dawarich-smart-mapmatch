@@ -146,6 +146,7 @@ export function TripView({ id }) {
   const t = d?.trip;
   const segs = d?.segments || [];
   const shown = preview ? preview.segments : segs;
+  const hasRecorded = segs.some((s) => s.profile === "recorded");
   const raw = d?.raw || [];
   const T0 = d ? Math.min(t.start, ...segs.map((s) => s.t0)) : 0;
   const T1 = d ? Math.max(t.end, ...segs.map((s) => s.t1)) : 1;
@@ -242,7 +243,7 @@ export function TripView({ id }) {
     setOverlay(map, "matched", { data: fc(parts), layers: () => [
       { id: "m-case", type: "line", layout: { ...vis(layers.matched), "line-cap": "round", "line-join": "round" },
         paint: { "line-color": cssVar("--casing"), "line-width": 7, "line-opacity": 0.85 } },
-      kinds("m-solid", ["matched", "join"], null), kinds("m-dash", ["filled"], [2, 1.4]), kinds("m-dot", ["raw", "straight"], [0.6, 1.7], 3.5),
+      kinds("m-solid", ["matched", "join", "recorded"], null), kinds("m-dash", ["filled"], [2, 1.4]), kinds("m-dot", ["raw", "straight"], [0.6, 1.7], 3.5),
       // A gap you chose to keep looks different from one nothing could route.
       { id: "m-kept", type: "line", filter: ["==", ["get", "kept"], true],
         layout: { ...vis(layers.matched), "line-cap": "butt", "line-join": "round" },
@@ -449,14 +450,21 @@ export function TripView({ id }) {
           ${t.error && html`<section><div class="note bad">${t.error}</div></section>`}
           ${tab === "route" && html`
             ${(preview ? preview.version : t.version) > 0 && html`<section>
-              <div class="quality" title="on the map · routed across a gap · kept as recorded">
-                <i class="matched" style=${`width:${pct(q.matched_frac)}`}></i><i class="filled" style=${`width:${pct(q.filled_frac)}`}></i><i class="raw" style=${`width:${pct(q.raw_frac)}`}></i></div>
+              <div class="quality" title="detailed enough to keep · on the map · routed across a gap · GPS kept">
+                <i class="recorded" style=${`width:${pct(q.recorded_frac || 0)}`}></i><i class="matched" style=${`width:${pct(q.matched_frac)}`}></i><i class="filled" style=${`width:${pct(q.filled_frac)}`}></i><i class="raw" style=${`width:${pct(q.raw_frac)}`}></i></div>
               <div class="qlegend num">
+                ${q.recorded_frac > 0 && html`<span><i style="background:var(--rec)"></i>${pct(q.recorded_frac)} as recorded</span>`}
                 <span><i style="background:var(--good)"></i>${pct(q.matched_frac)} on the map</span>
                 <span><i style="background:color-mix(in srgb, var(--good) 45%, var(--sunk))"></i>${pct(q.filled_frac)} routed gaps</span>
                 <span><i style="background:var(--m-raw)"></i>${pct(q.raw_frac)} GPS kept</span>
               </div>
-              <p class="small faint">Your GPS sits ${Math.round(q.p50 || 0)} m from the line on average.</p>
+              ${q.matched_frac > 0 && html`<p class="small faint">Your GPS sits ${Math.round(q.p50 || 0)} m from the line on average.</p>`}
+              ${!preview && (hasRecorded || t.snap_recorded) && html`<div class="note"><div>
+                ${t.snap_recorded ? "This trip was recorded in fine detail, but you chose to snap it to the map."
+                  : "Recorded in fine detail (a point every second or two, very smooth), so those parts are kept exactly as recorded rather than snapped to the map."}
+                <div class="actions" style="margin-top:8px"><button class="sm" disabled=${!canEdit || !!busy}
+                  onClick=${() => act(t.snap_recorded ? "keep" : "snap", "/recorded", { snap: !t.snap_recorded }, "PUT")}>
+                  ${t.snap_recorded ? "Keep it as recorded" : "Snap to the map instead"}</button></div></div></div>`}
               ${t.state === "review" && !preview && html`<div class="note warn">Usually one part has the wrong mode, or a few points are off. Drag across that part on the timeline to fix it.</div>`}
             </section>`}
             <section>

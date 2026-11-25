@@ -594,3 +594,17 @@ def test_a_long_old_ride_is_one_trip_across_download_pages(env, monkeypatch):
     trips.segment(db, rows[0]["user_id"], 30)
     again = db.all("SELECT * FROM trips ORDER BY start_ts")
     assert [(r["id"], r["n_points"]) for r in again] == [(rows[0]["id"], 451)]
+
+
+def test_detailed_trip_can_be_snapped_and_kept_again(env):
+    client, dw, jobs, db = env
+    sync(client, jobs)
+    tid = client.get("/api/trips").json()["trips"][0]["id"]
+    d = client.put(f"/api/trips/{tid}/recorded", json={"snap": True}, headers=H).json()
+    assert d["trip"]["snap_recorded"] is True and d["history"][0]["reason"] == "snapped to the map"
+    d = client.put(f"/api/trips/{tid}/recorded", json={"snap": False}, headers=H).json()
+    assert d["trip"]["snap_recorded"] is False
+    # Going back to the snapped version brings the choice back too.
+    v = d["history"][1]["version"]
+    d = client.post(f"/api/trips/{tid}/restore", json={"version": v}, headers=H).json()
+    assert d["trip"]["snap_recorded"] is True

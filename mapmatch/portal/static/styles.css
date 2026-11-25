@@ -18,6 +18,7 @@
   --bad-bg: #fbe6e3;
   --good: #2c7a4b;
   --good-bg: #e3f2e8;
+  --rec: #1d6f8c;
   --sel: #fff1bd;
   --m-drive: #2f6ae0;
   --m-cycle: #0f8f68;
@@ -38,7 +39,7 @@
   :root:not([data-theme="light"]) {
     --paper: #121211; --panel: #1a1a18; --raised: #20201e; --sunk: #232321; --hover: #262624; --line: #2d2c29; --line-strong: #3c3b37;
     --ink: #edece7; --ink-2: #bebcb4; --ink-3: #87857d; --ink-inv: #121211; --focus: #7ea6ff;
-    --warn: #e3a64c; --warn-bg: #33291a; --bad: #f2807a; --bad-bg: #3a2120; --good: #6dc490; --good-bg: #1d3125; --sel: #3a3420;
+    --warn: #e3a64c; --warn-bg: #33291a; --bad: #f2807a; --bad-bg: #3a2120; --good: #6dc490; --good-bg: #1d3125; --rec: #5fb6d4; --sel: #3a3420;
     --m-drive: #6f9bff; --m-cycle: #3fcf9b; --m-walk: #ff9d4d; --m-train: #b98cff; --m-stay: #9aa0aa; --m-raw: #ff7b93; --m-none: #e4e1d8;
     --casing: #121211; --shadow-1: 0 1px 2px rgb(0 0 0 / .3); --shadow: 0 1px 2px rgb(0 0 0 / .3), 0 10px 30px rgb(0 0 0 / .45);
     color-scheme: dark;
@@ -47,7 +48,7 @@
 :root[data-theme="dark"] {
   --paper: #121211; --panel: #1a1a18; --raised: #20201e; --sunk: #232321; --hover: #262624; --line: #2d2c29; --line-strong: #3c3b37;
   --ink: #edece7; --ink-2: #bebcb4; --ink-3: #87857d; --ink-inv: #121211; --focus: #7ea6ff;
-  --warn: #e3a64c; --warn-bg: #33291a; --bad: #f2807a; --bad-bg: #3a2120; --good: #6dc490; --good-bg: #1d3125; --sel: #3a3420;
+  --warn: #e3a64c; --warn-bg: #33291a; --bad: #f2807a; --bad-bg: #3a2120; --good: #6dc490; --good-bg: #1d3125; --rec: #5fb6d4; --sel: #3a3420;
   --m-drive: #6f9bff; --m-cycle: #3fcf9b; --m-walk: #ff9d4d; --m-train: #b98cff; --m-stay: #9aa0aa; --m-raw: #ff7b93; --m-none: #e4e1d8;
   --casing: #121211; --shadow-1: 0 1px 2px rgb(0 0 0 / .3); --shadow: 0 1px 2px rgb(0 0 0 / .3), 0 10px 30px rgb(0 0 0 / .45);
   color-scheme: dark;
@@ -318,6 +319,7 @@ table.t { width: 100%; border-collapse: collapse; font-size: 13px; }
 .sg select { font-size: 12.5px; height: 28px; padding: 0 24px 0 8px; }
 .quality { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--sunk); gap: 1px; }
 .quality i { height: 100%; }
+.quality .recorded { background: var(--rec); }
 .quality .matched { background: var(--good); }
 .quality .filled { background: color-mix(in srgb, var(--good) 45%, var(--sunk)); }
 .quality .raw { background: var(--m-raw); }

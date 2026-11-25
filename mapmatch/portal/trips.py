@@ -221,7 +221,7 @@ def refresh_previews(db: Database) -> int:
     return n
 
 
-CHOICES = ("gap_mode", "keep_gaps", "force_route", "force_gaps", "point_edits")
+CHOICES = ("gap_mode", "keep_gaps", "force_route", "force_gaps", "point_edits", "snap_recorded")
 
 
 def choices_of(trip: dict[str, Any]) -> dict[str, Any]:
@@ -267,7 +267,8 @@ def match(db: Database, uid: int, trip_id: int, reason: str = "auto",
     force = json.loads(trip.get("force_gaps") or "[]")
     try:
         result = match_trip(pts, overrides=ov, options={"strength": strength, "keep_gaps": keep,
-                                                        "force_route": force_all, "force_gaps": force})
+                                                        "force_route": force_all, "force_gaps": force,
+                                                        "snap_recorded": bool(trip.get("snap_recorded"))})
     except Exception as exc:  # noqa: BLE001 - recorded on the trip and shown
         with db.tx() as c:
             c.execute("UPDATE trips SET status='failed', dirty=0, error=?, updated_at=? WHERE id=?",
@@ -316,6 +317,14 @@ def set_force_route(db: Database, uid: int, trip_id: int, on: bool) -> None:
         raise KeyError(trip_id)
     with db.tx() as c:
         c.execute("UPDATE trips SET force_route=?, updated_at=? WHERE id=?", (1 if on else 0, now(), trip_id))
+
+
+def set_snap_recorded(db: Database, uid: int, trip_id: int, on: bool) -> None:
+    """Snap this trip's detailed stretches to the map instead of keeping them as recorded."""
+    if not get(db, uid, trip_id):
+        raise KeyError(trip_id)
+    with db.tx() as c:
+        c.execute("UPDATE trips SET snap_recorded=?, updated_at=? WHERE id=?", (1 if on else 0, now(), trip_id))
 
 
 def set_force_gaps(db: Database, uid: int, trip_id: int, spans: list[Any]) -> None:
@@ -463,6 +472,7 @@ def public(trip: dict[str, Any]) -> dict[str, Any]:
         "gap_mode": trip.get("gap_mode") or "",
         "keep_gaps": json.loads(trip.get("keep_gaps") or "[]"),
         "force_route": bool(trip.get("force_route")),
+        "snap_recorded": bool(trip.get("snap_recorded")),
         "force_gaps": json.loads(trip.get("force_gaps") or "[]"),
         "pushed_version": pushed, "pushed_at": trip["pushed_at"],
         "engine_version": trip["engine_version"], "outdated_engine": bool(trip["result_version"]) and
