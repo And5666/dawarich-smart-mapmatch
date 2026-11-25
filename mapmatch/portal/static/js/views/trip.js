@@ -360,7 +360,8 @@ export function TripView({ id }) {
   const state = t.state === "new" ? ["", "Not matched yet"] : t.state === "failed" ? ["bad", "Couldn't be matched"]
     : t.state === "review" ? ["warn", "Needs a look"] : t.state === "locked" ? ["", "Locked"] : ["good", "Matched"];
   const pushChip = t.push === "pushed" ? html`<span class="chip good"><span class="d"></span>In Dawarich</span>`
-    : t.push === "outdated" ? html`<span class="chip warn"><span class="d"></span>Changed since push</span>` : null;
+    : t.push === "outdated" ? html`<span class="chip warn"><span class="d"></span>Changed since push</span>`
+    : t.push === "recorded" ? html`<span class="chip"><span class="d"></span>Left as recorded</span>` : null;
   const gapMode = t.gap_mode || "";
   const accountGaps = me?.settings?.strength === "strict" ? "keep" : "route";
   const refused = gaps.filter((g) => !g.routed && !g.kept && g.why.length);
@@ -381,10 +382,11 @@ export function TripView({ id }) {
         <button class="icon" title="Later trip (j)" disabled=${!d.next} onClick=${() => navigate(`#/trip/${d.next}`)}><${Icon} name="next" small /></button>
       </div>
       ${!t.version ? html`<button class="go" disabled=${!!busy} onClick=${() => act("Matching", "/recalculate")}>Match this trip</button>`
+        : t.push === "recorded" ? null
         : t.push === "pushed" ? html`<${Confirm} disabled=${!!busy} armedLabel="Put the original GPS back?" onConfirm=${() => act("Reverting", "/revert")}>Revert in Dawarich<//>`
         : html`<button class="go" disabled=${!!busy || !t.closed || t.locked} onClick=${() => act("Pushing", "/push")}
             title=${!t.closed ? "This trip is still going" : t.locked ? "Unlock the trip first" : "Replace this trip's points in Dawarich with the matched route"}>
-            ${busy === "Pushing" ? "Pushing…" : t.push === "outdated" ? "Push changes" : "Push to Dawarich"}</button>`}
+            ${busy === "Pushing" ? "Pushing…" : t.quality?.as_recorded ? "Put the original back" : t.push === "outdated" ? "Push changes" : "Push to Dawarich"}</button>`}
       <${Menu} cls="icon" title="More" label=${html`<${Icon} name="more" />`}>
         <button disabled=${!t.version || d.history.length < 2} onClick=${() => act("Undoing", "/undo")}><${Icon} name="undo" small />Undo last change</button>
         <button onClick=${() => act("Rematching", "/recalculate")}><${Icon} name="sync" small />Match again from scratch</button>
@@ -461,6 +463,7 @@ export function TripView({ id }) {
               ${q.matched_frac > 0 && html`<p class="small faint">Your GPS sits ${Math.round(q.p50 || 0)} m from the line on average.</p>`}
               ${!preview && (hasRecorded || t.snap_recorded) && html`<div class="note"><div>
                 ${t.snap_recorded ? "This trip was recorded in fine detail, but you chose to snap it to the map."
+                  : q.as_recorded ? "Recorded in fine detail (a point every second or two, very smooth), so mapmatch leaves this trip exactly as it is: every point stays, and nothing about it changes in Dawarich."
                   : "Recorded in fine detail (a point every second or two, very smooth), so those parts are kept exactly as recorded rather than snapped to the map."}
                 <div class="actions" style="margin-top:8px"><button class="sm" disabled=${!canEdit || !!busy}
                   onClick=${() => act(t.snap_recorded ? "keep" : "snap", "/recorded", { snap: !t.snap_recorded }, "PUT")}>

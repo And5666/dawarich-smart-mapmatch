@@ -443,6 +443,15 @@ def split_override(trip: dict[str, Any], res: dict[str, Any], ts: int) -> list[d
     return range_override({**trip, "overrides": json.dumps(ov)}, ts, seg["t1"], seg["mode"])
 
 
+def as_recorded(trip: Any) -> bool:
+    """The trip's current match leaves it exactly as recorded (a watch or bike
+    computer track): there is nothing to change in Dawarich."""
+    try:
+        return bool(json.loads(trip["quality"] or "{}").get("as_recorded"))
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
 def needs_review(q: dict[str, Any]) -> bool:
     return bool(q) and (q.get("raw_frac", 0) > 0.15 or q.get("p95", 0) > 60)
 
@@ -462,6 +471,8 @@ def public(trip: dict[str, Any]) -> dict[str, Any]:
         state = "matched"
     pushed = trip["pushed_version"]
     push_state = "original" if pushed is None else "pushed" if pushed == trip["result_version"] else "outdated"
+    if q.get("as_recorded") and pushed is None:
+        push_state = "recorded"     # Dawarich already has exactly this
     return {
         "id": trip["id"], "start": trip["start_ts"], "end": trip["end_ts"], "n_points": trip["n_points"],
         "closed": bool(trip["closed"]), "state": state, "push": push_state, "locked": bool(trip["locked"]),

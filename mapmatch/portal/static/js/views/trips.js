@@ -295,6 +295,7 @@ export function Trips() {
                 ${t.state === "review" && html`<span class="chip warn">needs a look</span>`}
                 ${t.state === "failed" && html`<span class="chip bad">couldn't match</span>`}
                 ${t.push === "pushed" && html`<span class="chip good">in Dawarich</span>`}
+                ${t.push === "recorded" && html`<span class="chip">as recorded</span>`}
                 ${t.push === "outdated" && html`<span class="chip warn">changed</span>`}</div></div>
             <div class="dist num">${km(t.km)}</div>
           </div>`)}

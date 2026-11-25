@@ -263,7 +263,8 @@ def apply(db: Database, cfg: Any, uid: int, changes: dict[int, bool], transport:
     shown: dict[int, int | None] = {}
     for t in rows:
         if t["id"] in changes:
-            shown[t["id"]] = t["result_version"] if changes[t["id"]] else None
+            # A trip kept as recorded is never written: Dawarich keeps its originals.
+            shown[t["id"]] = t["result_version"] if changes[t["id"]] and not trips.as_recorded(t) else None
         else:
             shown[t["id"]] = t["pushed_version"]
     # Each trip's window reaches back to the trip before and on to the one
@@ -381,7 +382,7 @@ def apply(db: Database, cfg: Any, uid: int, changes: dict[int, bool], transport:
             for t in inside:
                 if t["id"] not in changes:
                     continue
-                on = changes[t["id"]]
+                on = shown[t["id"]] is not None
                 _record(db, uid, t["id"], "push" if on else "revert", shown[t["id"]], len(ids), len(posts), dry,
                         {"span": [a, b], "matched_points": n_matched, "original_points": len(posts) - n_matched})
                 if not dry:
@@ -410,6 +411,9 @@ def apply(db: Database, cfg: Any, uid: int, changes: dict[int, bool], transport:
 
 
 def push_trip(db: Database, cfg: Any, uid: int, trip_id: int, transport: Any = None) -> dict[str, Any]:
+    t = trips.get(db, uid, trip_id)
+    if t and trips.as_recorded(t) and t["pushed_version"] is None:
+        raise ValueError("this trip is kept as recorded, so Dawarich already has it as it should be")
     return apply(db, cfg, uid, {trip_id: True}, transport)
 
 
@@ -451,7 +455,8 @@ def needs_repair(db: Database, uid: int) -> bool:
 
 
 def pending_push(db: Database, uid: int) -> list[int]:
-    rows = db.all("SELECT id FROM trips WHERE user_id=? AND closed=1 AND locked=0 AND status='matched'"
+    rows = db.all("SELECT id, quality, pushed_version FROM trips WHERE user_id=? AND closed=1 AND locked=0 AND status='matched'"
                   " AND result_version > 0 AND (pushed_version IS NULL OR pushed_version != result_version)"
                   " ORDER BY start_ts", (uid,))
-    return [r["id"] for r in rows]
+    # A trip kept as recorded only needs pushing to take an older match back out.
+    return [r["id"] for r in rows if not (trips.as_recorded(r) and r["pushed_version"] is None)]

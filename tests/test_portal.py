@@ -608,3 +608,26 @@ def test_detailed_trip_can_be_snapped_and_kept_again(env):
     v = d["history"][1]["version"]
     d = client.post(f"/api/trips/{tid}/restore", json={"version": v}, headers=H).json()
     assert d["trip"]["snap_recorded"] is True
+
+
+def test_trip_kept_as_recorded_is_never_written_to_dawarich(env):
+    from mapmatch.portal import push
+    client, dw, jobs, db = env
+    dw.points.clear()
+    dw.seed(track([(5, 0.5 if k % 20 < 10 else -0.5) for k in range(400)], t0=1_700_000_000, dt=1,
+                  accuracy=None))
+    sync(client, jobs)
+    t = client.get("/api/trips").json()["trips"][0]
+    assert t["push"] == "recorded" and t["quality"]["as_recorded"]
+    before = sorted(dw.points)
+    assert client.post(f"/api/trips/{t['id']}/push", headers=H).status_code == 400
+    run_job(client, jobs, "push_all")
+    assert sorted(dw.points) == before and not dw.ours()
+    # An older match of it in Dawarich: pushing now puts the originals back.
+    d = client.put(f"/api/trips/{t['id']}/recorded", json={"snap": True}, headers=H).json()
+    assert d["trip"]["push"] == "original"
+    assert client.post(f"/api/trips/{t['id']}/push", headers=H).status_code == 200 and dw.ours()
+    d = client.put(f"/api/trips/{t['id']}/recorded", json={"snap": False}, headers=H).json()
+    assert d["trip"]["push"] == "outdated" and push.pending_push(db, 1) == [t["id"]]
+    assert client.post(f"/api/trips/{t['id']}/push", headers=H).status_code == 200
+    assert not dw.ours() and client.get(f"/api/trips/{t['id']}").json()["trip"]["push"] == "recorded"

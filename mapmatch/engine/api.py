@@ -9,7 +9,7 @@ from .match import fit_score, match_segment
 from .modes import label, runs, summary_speed
 from .quality import deviations, path_km, percentile
 
-ENGINE_VERSION = "2.6.0"
+ENGINE_VERSION = "2.7.0"
 MODES = ("walk", "cycle", "drive", "train", "stay", "raw")
 
 
@@ -85,6 +85,8 @@ def match_trip(points: list[dict[str, Any]], overrides: list[dict[str, Any]] | N
         return {"segments": [], "stream": [], "dropped": dropped, "quality": {},
                 "engine_version": ENGINE_VERSION}
     labels, forced, keys = label(fixes, overrides)
+    if not snap and assemble.precise(fixes):
+        return _as_recorded(fixes, dropped, labels, forced, keys)
 
     segments: list[dict[str, Any]] = []
     for key, i, j in runs(keys):
@@ -129,6 +131,34 @@ def match_trip(points: list[dict[str, Any]], overrides: list[dict[str, Any]] | N
         "stream": out,
         "dropped": [{k: p.get(k) for k in ("lat", "lon", "timestamp", "accuracy", "_drop")} for p in dropped],
         "quality": quality(fixes, segments, out),
+        "engine_version": ENGINE_VERSION,
+    }
+
+
+def _as_recorded(fixes: list[dict[str, Any]], dropped: list[dict[str, Any]], labels: list[str],
+                 forced: list[bool], keys: list[str]) -> dict[str, Any]:
+    """A whole trip logged in fine detail is left exactly as recorded: every
+    fix stays, stops and holes included. Only the modes are worked out, for
+    the record; the portal does not change such a trip in Dawarich."""
+    rs = runs(keys)
+    segments = []
+    for k, (key, i, j) in enumerate(rs):
+        # Each part runs on to the first fix of the next, so the line is unbroken.
+        part = fixes[i:j + 1] if k + 1 < len(rs) else fixes[i:j]
+        coords = [[p["lat"], p["lon"], p["timestamp"], 1] for p in part]
+        segments.append({"mode": labels[i], "forced": any(forced[i:j]), "profile": "recorded",
+                         "n_fixes": j - i, "key": key if any(forced[i:j]) else None,
+                         "pieces": [assemble._piece("recorded", coords, j - i)]})
+    segments = assemble.merge_same_mode(segments)
+    assemble.finish(segments)
+    out = assemble.stream(segments)
+    q = quality(fixes, segments, out)
+    q["as_recorded"] = True
+    return {
+        "segments": segments,
+        "stream": out,
+        "dropped": [{k: p.get(k) for k in ("lat", "lon", "timestamp", "accuracy", "_drop")} for p in dropped],
+        "quality": q,
         "engine_version": ENGINE_VERSION,
     }
 

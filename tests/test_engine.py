@@ -447,3 +447,20 @@ def test_phone_track_and_holes_in_a_detailed_one():
     pcs = recorded_pieces(a + b, "cycle", "strict")
     assert [p["kind"] for p in pcs][0] == "recorded" and [p["kind"] for p in pcs][-1] == "recorded"
     assert any(p.get("gap") for p in pcs)                               # the tunnel is a gap to choose
+
+
+def test_whole_detailed_trip_keeps_every_fix_stops_and_holes_included(fake_valhalla):
+    ride = [(5, 0.5 if k % 20 < 10 else -0.5) for k in range(300)]
+    a = track(ride, dt=1, accuracy=None)
+    stop = track([(0.3, -0.3), (-0.3, 0.3)] * 150, start=(a[-1]["lat"], a[-1]["lon"]),
+                 t0=a[-1]["timestamp"] + 1, dt=1, accuracy=None)           # 5 min at a cafe
+    b = track(ride, start=(stop[-1]["lat"], stop[-1]["lon"] + 0.003), t0=stop[-1]["timestamp"] + 45,
+              dt=1, accuracy=None)                                       # signal lost under a bridge
+    pts = a + stop + b
+    out = match_trip(pts)
+    assert out["quality"]["as_recorded"] and not fake_valhalla.calls
+    assert {p["kind"] for s in out["segments"] for p in s["pieces"]} == {"recorded"}
+    kept = [(p["lat"], p["lon"], p["timestamp"]) for p in clean(pts)[0]]
+    kept = [c for k, c in enumerate(kept) if not k or c[:2] != kept[k - 1][:2]]   # no repeats of a spot
+    assert [(p["lat"], p["lon"], p["timestamp"]) for p in out["stream"]] == kept and len(kept) > 900
+    assert "stay" in [s["mode"] for s in out["segments"]]                 # still says where it stopped
