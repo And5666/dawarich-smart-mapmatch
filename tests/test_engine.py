@@ -333,3 +333,22 @@ def test_pushed_lines_have_no_long_straight_steps_but_jumps_stay_jumps():
     assert all(haversine(p["lat"], p["lon"], q["lat"], q["lon"]) <= 150 for p, q in zip(pts, pts[1:]))
     assert [p["timestamp"] for p in pts] == sorted({p["timestamp"] for p in pts})
     assert len(densify([a, {**b, "kind": "straight"}])) == 2, "an unrouted jump is not drawn in"
+
+
+def test_one_second_logging_does_not_split_a_ride_at_every_light():
+    # A bike computer logs every second: 4 min riding at 18 km/h, 70 s
+    # waiting in a queue at 3 km/h, 4 min riding again.
+    ride = [(5, 0)] * 240
+    pts = track(ride + [(0.8, 0)] * 150 + ride, dt=1)
+    labels, _, _ = label(pts)
+    assert {m for m, _, _ in runs(labels)} == {"cycle"}
+
+
+def test_slow_ride_beside_a_railway_is_not_a_train(monkeypatch):
+    from mapmatch.engine import modes
+    monkeypatch.setattr(modes, "near_rail", lambda fixes: [True] * len(fixes))
+    pts = track([(5, 0)] * 300, dt=1)                # 18 km/h along the line
+    labels, _, _ = label(pts)
+    assert set(labels) == {"cycle"}
+    fast = track([(1000, 0)] * 12)                     # 120 km/h along the line
+    assert set(label(fast)[0]) == {"train"}
