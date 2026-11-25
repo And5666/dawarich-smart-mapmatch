@@ -14,7 +14,8 @@ from .db import Database, now, pack, unpack
 
 KEEP_RESULTS = 30
 PREVIEW_TOLERANCE_M = 4.0
-PREVIEW_VERSION = "3"
+RECORDED_TOLERANCE_M = 1.0   # a line kept as recorded is drawn as recorded
+PREVIEW_VERSION = "4"
 
 
 # ---------------------------------------------------------------- segmentation
@@ -179,8 +180,8 @@ def _summary(result: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
-def _simplified(coords: list[Any]) -> list[list[float]]:
-    pts = simplify([(c[0], c[1]) for c in coords], PREVIEW_TOLERANCE_M)
+def _simplified(coords: list[Any], tol: float = PREVIEW_TOLERANCE_M) -> list[list[float]]:
+    pts = simplify([(c[0], c[1]) for c in coords], tol)
     return [[round(lat, 6), round(lon, 6)] for lat, lon in pts]
 
 
@@ -191,14 +192,18 @@ def raw_preview(fixes: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def matched_preview(result: dict[str, Any]) -> list[dict[str, Any]]:
     """Overview line for a matched trip: one part per segment, so each is drawn
-    in its own mode colour. Simplified by shape (within 4 m), never by count."""
+    in its own mode colour. Simplified by shape (within 4 m, or 1 m where the
+    GPS is kept as recorded), never by count. A stop is a dot, unless its
+    fixes are kept as recorded: then they are part of the line."""
     parts = []
     for s in result["segments"]:
-        if s["mode"] == "stay":
+        recorded = bool(s["pieces"]) and all(p["kind"] == "recorded" for p in s["pieces"])
+        if s["mode"] == "stay" and not recorded:
             continue
         coords = [c for p in s["pieces"] for c in p["coords"]]
         if len(coords) >= 2:
-            parts.append({"m": s["mode"], "c": _simplified(coords)})
+            parts.append({"m": s["mode"], "c": _simplified(coords, RECORDED_TOLERANCE_M if recorded
+                                                           else PREVIEW_TOLERANCE_M)})
     return parts
 
 
@@ -221,7 +226,7 @@ def refresh_previews(db: Database) -> int:
     return n
 
 
-CHOICES = ("gap_mode", "keep_gaps", "force_route", "force_gaps", "point_edits", "snap_recorded")
+CHOICES = ("gap_mode", "keep_gaps", "force_route", "force_gaps", "route_gaps", "point_edits", "snap_recorded")
 
 
 def choices_of(trip: dict[str, Any]) -> dict[str, Any]:
@@ -232,8 +237,11 @@ def choices_of(trip: dict[str, Any]) -> dict[str, Any]:
 
 def store(db: Database, trip: dict[str, Any], result: dict[str, Any], overrides: list[dict[str, Any]],
           reason: str) -> int:
-    version = int(trip["result_version"]) + 1
     with db.tx() as c:
+        # After a trip is cleared its result_version is 0 while older versions
+        # are still kept, so number on from the highest one.
+        top = c.execute("SELECT MAX(version) v FROM trip_results WHERE trip_id=?", (trip["id"],)).fetchone()["v"]
+        version = max(int(trip["result_version"]), int(top or 0)) + 1
         c.execute("INSERT INTO trip_results(trip_id, version, reason, engine_version, overrides, quality,"
                   " result_gz, created_at, choices) VALUES (?,?,?,?,?,?,?,?,?)",
                   (trip["id"], version, reason, result["engine_version"], json.dumps(overrides),
@@ -250,25 +258,67 @@ def store(db: Database, trip: dict[str, Any], result: dict[str, Any], overrides:
     return version
 
 
+def clear(db: Database, uid: int, trip_id: int) -> dict[str, Any]:
+    """Back to the original GPS in mapmatch: no match, no mode choices, no
+    gap choices, no point corrections. Earlier versions stay in the History,
+    with the choices they were made with, so this can be undone. Dawarich is
+    not touched (a pushed trip then shows as changed since pushed)."""
+    trip = get(db, uid, trip_id)
+    if not trip:
+        raise KeyError(trip_id)
+    pts = archive.window(db, uid, trip["start_ts"], trip["end_ts"])
+    with db.tx() as c:
+        c.execute("UPDATE trips SET status='new', dirty=0, error='', result_version=0, engine_version='',"
+                  " overrides='[]', modes='[]', quality='{}', km=?, preview=?, gap_mode='', keep_gaps='[]',"
+                  " force_route=0, force_gaps='[]', route_gaps='[]', snap_recorded=0, point_edits='{}',"
+                  " updated_at=? WHERE id=?",
+                  (round(path_km(pts), 3), json.dumps(raw_preview(pts)), now(), trip_id))
+    return get(db, uid, trip_id)
+
+
+MOVING = ("walk", "cycle", "drive", "train")
+DETAILED = ("keep", "snap")
+
+
+def match_modes(value: Any) -> list[str]:
+    """The modes snapped to the map, from a stored "walk,cycle" string or a list."""
+    items = value.split(",") if isinstance(value, str) else list(value or [])
+    return [m for m in MOVING if m in {str(x).strip() for x in items}]
+
+
+def match_choices(s: dict[str, Any], once: dict[str, Any] | None = None) -> dict[str, Any]:
+    """What gets matched: the account's saved choices, or those of a one-off
+    run. Each trip's own choices still win over either."""
+    o = once or {}
+    modes = o.get("match_modes")
+    return {"match_modes": match_modes(modes if modes is not None else s.get("match_modes", ",".join(MOVING))),
+            "detailed": o.get("detailed") or s.get("detailed") or "keep",
+            "strength": o.get("strength") or s.get("strength") or "fill"}
+
+
 def match(db: Database, uid: int, trip_id: int, reason: str = "auto",
-          overrides: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+          overrides: list[dict[str, Any]] | None = None, once: dict[str, Any] | None = None) -> dict[str, Any]:
     trip = get(db, uid, trip_id)
     if not trip:
         raise KeyError(trip_id)
     ov = json.loads(trip["overrides"]) if overrides is None else overrides
     ov = validate_overrides(ov)
     pts = points(db, uid, trip)
+    ch = match_choices(settings(db, uid), once)
     # The trip can choose for itself; otherwise the account's setting applies.
-    strength = trip.get("gap_mode") or settings(db, uid).get("strength") or "fill"
+    strength = trip.get("gap_mode") or ch["strength"]
+    own = int(trip.get("snap_recorded") or 0)
+    snap = own == 1 or (own == 0 and ch["detailed"] == "snap")
     # Holes picked out one by one in the editor stay as recorded whatever the above says.
     keep = json.loads(trip.get("keep_gaps") or "[]")
     # Holes the user insisted on routing, past the speed and length checks.
     force_all = bool(trip.get("force_route"))
     force = json.loads(trip.get("force_gaps") or "[]")
+    route = json.loads(trip.get("route_gaps") or "[]")
     try:
         result = match_trip(pts, overrides=ov, options={"strength": strength, "keep_gaps": keep,
-                                                        "force_route": force_all, "force_gaps": force,
-                                                        "snap_recorded": bool(trip.get("snap_recorded"))})
+                                                        "force_route": force_all, "force_gaps": force, "route_gaps": route,
+                                                        "snap_recorded": snap, "match_modes": ch["match_modes"]})
     except Exception as exc:  # noqa: BLE001 - recorded on the trip and shown
         with db.tx() as c:
             c.execute("UPDATE trips SET status='failed', dirty=0, error=?, updated_at=? WHERE id=?",
@@ -319,12 +369,24 @@ def set_force_route(db: Database, uid: int, trip_id: int, on: bool) -> None:
         c.execute("UPDATE trips SET force_route=?, updated_at=? WHERE id=?", (1 if on else 0, now(), trip_id))
 
 
-def set_snap_recorded(db: Database, uid: int, trip_id: int, on: bool) -> None:
-    """Snap this trip's detailed stretches to the map instead of keeping them as recorded."""
+def set_snap_recorded(db: Database, uid: int, trip_id: int, on: bool | None) -> None:
+    """Snap this trip's detailed stretches to the map (True), keep them as
+    recorded (False), or do what the account says (None)."""
     if not get(db, uid, trip_id):
         raise KeyError(trip_id)
     with db.tx() as c:
-        c.execute("UPDATE trips SET snap_recorded=?, updated_at=? WHERE id=?", (1 if on else 0, now(), trip_id))
+        c.execute("UPDATE trips SET snap_recorded=?, updated_at=? WHERE id=?",
+                  (0 if on is None else 1 if on else -1, now(), trip_id))
+
+
+def set_route_gaps(db: Database, uid: int, trip_id: int, spans: list[Any]) -> None:
+    """The individual holes to route, with the usual checks, in a trip that
+    otherwise keeps its gaps: [[t0, t1], ...]."""
+    clean = sorted([min(int(a), int(b)), max(int(a), int(b))] for a, b in (spans or []))
+    if not get(db, uid, trip_id):
+        raise KeyError(trip_id)
+    with db.tx() as c:
+        c.execute("UPDATE trips SET route_gaps=?, updated_at=? WHERE id=?", (json.dumps(clean), now(), trip_id))
 
 
 def set_force_gaps(db: Database, uid: int, trip_id: int, spans: list[Any]) -> None:
@@ -403,8 +465,9 @@ def undo(db: Database, uid: int, trip_id: int) -> int:
     trip = get(db, uid, trip_id)
     if not trip:
         raise KeyError(trip_id)
+    # A cleared trip (result_version 0) undoes back to its last match.
     prev = db.one("SELECT version FROM trip_results WHERE trip_id=? AND version < ? ORDER BY version DESC LIMIT 1",
-                  (trip_id, trip["result_version"]))
+                  (trip_id, trip["result_version"] or 2**62))
     if not prev:
         raise ValueError("nothing to undo")
     return restore(db, uid, trip_id, int(prev["version"]))
@@ -452,7 +515,12 @@ def as_recorded(trip: Any) -> bool:
         return False
 
 
+NO_MAP_REVIEW = 0.25   # this much of a trip with no map under it: unmatched parts are expected
+
+
 def needs_review(q: dict[str, Any]) -> bool:
+    if q.get("no_map_frac", 0) >= NO_MAP_REVIEW:
+        return False
     return bool(q) and (q.get("raw_frac", 0) > 0.15 or q.get("p95", 0) > 60)
 
 
@@ -480,11 +548,14 @@ def public(trip: dict[str, Any]) -> dict[str, Any]:
         "modes": json.loads(trip["modes"] or "[]"), "quality": q,
         "overrides": json.loads(trip["overrides"] or "[]"), "version": trip["result_version"],
         "point_edits": len(json.loads(trip.get("point_edits") or "{}")),
+        "no_map": q.get("no_map_frac", 0) >= NO_MAP_REVIEW,
         "gap_mode": trip.get("gap_mode") or "",
         "keep_gaps": json.loads(trip.get("keep_gaps") or "[]"),
         "force_route": bool(trip.get("force_route")),
-        "snap_recorded": bool(trip.get("snap_recorded")),
+        "snap_recorded": int(trip.get("snap_recorded") or 0) == 1,
+        "recorded_choice": {1: "snap", -1: "keep"}.get(int(trip.get("snap_recorded") or 0), ""),
         "force_gaps": json.loads(trip.get("force_gaps") or "[]"),
+        "route_gaps": json.loads(trip.get("route_gaps") or "[]"),
         "pushed_version": pushed, "pushed_at": trip["pushed_at"],
         "engine_version": trip["engine_version"], "outdated_engine": bool(trip["result_version"]) and
         trip["engine_version"] != ENGINE_VERSION,

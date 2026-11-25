@@ -7,8 +7,20 @@ import { startJob } from "../session.js";
 import { createMap, setMapTheme, setOverlay, setData, fc, fitCoords } from "../map.js";
 
 const PERIODS = [["all", "All time", 0], ["7", "Last 7 days", 7], ["30", "Last 30 days", 30], ["90", "Last 90 days", 90], ["365", "Last 12 months", 365], ["custom", "Custom dates…", -1]];
-const SHOW = [["all", "All trips"], ["new", "Not matched yet"], ["review", "Needs a look"], ["failed", "Couldn't be matched"],
-  ["original", "Not pushed to Dawarich"], ["outdated", "Changed since pushed"]];
+const SHOW = [["all", "All trips"], ["new", "Not matched yet"], ["review", "Need a look"], ["ready", "Ready to push"],
+  ["pushed", "In Dawarich"], ["outdated", "Changed since pushed"], ["recorded", "Kept as recorded"], ["nomap", "No map here"],
+  ["failed", "Couldn't be matched"], ["locked", "Locked"]];
+// Matched, finished, not locked, and Dawarich doesn't have this version yet.
+const ready = (t) => t.version && t.closed && !t.locked && (t.push === "original" || t.push === "outdated");
+const SORTS = [["newest", "Newest first"], ["oldest", "Oldest first"], ["longest", "Longest distance"], ["duration", "Longest time"],
+  ["worst", "Needs a look most"], ["points", "Most GPS points"]];
+// How far a match is from good: unmatched GPS and points far from the line.
+const badness = (t) => (t.version ? (t.quality?.raw_frac || 0) + (t.quality?.p95 || 0) / 100 : -1);
+const SORT_BY = {
+  newest: (x, y) => y.start - x.start, oldest: (x, y) => x.start - y.start, longest: (x, y) => y.km - x.km,
+  duration: (x, y) => (y.end - y.start) - (x.end - x.start), worst: (x, y) => badness(y) - badness(x),
+  points: (x, y) => y.n_points - x.n_points,
+};
 const DRAW_MS = matchMedia("(prefers-reduced-motion: reduce)").matches ? 1 : 1200;
 const pref = (k, d) => { try { return localStorage.getItem(k) || d; } catch (e) { return d; } };
 const save = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* ignore */ } };
@@ -37,6 +49,8 @@ export function Trips() {
   const [custom, setCustom] = useState({ from: "", to: "" });
   const [show, setShow] = useState("all");
   const [onlyMode, setOnlyMode] = useState("");
+  const [sort, setSort] = useState(() => pref("mm-sort", "newest"));
+  const byDay = sort === "newest" || sort === "oldest";
   const [data, setTrips] = useState(null);
   const [hot, setHot] = useState(null);
   const [selecting, setSelecting] = useState(false);
@@ -61,10 +75,11 @@ export function Trips() {
   }, [a, b, version]);
 
   const trips = useMemo(() => (data?.trips || []).filter((t) =>
-    (show === "all" || t.state === show || t.push === show) && (!onlyMode || t.modes.some((m) => m.mode === onlyMode))), [data, show, onlyMode]);
+    (show === "all" || t.state === show || t.push === show || (show === "nomap" && t.no_map) || (show === "ready" && ready(t))) && (!onlyMode || t.modes.some((m) => m.mode === onlyMode)))
+    .sort(SORT_BY[sort] || SORT_BY.newest), [data, show, onlyMode, sort]);
   const unmatched = useMemo(() => (data?.trips || []).filter((t) => !t.version && !t.locked), [data]);
-  const pushing = useMemo(() => (data?.trips || []).filter((t) => t.version && t.closed && !t.locked
-    && (t.push === "original" || t.push === "outdated")), [data]);
+  const pushing = useMemo(() => (data?.trips || []).filter(ready), [data]);
+  const reviewing = useMemo(() => (data?.trips || []).filter((t) => t.state === "review").sort((x, y) => y.start - x.start), [data]);
   const totals = useMemo(() => {
     const by = {};
     let all = 0;
@@ -228,6 +243,7 @@ export function Trips() {
   const togglePick = (id) => setPicked((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const groups = useMemo(() => {
     const g = [];
+    if (!byDay) return trips.length ? [{ key: "all", ts: 0, trips, km: trips.reduce((a, t) => a + t.km, 0) }] : [];
     for (const t of trips) {
       const k = dayKey(t.start);
       if (!g.length || g[g.length - 1].key !== k) g.push({ key: k, ts: t.start, trips: [], km: 0 });
@@ -235,7 +251,7 @@ export function Trips() {
       g[g.length - 1].km += t.km;
     }
     return g;
-  }, [trips]);
+  }, [trips, byDay]);
   const matching = job && ["rematch", "auto", "sync", "import_csv"].includes(job.kind);
   const noData = data && data.trips.length === 0 && !job;
   const periodLabel = PERIODS.find((p) => p[0] === period)?.[1].toLowerCase() || "";
@@ -243,59 +259,78 @@ export function Trips() {
   return html`<div class=${`trips ${selecting ? "selecting" : ""}`}>
     <aside class="side">
       <div class="side-top">
-        <div class="row">
-          <select aria-label="Period" value=${period} onChange=${(e) => { setPeriod(e.target.value); save("mm-period", e.target.value); fitted.current = false; }}>
+        <div class="side-head">
+          <div class="grow">
+            <h1>Trips</h1>
+            <div class="small dim num">${data ? `${plural(data.trips.length, "trip")} · ${km(totals.all)}` : "Loading…"}</div>
+          </div>
+          <select class="pill" aria-label="Period" value=${period} onChange=${(e) => { setPeriod(e.target.value); save("mm-period", e.target.value); fitted.current = false; }}>
             ${PERIODS.map(([k, l]) => html`<option value=${k}>${l}</option>`)}</select>
-          <select aria-label="Show" value=${show} onChange=${(e) => setShow(e.target.value)} class="grow">
-            ${SHOW.map(([k, l]) => html`<option value=${k}>${l}</option>`)}</select>
         </div>
         ${period === "custom" && html`<div class="row">
           <input type="date" aria-label="From" value=${custom.from} onChange=${(e) => { setCustom({ ...custom, from: e.target.value }); fitted.current = false; }} />
           <span class="faint">to</span>
           <input type="date" aria-label="To" value=${custom.to} onChange=${(e) => { setCustom({ ...custom, to: e.target.value }); fitted.current = false; }} /></div>`}
-        ${data && html`<div class="summary"><b class="num">${plural(data.trips.length, "trip")}</b><span class="dim num">· ${km(totals.all)}</span></div>`}
-        ${totals.by.length > 0 && html`<${Ribbon} modes=${totals.by} />
-          <div class="legend">${totals.by.map((m) => html`<button class=${onlyMode && onlyMode !== m.mode ? "off" : ""} style=${modeVar(m.mode)}
-            aria-pressed=${onlyMode === m.mode} title="Show only trips with this mode" onClick=${() => setOnlyMode(onlyMode === m.mode ? "" : m.mode)}>
-            <span class="sw"></span>${MODES[m.mode]?.label} <span class="faint num">${km(m.km)}</span></button>`)}</div>`}
-        <div class="tools">
-          <${Menu} left cls=${unmatched.length ? "go" : ""} label=${html`Match<${Icon} name="down" small />`}>
-            <button disabled=${!unmatched.length} onClick=${() => match("ids", { ids: unmatched.map((t) => t.id) }, `Matching ${plural(unmatched.length, "trip")}`)}>
-              Unmatched trips <span class="faint num">${unmatched.length}</span></button>
-            <button disabled=${!data?.trips.length} onClick=${() => match("range", { start: a, end: b }, `Matching every trip in ${periodLabel}`)}>
-              Everything in ${periodLabel} <span class="faint num">${data?.trips.length || 0}</span></button>
+        ${data && data.trips.length > 0 && html`<div class="todo" role="group" aria-label="What needs doing">
+          <div class=${`todo-card ${show === "new" ? "on" : ""} ${unmatched.length ? "" : "done"}`}>
+            <button class="todo-main" onClick=${() => setShow(show === "new" ? "all" : "new")} aria-pressed=${show === "new"}>
+              <b class="num">${unmatched.length}</b><span>Not matched yet</span></button>
+            <button class="sm go" disabled=${!unmatched.length || !!job}
+              onClick=${() => match("ids", { ids: unmatched.map((t) => t.id) }, `Matching ${plural(unmatched.length, "trip")}`)}>Match</button>
+          </div>
+          <div class=${`todo-card ${show === "review" ? "on" : ""} ${reviewing.length ? "warn" : "done"}`}>
+            <button class="todo-main" onClick=${() => setShow(show === "review" ? "all" : "review")} aria-pressed=${show === "review"}>
+              <b class="num">${reviewing.length}</b><span>Need a look</span></button>
+            <button class="sm" disabled=${!reviewing.length} onClick=${() => reviewing.length && navigate(`#/trip/${reviewing[0].id}`)}>Open</button>
+          </div>
+          <div class=${`todo-card ${show === "ready" ? "on" : ""} ${pushing.length ? "" : "done"}`}>
+            <button class="todo-main" onClick=${() => setShow(show === "ready" ? "all" : "ready")} aria-pressed=${show === "ready"}>
+              <b class="num">${pushing.length}</b><span>Ready to push</span></button>
+            <button class="sm go" disabled=${!pushing.length || !!job} onClick=${() => push(pushing.map((t) => t.id), `Pushing ${plural(pushing.length, "trip")}`)}>Push</button>
+          </div>
+        </div>`}
+        ${totals.by.length > 0 && html`<div class="modefilter" role="group" aria-label="Show trips with">
+          <button class=${!onlyMode ? "on" : ""} aria-pressed=${!onlyMode} onClick=${() => setOnlyMode("")}>All</button>
+          ${totals.by.map((m) => html`<button class=${onlyMode === m.mode ? "on" : ""} style=${modeVar(m.mode)} aria-pressed=${onlyMode === m.mode}
+            title=${`Only trips with ${MODES[m.mode]?.label.toLowerCase()}`} onClick=${() => setOnlyMode(onlyMode === m.mode ? "" : m.mode)}>
+            <span class="sw"></span>${MODES[m.mode]?.label}<span class="faint num">${km(m.km)}</span></button>`)}
+        </div>`}
+        <div class="row filters">
+          <select aria-label="Show" value=${show} onChange=${(e) => setShow(e.target.value)} class="grow">
+            ${SHOW.map(([k, l]) => html`<option value=${k}>${l}</option>`)}</select>
+          <select aria-label="Sort" value=${sort} onChange=${(e) => { setSort(e.target.value); save("mm-sort", e.target.value); }} class="grow">
+            ${SORTS.map(([k, l]) => html`<option value=${k}>${l}</option>`)}</select>
+          <${Menu} cls="icon" title="More" label=${html`<${Icon} name="more" />`}>
+            <div class="label">Matching uses your saved Match settings</div>
+            <button disabled=${!data?.trips.length || !!job} onClick=${() => match("range", { start: a, end: b }, `Matching every trip in ${periodLabel}`)}>
+              <${Icon} name="sync" small />Match every trip in ${periodLabel} again</button>
+            <button onClick=${() => { setSelecting(true); setPicked(new Set()); }}><${Icon} name="check" small />Choose trips to match or push…</button>
             <div class="sep"></div>
-            <button onClick=${() => setSelecting(true)}>Choose trips…</button>
+            <a href="#/match"><${Icon} name="sliders" small />Match settings…</a>
           <//>
-          <${Menu} left cls=${pushing.length ? "go" : ""} label=${html`Push<${Icon} name="down" small />`}>
-            <button disabled=${!pushing.length} onClick=${() => push(pushing.map((t) => t.id), `Pushing ${plural(pushing.length, "trip")}`)}>
-              Everything in ${periodLabel} <span class="faint num">${pushing.length}</span></button>
-            <button disabled=${!pushing.length} onClick=${() => setSelecting(true)}>Choose trips…</button>
-          <//>
-          <button class=${selecting ? "go" : "bare"} onClick=${() => { setSelecting(!selecting); setPicked(new Set()); }}>${selecting ? "Done" : "Select"}</button>
-          <span class="grow"></span>
-          <label class=${`toggle ${allPts ? "on" : ""}`}><input type="checkbox" checked=${allPts} onChange=${(e) => setAllPts(e.target.checked)} />GPS points</label>
         </div>
       </div>
-      <div class="list">
+      <div class=${`list ${byDay ? "" : "flat"}`}>
         ${!data && html`<p class="faint" style="padding:16px">Loading…</p>`}
         ${data && !trips.length && !noData && html`<p class="faint" style="padding:16px">Nothing here with these filters.</p>`}
         ${groups.map((g) => html`<div key=${g.key}>
-          <div class="day"><span>${day(g.ts)}</span><span class="num">${km(g.km)}</span></div>
+          ${byDay ? html`<div class="day"><span>${day(g.ts)}</span><span class="num">${km(g.km)}</span></div>`
+            : html`<div class="day"><span>${SORTS.find((x) => x[0] === sort)?.[1]}</span><span class="num">${km(g.km)}</span></div>`}
           ${g.trips.map((t) => html`<div key=${t.id} class=${`trip ${hot === t.id ? "hot" : ""} ${picked.has(t.id) ? "picked" : ""}`}
               role=${selecting ? "checkbox" : "link"} aria-checked=${selecting ? picked.has(t.id) : undefined} tabindex="0"
               onMouseEnter=${() => setHot(t.id)} onMouseLeave=${() => setHot(null)}
               onClick=${() => (selecting ? togglePick(t.id) : navigate(`#/trip/${t.id}`))}
               onKeyDown=${(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selecting ? togglePick(t.id) : navigate(`#/trip/${t.id}`); } }}>
             <span class="picker"><input type="checkbox" tabindex="-1" checked=${picked.has(t.id)} /></span>
-            <div class="when num">${time(t.start)}<span>${duration(t.end - t.start)}</span></div>
+            <div class="when num">${byDay ? time(t.start) : day(t.start)}<span>${byDay ? duration(t.end - t.start) : `${time(t.start)} · ${duration(t.end - t.start)}`}</span></div>
             <div class="what"><${Ribbon} modes=${t.modes} />
               <div class="modes"><span class="ell">${t.modes.length ? t.modes.map((m) => MODES[m.mode]?.label).join(" → ")
                 : html`<span class="faint">Not matched yet</span>`}</span>
                 ${t.state === "review" && html`<span class="chip warn">needs a look</span>`}
                 ${t.state === "failed" && html`<span class="chip bad">couldn't match</span>`}
                 ${t.push === "pushed" && html`<span class="chip good">in Dawarich</span>`}
-                ${t.push === "recorded" && html`<span class="chip">as recorded</span>`}
+                ${t.no_map && html`<span class="chip" title="The map server has no map data here">no map here</span>`}
+                ${t.push === "recorded" && !t.no_map && html`<span class="chip">as recorded</span>`}
                 ${t.push === "outdated" && html`<span class="chip warn">changed</span>`}</div></div>
             <div class="dist num">${km(t.km)}</div>
           </div>`)}
@@ -305,10 +340,13 @@ export function Trips() {
         <span class="grow small">${picked.size ? plural(picked.size, "trip") + " selected" : "Tap trips to select them"}</span>
         <button class="go" disabled=${!picked.size} onClick=${() => { match("ids", { ids: [...picked] }, `Matching ${plural(picked.size, "trip")}`); setSelecting(false); setPicked(new Set()); }}>Match</button>
         <button disabled=${!picked.size} onClick=${() => { startJob("push_all", { ids: [...picked] }); setSelecting(false); setPicked(new Set()); }}>Push</button>
+        <button class="bare" onClick=${() => { setSelecting(false); setPicked(new Set()); }}>Cancel</button>
       </div>`}
     </aside>
     <div class="map-wrap">
       <div class="map" ref=${mapEl}></div>
+      <div class="float tl"><label class=${`toggle ${allPts ? "on" : ""}`} title="Every GPS point in this period"><input type="checkbox" checked=${allPts}
+        onChange=${(e) => setAllPts(e.target.checked)} /><i class="k pt"></i>GPS points</label></div>
       ${matching && html`<div class="float bc" aria-live="polite"><span class="pulse"></span>
         <span>${job.kind === "rematch" ? "Matching" : "Downloading"} <span class="dim num">${job.message || ""}</span></span><span class="meter"><i style=${`width:${job.progress}%`}></i></span></div>`}
       ${noData && html`<div class="empty"><div>

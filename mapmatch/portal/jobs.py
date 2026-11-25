@@ -14,7 +14,15 @@ from . import archive, push, trips
 from .db import Database, now
 
 log = logging.getLogger("mapmatch.jobs")
-KINDS = ("sync", "auto", "import_csv", "rematch", "push_all", "revert_all", "repair")
+# How a finished job's counts read in the Activity list.
+SUMMARY_WORDS = {
+    "new_points": "new GPS points", "created": "new trips", "updated": "trips extended", "removed": "trips merged away",
+    "dirtied": "trips with new points", "matched": "trips matched", "failed": "couldn't be matched",
+    "pushed": "trips pushed", "push_failed": "pushes failed", "reverted": "trips reverted", "revert_failed": "reverts failed",
+    "points_restored": "original points put back", "cleared": "trips cleared", "spans": "stretches rewritten",
+    "points_rewritten": "points rewritten", "archived_new": "new points archived",
+}
+KINDS = ("sync", "auto", "import_csv", "rematch", "push_all", "revert_all", "repair", "reset")
 
 
 class Cancelled(Exception):
@@ -181,7 +189,7 @@ class Jobs:
         return totals
 
     def _match_pending(self, uid: int, progress: Callable[[int, str], None], lo: int, hi: int,
-                       only_ids: list[int] | None = None) -> dict[str, int]:
+                       only_ids: list[int] | None = None, once: dict[str, Any] | None = None) -> dict[str, int]:
         start = self._start_ts(uid) or 0
         if only_ids is None:
             rows = self.db.all("SELECT id FROM trips WHERE user_id=? AND locked=0 AND dirty=1 AND end_ts >= ?"
@@ -193,7 +201,8 @@ class Jobs:
         if not ids:
             return {"matched": 0, "failed": 0}
         with ThreadPoolExecutor(max_workers=max(1, self.cfg.match_workers)) as pool:
-            futs = {pool.submit(trips.match, self.db, uid, tid, "auto"): tid for tid in ids}
+            reason = "matched once with chosen settings" if once else "auto"
+            futs = {pool.submit(trips.match, self.db, uid, tid, reason, None, once): tid for tid in ids}
             for k, fut in enumerate(as_completed(futs), 1):
                 try:
                     fut.result()
@@ -209,10 +218,17 @@ class Jobs:
         return {"matched": done, "failed": failed}
 
     def _push_pending(self, uid: int, progress: Callable[[int, str], None], lo: int, hi: int,
-                      only: set[int] | None = None) -> dict[str, int]:
+                      only: set[int] | None = None, skip_review: bool = False) -> dict[str, int]:
         start = self._start_ts(uid) or 0
-        ids = [t for t in push.pending_push(self.db, uid)
-               if (trips.get(self.db, uid, t) or {}).get("start_ts", 0) >= start and (only is None or t in only)]
+        ids = []
+        for t in push.pending_push(self.db, uid):
+            row = trips.get(self.db, uid, t) or {}
+            if row.get("start_ts", 0) < start or (only is not None and t not in only):
+                continue
+            # Trips that need a look wait for you, if you asked automatic pushes to.
+            if skip_review and trips.public(row)["state"] == "review":
+                continue
+            ids.append(t)
         if not ids:
             return {"pushed": 0}
         push.apply(self.db, self.cfg, uid, {t: True for t in ids}, self.transport, keep_going=True,
@@ -224,7 +240,10 @@ class Jobs:
     def _finish(self, uid: int, progress: Callable[[int, str], None], summary: dict[str, Any]) -> None:
         with self.db.tx() as c:
             c.execute("UPDATE settings SET last_error='' WHERE user_id=?", (uid,))
-        progress(100, ", ".join(f"{k.replace('_', ' ')} {v}" for k, v in summary.items() if v))
+        def say(k: str, v: Any) -> str:
+            label = SUMMARY_WORDS.get(k, k.replace("_", " "))
+            return f"{v:,} {label}" if isinstance(v, int) and not isinstance(v, bool) else f"{label} {v}"
+        progress(100, ", ".join(say(k, v) for k, v in summary.items() if v))
 
     # ------------------------------------------------------------ job kinds
     def _job_sync(self, uid: int, params: dict[str, Any], progress: Any, jid: str) -> None:
@@ -235,8 +254,9 @@ class Jobs:
     def _job_auto(self, uid: int, params: dict[str, Any], progress: Any, jid: str) -> None:
         summary = self._sync(uid, progress)
         summary.update(self._match_pending(uid, progress, 45, 80))
-        if trips.settings(self.db, uid).get("auto_push"):
-            summary.update(self._push_pending(uid, progress, 80, 99))
+        s = trips.settings(self.db, uid)
+        if s.get("auto_push"):
+            summary.update(self._push_pending(uid, progress, 80, 99, skip_review=not s.get("push_review", 1)))
         self._finish(uid, progress, summary)
 
     def _job_import_csv(self, uid: int, params: dict[str, Any], progress: Any, jid: str) -> None:
@@ -251,31 +271,36 @@ class Jobs:
         self._finish(uid, progress, {"new_points": new, **seg})
 
     def _job_rematch(self, uid: int, params: dict[str, Any], progress: Any, jid: str) -> None:
+        """Match trips again. params: scope (all, ids, range, new, pending,
+        outdated), once (choices for this run only, instead of the saved ones)
+        and push (push the matched trips afterwards)."""
         scope = params.get("scope", "all")
+        once = params.get("once") or None
         sql = "SELECT id FROM trips WHERE user_id=? AND locked=0"
         if scope == "ids":
             # Chosen trips: only the caller's own, never locked ones.
             want = {int(x) for x in params.get("ids") or []}
-            rows = [r for r in self.db.all(sql + " ORDER BY start_ts", (uid,)) if r["id"] in want]
-            self._finish(uid, progress, self._match_pending(uid, progress, 2, 99, [r["id"] for r in rows]))
-            return
-        if scope == "range":
+            ids = [r["id"] for r in self.db.all(sql + " ORDER BY start_ts", (uid,)) if r["id"] in want]
+        elif scope == "range":
             # Every trip overlapping a time range (unix seconds, either end open).
             a, b = params.get("start"), params.get("end")
-            rows = self.db.all(sql + " AND end_ts >= ? AND start_ts <= ? ORDER BY start_ts",
-                               (uid, int(a or 0), int(b or 2**62)))
-            self._finish(uid, progress, self._match_pending(uid, progress, 2, 99, [r["id"] for r in rows]))
-            return
-        if scope == "pending":
+            ids = [r["id"] for r in self.db.all(sql + " AND end_ts >= ? AND start_ts <= ? ORDER BY start_ts",
+                                                 (uid, int(a or 0), int(b or 2**62)))]
+        elif scope == "new":
+            # Trips never matched at all.
+            ids = [r["id"] for r in self.db.all(sql + " AND result_version = 0 ORDER BY start_ts", (uid,))]
+        elif scope == "pending":
             # Trips never matched, or whose points changed since.
-            self._finish(uid, progress, self._match_pending(uid, progress, 2, 99))
-            return
-        if scope == "outdated":
+            ids = None
+        elif scope == "outdated":
             from ..engine.api import ENGINE_VERSION
-            rows = self.db.all(sql + " AND engine_version != ? ORDER BY start_ts", (uid, ENGINE_VERSION))
+            ids = [r["id"] for r in self.db.all(sql + " AND engine_version != ? ORDER BY start_ts", (uid, ENGINE_VERSION))]
         else:
-            rows = self.db.all(sql + " ORDER BY start_ts", (uid,))
-        summary = self._match_pending(uid, progress, 2, 99, [r["id"] for r in rows])
+            ids = [r["id"] for r in self.db.all(sql + " ORDER BY start_ts", (uid,))]
+        push_after = bool(params.get("push"))
+        summary: dict[str, Any] = self._match_pending(uid, progress, 2, 80 if push_after else 99, ids, once)
+        if push_after and ids:
+            summary.update(self._push_pending(uid, progress, 80, 99, only=set(ids)))
         self._finish(uid, progress, summary)
 
     def _job_push_all(self, uid: int, params: dict[str, Any], progress: Any, jid: str) -> None:
@@ -290,6 +315,28 @@ class Jobs:
         left = self.db.one("SELECT COUNT(*) n FROM trips WHERE user_id=? AND pushed_version IS NOT NULL", (uid,))["n"]
         self._finish(uid, progress, {"reverted": len(ids) - left, "revert_failed": left,
                                      "points_restored": out["original_points"]})
+
+    def _job_reset(self, uid: int, params: dict[str, Any], progress: Any, jid: str) -> None:
+        """Every unlocked trip back to its original GPS in mapmatch, and with
+        dawarich=True in Dawarich first (every pushed trip reverted)."""
+        summary: dict[str, Any] = {}
+        if params.get("dawarich"):
+            pushed = [r["id"] for r in self.db.all("SELECT id FROM trips WHERE user_id=? AND pushed_version IS NOT NULL"
+                                                    " ORDER BY start_ts", (uid,))]
+            if pushed:
+                out = push.apply(self.db, self.cfg, uid, {t: False for t in pushed}, self.transport, keep_going=True,
+                                 progress=lambda p, m: progress(2 + int(60 * p / 100), m))
+                left = self.db.one("SELECT COUNT(*) n FROM trips WHERE user_id=? AND pushed_version IS NOT NULL",
+                                   (uid,))["n"]
+                summary.update({"reverted": len(pushed) - left, "revert_failed": left,
+                                "points_restored": out["original_points"]})
+        ids = [r["id"] for r in self.db.all("SELECT id FROM trips WHERE user_id=? AND locked=0", (uid,))]
+        for k, tid in enumerate(ids, 1):
+            trips.clear(self.db, uid, tid)
+            if k % 25 == 0 or k == len(ids):
+                progress(62 + int(37 * k / len(ids)), f"cleared {k}/{len(ids)} trips")
+        summary["cleared"] = len(ids)
+        self._finish(uid, progress, summary)
 
     def _job_repair(self, uid: int, params: dict[str, Any], progress: Any, jid: str) -> None:
         out = push.repair(self.db, self.cfg, uid, self.transport, progress)

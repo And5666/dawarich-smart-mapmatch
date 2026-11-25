@@ -162,10 +162,13 @@ def _filled(a: dict[str, Any], mids: list[dict[str, Any]], b: dict[str, Any], mo
             keep: Any = None, force: Any = None) -> dict[str, Any]:
     # keep(t0, t1) says whether this particular hole must stay as recorded, even
     # when the trip is otherwise happy to route across gaps. force(t0, t1) is the
-    # explicit "route it anyway": the plausibility gate lets it through.
+    # explicit "route it anyway": the plausibility gate lets it through. It may
+    # instead say "route": route this hole even in a trip that keeps its gaps,
+    # with the usual checks.
     forced = bool(keep and keep(a["timestamp"], b["timestamp"]))
-    gate = bool(force and force(a["timestamp"], b["timestamp"]))
-    f = fill(a, mids, b, mode, "strict" if forced else strength, vmax, gate)
+    choice = force(a["timestamp"], b["timestamp"]) if force else False
+    gate = choice is True or choice == "gate"
+    f = fill(a, mids, b, mode, "strict" if forced else "fill" if choice else strength, vmax, gate)
     if f["kind"] == "raw":
         coords = [[p["lat"], p["lon"], p["timestamp"], 1] for p in (a, *mids, b)]
         pc = _piece("raw", coords, n_in)
@@ -272,6 +275,11 @@ PRECISE_MAX_DT_S = 5          # median time between fixes
 PRECISE_MIN_FIXES = 30
 PRECISE_WOBBLE_M = 4.0        # p90 distance of a fix from the line through its neighbours
 PRECISE_MAX_ACC_M = 15.0      # median reported accuracy, when there is one
+# A phone logs every 30-60 s; a watch on smart recording up to every 10 s or
+# so. Distance covered in steps longer than this was logged by something
+# other than a watch, and a stretch with much of it is not detailed.
+SPARSE_DT_S = 15
+PRECISE_MAX_SPARSE = 0.2      # share of the distance that may be logged sparsely
 HOLE_M = 100.0                # consecutive fixes this far apart leave a hole
 HOLE_S = 60                   # ...or this long apart, once they have moved
 
@@ -284,12 +292,54 @@ def precise(fixes: list[dict[str, Any]]) -> bool:
     dts = sorted(b["timestamp"] - a["timestamp"] for a, b in zip(fixes, fixes[1:]))
     if dts[len(dts) // 2] > PRECISE_MAX_DT_S:
         return False
+    total = sparse = 0.0
+    for a, b in zip(fixes, fixes[1:]):
+        d = haversine(a["lat"], a["lon"], b["lat"], b["lon"])
+        total += d
+        if SPARSE_DT_S < b["timestamp"] - a["timestamp"] <= 600 and d > 30.0:
+            sparse += d
+    if total > 0 and sparse / total > PRECISE_MAX_SPARSE:
+        return False      # a phone logged much of it: a watch stretch inside a phone trip
     accs = sorted(float(p["accuracy"]) for p in fixes if p.get("accuracy"))
     if len(accs) * 2 > n and accs[len(accs) // 2] > PRECISE_MAX_ACC_M:
         return False
     wobble = sorted(dist_point_segment(fixes[k]["lat"], fixes[k]["lon"], fixes[k - 1]["lat"], fixes[k - 1]["lon"],
                                        fixes[k + 1]["lat"], fixes[k + 1]["lon"]) for k in range(1, n - 1))
     return wobble[int(len(wobble) * 0.9)] <= PRECISE_WOBBLE_M
+
+
+def dense_blocks(fixes: list[dict[str, Any]]) -> list[bool]:
+    """Per fix: inside a stretch logged at watch rate (every few seconds, at
+    least PRECISE_MIN_FIXES long). A trip logged partly on a watch and partly
+    on a phone is cut here, so each part is judged on its own."""
+    out = [False] * len(fixes)
+    s = 0
+    for k in range(1, len(fixes) + 1):
+        if k == len(fixes) or fixes[k]["timestamp"] - fixes[k - 1]["timestamp"] > SPARSE_DT_S:
+            if k - s >= PRECISE_MIN_FIXES:
+                out[s:k] = [True] * (k - s)
+            s = k
+    return out
+
+
+def detailed_fixes(fixes: list[dict[str, Any]]) -> list[bool]:
+    """Per fix: inside a watch-rate block that is detailed as a whole. Judged
+    per block, not per mode, so a short walk inside a detailed ride (pushing
+    the bike up a hill) is kept like the ride around it."""
+    dense = dense_blocks(fixes)
+    out = [False] * len(fixes)
+    k = 0
+    while k < len(fixes):
+        if not dense[k]:
+            k += 1
+            continue
+        e = k
+        while e < len(fixes) and dense[e] and (e == k or fixes[e]["timestamp"] - fixes[e - 1]["timestamp"] <= SPARSE_DT_S):
+            e += 1
+        if precise(fixes[k:e]):
+            out[k:e] = [True] * (e - k)
+        k = e
+    return out
 
 
 def recorded_pieces(fixes: list[dict[str, Any]], mode: str, strength: str,
@@ -328,7 +378,8 @@ def merge_pieces(pieces: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for p in pieces:
         if not p["coords"]:
             continue
-        if out and out[-1]["kind"] == p["kind"]:
+        # A gap stays a piece of its own, so the editor can offer it as a gap.
+        if out and out[-1]["kind"] == p["kind"] and not p.get("gap") and not out[-1].get("gap"):
             q = out[-1]
             c = p["coords"]
             if q["coords"] and abs(q["coords"][-1][0] - c[0][0]) < 1e-9 and abs(q["coords"][-1][1] - c[0][1]) < 1e-9:
@@ -407,7 +458,7 @@ def connect(segments: list[dict[str, Any]], strength: str, keep: Any = None,
         if real:
             s = real[-1]
             mode = seam_mode({s["mode"], *via_modes})
-            pc = _filled(_end(s, False), vias[:-1], _fixpt(vias[-1]), mode, strength, len(vias))
+            pc = _filled(_end(s, False), vias[:-1], _fixpt(vias[-1]), mode, strength, len(vias), None, keep, force)
             s["pieces"] = merge_pieces(s["pieces"] + [pc])
         else:
             real.append({"mode": "raw", "forced": False, "profile": None, "n_fixes": len(vias),

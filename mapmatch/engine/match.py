@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import rail, valhalla
+from . import rail, railnet, valhalla
 from .geo import cumulative, haversine, point_at, project_arc
 
 PROFILE = {"walk": "pedestrian", "cycle": "bicycle", "drive": "auto"}
@@ -110,6 +110,22 @@ def match_road(fixes: list[dict[str, Any]], mode: str) -> dict[str, Any]:
 
 
 def match_rail(fixes: list[dict[str, Any]]) -> dict[str, Any]:
+    """A train: on the GB timetable shapes where they explain it, otherwise on
+    the OpenStreetMap railway networks (railnet), whichever fits better."""
+    gb = match_gtfs(fixes)
+    try:
+        osm = railnet.match(fixes)
+    except (OSError, ValueError):
+        osm = {"pieces": [], "anchors": [None] * len(fixes), "profile": "rail"}
+    if not any(osm["anchors"]):
+        return gb
+    if not any(gb["anchors"]):
+        return osm
+    # The timetable shape is one clean line; prefer it unless clearly worse.
+    return osm if fit_score(fixes, osm) > fit_score(fixes, gb) + 0.1 else gb
+
+
+def match_gtfs(fixes: list[dict[str, Any]]) -> dict[str, Any]:
     """Project the whole segment onto the single rail alignment that explains it.
 
     Ported from smartmap.infer.rail_candidates: per-fix nearest shapes jump

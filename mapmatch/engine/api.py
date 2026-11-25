@@ -3,14 +3,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import assemble
+from . import assemble, valhalla
 from .clean import clean
 from .match import fit_score, match_segment
 from .modes import label, runs, summary_speed
 from .quality import deviations, path_km, percentile
 
-ENGINE_VERSION = "2.7.0"
+ENGINE_VERSION = "2.9.1"
 MODES = ("walk", "cycle", "drive", "train", "stay", "raw")
+MOVING = ("walk", "cycle", "drive", "train")
+NO_MAP_FRAC = 0.75   # share of sampled fixes with no map under them: the trip is abroad
 
 
 def _choose_road(fixes: list[dict[str, Any]], mode: str) -> tuple[str, dict[str, Any]]:
@@ -45,7 +47,9 @@ def _rail_wins(fixes: list[dict[str, Any]], rail_res: dict[str, Any]) -> bool:
     road = match_segment(fixes, "drive")
     rgot = [a for a in road["anchors"] if a]
     if not rgot:
-        return True
+        # No road to compare with (no map here): only a journey that keeps to
+        # the railway almost all the way is a train.
+        return cov >= 0.8
     road_cov = len(rgot) / len(fixes)
     road_med = sorted(a["dist"] for a in rgot)[len(rgot) // 2]
     return not (road_cov > cov + 0.2 or road_med + 8.0 < rail_med)
@@ -59,34 +63,63 @@ def match_trip(points: list[dict[str, Any]], overrides: list[dict[str, Any]] | N
     are forced to that mode. options: {"strength": "fill" | "strict"},
     {"keep_gaps": [[t0, t1], ...]} for holes that must stay as recorded, and
     {"force_route": bool, "force_gaps": [...]} for holes the user insists on
-    routing even though the plausibility gate would refuse them, and
-    {"snap_recorded": bool} to match detailed tracks instead of keeping them.
+    routing even though the plausibility gate would refuse them,
+    {"route_gaps": [...]} for holes to route (with the usual checks) in a trip
+    that otherwise keeps its gaps, and
+    {"snap_recorded": bool} to match detailed tracks instead of keeping them,
+    and {"match_modes": [...]} for the modes snapped to the map at all: parts
+    in any other mode keep their GPS exactly as recorded, unless the user set
+    that part's mode by hand.
     """
     opts = {"strength": "fill", **(options or {})}
     strength = opts["strength"]
     keep_ranges = [tuple(sorted((int(a), int(b)))) for a, b in (opts.get("keep_gaps") or [])]
     force_ranges = [tuple(sorted((int(a), int(b)))) for a, b in (opts.get("force_gaps") or [])]
+    route_ranges = [tuple(sorted((int(a), int(b)))) for a, b in (opts.get("route_gaps") or [])]
     force_all = bool(opts.get("force_route"))
     # Detailed tracks (a watch, a bike computer) are kept as recorded unless
     # the trip asks for them to be snapped to the map anyway.
     snap = bool(opts.get("snap_recorded"))
+    match_modes = set(MOVING if opts.get("match_modes") is None else opts["match_modes"])
+
+    def left_alone(mode: str, by_hand: bool) -> bool:
+        return mode in MOVING and mode not in match_modes and not by_hand
 
     def keep_gap(t0: int, t1: int) -> bool:
         lo, hi = (t0, t1) if t0 <= t1 else (t1, t0)
         return any(lo <= r1 and r0 <= hi for r0, r1 in keep_ranges)
 
-    def force_gap(t0: int, t1: int) -> bool:
+    def force_gap(t0: int, t1: int) -> bool | str:
+        """True: route it past the plausibility gate. "route": route it, with
+        the usual checks, even where the trip keeps its gaps. False: no say."""
         if force_all:
             return True
         lo, hi = (t0, t1) if t0 <= t1 else (t1, t0)
-        return any(lo <= r1 and r0 <= hi for r0, r1 in force_ranges)
+        if any(lo <= r1 and r0 <= hi for r0, r1 in force_ranges):
+            return True
+        return "route" if any(lo <= r1 and r0 <= hi for r0, r1 in route_ranges) else False
     fixes, dropped = clean(points)
     if not fixes:
         return {"segments": [], "stream": [], "dropped": dropped, "quality": {},
                 "engine_version": ENGINE_VERSION}
     labels, forced, keys = label(fixes, overrides)
     if not snap and assemble.precise(fixes):
-        return _as_recorded(fixes, dropped, labels, forced, keys)
+        return _as_recorded(fixes, dropped, labels, forced, keys, "detailed")
+    moving = [(labels[i], any(forced[i:j])) for _, i, j in runs(keys) if labels[i] in MOVING]
+    if moving and all(left_alone(m, f) for m, f in moving):
+        # Nothing in this trip is a mode that gets matched.
+        return _as_recorded(fixes, dropped, labels, forced, keys, "modes")
+    # Somewhere the map server has no map for (another country): nothing can
+    # be matched, so the GPS stays as recorded rather than "needing a look".
+    no_map = valhalla.uncovered(fixes)
+    trains = any(labels[i] == "train" for _, i, j in runs(keys))
+    if no_map is not None and no_map >= NO_MAP_FRAC and not trains:
+        return _as_recorded(fixes, dropped, labels, forced, keys, "no_map", no_map)
+    # A trip logged partly on a watch and partly on a phone: each part is
+    # judged on its own, so the watch part is kept and the phone part matched.
+    dense = assemble.dense_blocks(fixes)
+    detailed = assemble.detailed_fixes(fixes)
+    keys = [k if forced[i] else f"{k}|{'d' if dense[i] else 's'}" for i, k in enumerate(keys)]
 
     segments: list[dict[str, Any]] = []
     for key, i, j in runs(keys):
@@ -99,11 +132,21 @@ def match_trip(points: list[dict[str, Any]], overrides: list[dict[str, Any]] | N
             segments.append({"mode": mode, "forced": False, "profile": None, "n_fixes": 1,
                              "pieces": [], "via": seg_fixes, "key": key})
             continue
-        if mode == "stay":
+        if mode == "stay" and not snap and all(detailed[i:j]) and len(seg_fixes) > 1:
+            # A stop logged by a watch keeps its points, like the ride around it.
+            profile = "recorded"
+            pieces = [assemble._piece("recorded", [[p["lat"], p["lon"], p["timestamp"], 1] for p in seg_fixes],
+                                      len(seg_fixes))]
+        elif mode == "stay":
             pieces = assemble.stay_pieces(seg_fixes)
         elif mode == "raw":
             pieces = assemble.raw_pieces(seg_fixes)
-        elif mode != "train" and not snap and assemble.precise(seg_fixes):
+        elif left_alone(mode, is_forced):
+            # A mode the user doesn't want matched: its GPS stays as recorded.
+            profile = "kept"
+            pieces = [assemble._piece("recorded", [[p["lat"], p["lon"], p["timestamp"], 1] for p in seg_fixes],
+                                      len(seg_fixes))]
+        elif mode != "train" and not snap and (all(detailed[i:j]) or assemble.precise(seg_fixes)):
             # Already a better line than the map would give: keep it.
             profile = "recorded"
             pieces = assemble.recorded_pieces(seg_fixes, mode, strength, keep_gap, force_gap)
@@ -130,23 +173,26 @@ def match_trip(points: list[dict[str, Any]], overrides: list[dict[str, Any]] | N
         "segments": segments,
         "stream": out,
         "dropped": [{k: p.get(k) for k in ("lat", "lon", "timestamp", "accuracy", "_drop")} for p in dropped],
-        "quality": quality(fixes, segments, out),
+        "quality": {**quality(fixes, segments, out), **({"no_map_frac": round(no_map, 3)} if no_map else {})},
         "engine_version": ENGINE_VERSION,
     }
 
 
 def _as_recorded(fixes: list[dict[str, Any]], dropped: list[dict[str, Any]], labels: list[str],
-                 forced: list[bool], keys: list[str]) -> dict[str, Any]:
-    """A whole trip logged in fine detail is left exactly as recorded: every
-    fix stays, stops and holes included. Only the modes are worked out, for
-    the record; the portal does not change such a trip in Dawarich."""
+                 forced: list[bool], keys: list[str], why: str, no_map: float | None = None) -> dict[str, Any]:
+    """A whole trip logged in fine detail (why="detailed"), made only of
+    modes the user doesn't match (why="modes"), or where the map server has
+    no map (why="no_map") is left exactly as recorded:
+    every fix stays, stops and holes included. Only the modes are worked out,
+    for the record; the portal does not change such a trip in Dawarich."""
     rs = runs(keys)
     segments = []
     for k, (key, i, j) in enumerate(rs):
         # Each part runs on to the first fix of the next, so the line is unbroken.
         part = fixes[i:j + 1] if k + 1 < len(rs) else fixes[i:j]
         coords = [[p["lat"], p["lon"], p["timestamp"], 1] for p in part]
-        segments.append({"mode": labels[i], "forced": any(forced[i:j]), "profile": "recorded",
+        segments.append({"mode": labels[i], "forced": any(forced[i:j]),
+                         "profile": "recorded" if why == "detailed" else "kept",
                          "n_fixes": j - i, "key": key if any(forced[i:j]) else None,
                          "pieces": [assemble._piece("recorded", coords, j - i)]})
     segments = assemble.merge_same_mode(segments)
@@ -154,6 +200,9 @@ def _as_recorded(fixes: list[dict[str, Any]], dropped: list[dict[str, Any]], lab
     out = assemble.stream(segments)
     q = quality(fixes, segments, out)
     q["as_recorded"] = True
+    q["kept_because"] = why
+    if no_map is not None:
+        q["no_map_frac"] = round(no_map, 3)
     return {
         "segments": segments,
         "stream": out,

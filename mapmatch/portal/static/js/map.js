@@ -6,12 +6,71 @@ const STYLES = {
 };
 // Shown if the CARTO style cannot be fetched (offline, blocked): overlays still draw.
 const BLANK = { version: 8, sources: {}, layers: [{ id: "bg", type: "background", paint: { "background-color": "#e9ecf0" } }] };
+const BLANK_DARK = { version: 8, sources: {}, layers: [{ id: "bg", type: "background", paint: { "background-color": "#2a2f37" } }] };
+
+// ---- dark basemap, lifted: CARTO's dark style is near-black, which hides roads
+// and makes the coloured routes hard to read. Every colour is raised to a soft
+// slate and greys get a cool tint, so the map reads as dim rather than black.
+function parseColor(s) {
+  if (typeof s !== "string") return null;
+  let m = s.match(/^#([0-9a-f]{3,8})$/i);
+  if (m) {
+    let h = m[1];
+    if (h.length <= 4) h = [...h].map((c) => c + c).join("");
+    const n = parseInt(h.slice(0, 6), 16);
+    return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255, a: h.length === 8 ? parseInt(h.slice(6), 16) / 255 : 1 };
+  }
+  m = s.match(/^rgba?\(([^)]+)\)$/i);
+  if (m) { const v = m[1].split(/[\s,/]+/).filter(Boolean).map(Number); return { r: v[0], g: v[1], b: v[2], a: v[3] ?? 1 }; }
+  m = s.match(/^hsla?\(([^)]+)\)$/i);
+  if (m) {
+    const v = m[1].split(/[\s,/]+/).filter(Boolean).map((x) => parseFloat(x));
+    return { ...hslToRgb(v[0] / 360, v[1] / 100, v[2] / 100), a: v[3] ?? 1 };
+  }
+  return null;
+}
+function rgbToHsl({ r, g, b }) {
+  r /= 255; g /= 255; b /= 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
+  if (mx === mn) return { h: 0, s: 0, l };
+  const d = mx - mn, s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+  const h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return { h: h / 6, s, l };
+}
+function hslToRgb(h, s, l) {
+  if (!s) return { r: l * 255, g: l * 255, b: l * 255 };
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
+  const f = (t) => { t = (t + 1) % 1; return 255 * (t < 1 / 6 ? p + (q - p) * 6 * t : t < 1 / 2 ? q : t < 2 / 3 ? p + (q - p) * (2 / 3 - t) * 6 : p); };
+  return { r: f(h + 1 / 3), g: f(h), b: f(h - 1 / 3) };
+}
+function lift(s) {
+  const c = parseColor(s);
+  if (!c) return s;
+  let { h, s: sat, l } = rgbToHsl(c);
+  l = 0.19 + l * 0.78;
+  if (sat < 0.15) { h = 0.6; sat = Math.max(sat, 0.12); }
+  const o = hslToRgb(h, sat, l);
+  return `rgba(${Math.round(o.r)},${Math.round(o.g)},${Math.round(o.b)},${+c.a.toFixed(3)})`;
+}
+const liftValue = (v) => (typeof v === "string" ? lift(v) : Array.isArray(v) ? v.map(liftValue)
+  : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, liftValue(x)])) : v);
+function liftDark(_prev, next) {
+  for (const layer of next.layers || []) {
+    for (const [k, v] of Object.entries(layer.paint || {})) if (/color$/.test(k)) layer.paint[k] = liftValue(v);
+  }
+  return next;
+}
+function loadBasemap(map, theme) {
+  if (theme === "dark") map.setStyle(STYLES.dark, { diff: false, transformStyle: liftDark });
+  else map.setStyle(STYLES.light, { diff: false });
+}
 
 export function createMap(el, theme, { center = [-0.9, 51.35], zoom = 9 } = {}) {
   const map = new maplibregl.Map({
-    container: el, style: STYLES[theme] || STYLES.light, center, zoom,
+    container: el, style: theme === "dark" ? BLANK_DARK : BLANK, center, zoom,
     attributionControl: { compact: true }, dragRotate: false, pitchWithRotate: false,
   });
+  loadBasemap(map, theme);
   map.touchZoomRotate.disableRotation();
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
   map._mm = { overlays: new Map(), theme };
@@ -20,7 +79,7 @@ export function createMap(el, theme, { center = [-0.9, 51.35], zoom = 9 } = {}) 
   map.on("error", (e) => {
     if (!map._mm.fellBack && e?.error && /style|Failed to fetch/i.test(String(e.error.message || e.error))) {
       map._mm.fellBack = true;
-      map.setStyle(BLANK);
+      map.setStyle(map._mm.theme === "dark" ? BLANK_DARK : BLANK);
     }
   });
   return map;
@@ -32,7 +91,7 @@ export function setMapTheme(map, theme) {
   if (map._mm.fellBack) { applyAll(map); return; }
   // diff:false forces a full reload, which drops our layers; put them back
   // as soon as the new style is usable.
-  map.setStyle(STYLES[theme], { diff: false });
+  loadBasemap(map, theme);
   const again = () => { if (ready(map)) { map.off("styledata", again); applyAll(map); } };
   map.on("styledata", again);
 }
@@ -103,9 +162,10 @@ export const boundsFeature = (b) => ({ type: "Feature", properties: {}, geometry
 
 // A small map showing one region's outline: static, or pannable for editing.
 export function regionMap(el, theme, bounds, { interactive = false } = {}) {
-  const map = new maplibregl.Map({ container: el, style: STYLES[theme] || STYLES.light, interactive,
+  const map = new maplibregl.Map({ container: el, style: theme === "dark" ? BLANK_DARK : BLANK, interactive,
     center: [-2, 54], zoom: 3, attributionControl: false, dragRotate: false });
   map._mm = { overlays: new Map(), theme };
+  loadBasemap(map, theme);
   map.on("style.load", () => applyAll(map));
   if (interactive) map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
   const draw = (b) => {

@@ -8,7 +8,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 COPY pyproject.toml ./
 COPY mapmatch ./mapmatch
-RUN pip install --no-cache-dir . && rm -rf build *.egg-info
+RUN pip install --no-cache-dir ".[rail]" && rm -rf build *.egg-info
 # GB rail alignments and stations used to recognise and draw train journeys.
 COPY data/rail_shapes.json.gz data/rail_stations.json.gz ./data/
 

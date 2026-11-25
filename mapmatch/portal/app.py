@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..engine import valhalla
-from . import api, auth, site, trips
+from . import api, auth, railways, site, trips
 from .config import Config
 from .db import Database
 from .jobs import Jobs
@@ -34,6 +34,8 @@ def create_app(cfg: Config | None = None, transport: Any = None, start_workers: 
     # One Valhalla for the whole instance; an admin sets it in the portal and it
     # is kept in the database rather than the container environment.
     valhalla.configure(site.valhalla_url(db))
+    # Railway networks an admin built here, for trains outside Great Britain.
+    railways.configure(cfg)
     trips.refresh_previews(db)
     jobs = Jobs(db, cfg, transport)
     state = SimpleNamespace(db=db, cfg=cfg, jobs=jobs)

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,7 +15,7 @@ from pydantic import BaseModel, Field, StrictBool
 
 from ..engine import valhalla
 from ..engine.api import ENGINE_VERSION, MODES
-from . import archive, auth, push, site, trips
+from . import archive, auth, push, railways, site, trips
 from .db import now as now_iso
 from .dawarich import Client, DawarichError
 
@@ -30,6 +31,9 @@ class SettingsIn(BaseModel):
     start_date: str | None = None
     trip_gap_min: int | None = Field(None, ge=5, le=24 * 60)
     strength: str | None = None
+    match_modes: list[str] | None = None
+    detailed: str | None = None
+    push_review: bool | None = None
 
 
 class Overrides(BaseModel):
@@ -58,7 +62,8 @@ class GapsIn(BaseModel):
 
 class RecordedIn(BaseModel):
     # True: snap the detailed stretches to the map. False: keep them as recorded.
-    snap: StrictBool
+    # None: do what the account's Match settings say.
+    snap: StrictBool | None = None
 
 
 class RestoreIn(BaseModel):
@@ -249,10 +254,10 @@ def build(app_state: Any) -> APIRouter:
 
     @r.get("/public")
     def public_info() -> dict[str, Any]:
-        return {"dawarich": cfg.dawarich_url, "engine": ENGINE_VERSION,
-                "signup": site.signup_enabled(db),
-                "first_run": db.one("SELECT COUNT(*) n FROM users")["n"] == 0,
-                "valhalla": bool(valhalla.configured() or site.valhalla_url(db))}
+        # Seen before signing in: only what the sign-in page needs, nothing
+        # about where Dawarich or the map server live, or which version runs.
+        return {"signup": site.signup_enabled(db),
+                "first_run": db.one("SELECT COUNT(*) n FROM users")["n"] == 0}
 
     @r.get("/me")
     def me(u: dict[str, Any] = Depends(user)) -> dict[str, Any]:
@@ -275,6 +280,12 @@ def build(app_state: Any) -> APIRouter:
                 raise HTTPException(400, "start date must be YYYY-MM-DD") from exc
         if "strength" in data and data["strength"] not in ("fill", "strict"):
             raise HTTPException(400, "strength must be fill or strict")
+        if "detailed" in data and data["detailed"] not in trips.DETAILED:
+            raise HTTPException(400, "detailed must be keep or snap")
+        if "match_modes" in data:
+            if set(data["match_modes"]) - set(trips.MOVING):
+                raise HTTPException(400, "modes to match must be walk, cycle, drive or train")
+            data["match_modes"] = ",".join(trips.match_modes(data["match_modes"]))
         for k, v in data.items():
             sets[k] = (1 if v else 0) if isinstance(v, bool) else (v.strip() if isinstance(v, str) else v)
         if sets:
@@ -464,6 +475,13 @@ def build(app_state: Any) -> APIRouter:
             raise HTTPException(400, str(exc)) from exc
         return _detail(u["id"], tid)
 
+    @r.post("/trips/{tid}/clear")
+    def clear_trip(tid: int, u: dict[str, Any] = Depends(user)) -> dict[str, Any]:
+        """Back to the original GPS in mapmatch. Dawarich is not touched."""
+        trip_or_404(u["id"], tid)
+        trips.clear(db, u["id"], tid)
+        return _detail(u["id"], tid)
+
     @r.post("/trips/{tid}/undo")
     def undo(tid: int, u: dict[str, Any] = Depends(user)) -> dict[str, Any]:
         trip_or_404(u["id"], tid)
@@ -492,6 +510,7 @@ def build(app_state: Any) -> APIRouter:
             hits = lambda span_list: [k for k in span_list if not (span[0] <= k[1] and k[0] <= span[1])]
             keep = hits(json.loads(trip.get("keep_gaps") or "[]"))
             force = hits(json.loads(trip.get("force_gaps") or "[]"))
+            route = hits(json.loads(trip.get("route_gaps") or "[]"))
             if body.route is False:
                 keep.append(span)
                 reason = "gap kept as recorded"
@@ -499,21 +518,22 @@ def build(app_state: Any) -> APIRouter:
                 force.append(span)
                 reason = "gap routed anyway, over the speed cap"
             else:
+                # Routed even if the trip (or the account) keeps its gaps.
+                route.append(span)
                 reason = "gap routed"
             trips.set_keep_gaps(db, u["id"], tid, keep)
             trips.set_force_gaps(db, u["id"], tid, force)
+            trips.set_route_gaps(db, u["id"], tid, route)
             return _rematch(u["id"], tid, reason, None)
         mode = "" if body.route is None else ("fill" if body.route else "strict")
         try:
             trips.set_gap_mode(db, u["id"], tid, mode)
-            if body.route is True:
-                # "Route across" for the whole trip drops the per-gap choices, and
-                # says whether the speed and length checks may be overridden.
-                trips.set_keep_gaps(db, u["id"], tid, [])
-                trips.set_force_gaps(db, u["id"], tid, [])
-                trips.set_force_route(db, u["id"], tid, bool(body.force))
-            else:
-                trips.set_force_route(db, u["id"], tid, False)
+            # A choice for every gap replaces the choices made gap by gap.
+            trips.set_keep_gaps(db, u["id"], tid, [])
+            trips.set_force_gaps(db, u["id"], tid, [])
+            trips.set_route_gaps(db, u["id"], tid, [])
+            # "Route across" also says whether the speed and length checks may be overridden.
+            trips.set_force_route(db, u["id"], tid, bool(body.force) and body.route is True)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
         reason = {"fill": "gaps routed" + (" anyway, over the speed cap" if body.force else ""),
@@ -526,7 +546,8 @@ def build(app_state: Any) -> APIRouter:
         """Keep a detailed track as recorded, or snap it to the map anyway."""
         trip_or_404(u["id"], tid)
         trips.set_snap_recorded(db, u["id"], tid, body.snap)
-        return _rematch(u["id"], tid, "snapped to the map" if body.snap else "kept as recorded", None)
+        return _rematch(u["id"], tid, {True: "snapped to the map", False: "kept as recorded",
+                                       None: "detailed GPS follows settings"}[body.snap], None)
 
     @r.post("/trips/{tid}/push")
     def push_one(tid: int, u: dict[str, Any] = Depends(user)) -> dict[str, Any]:
@@ -576,10 +597,25 @@ def build(app_state: Any) -> APIRouter:
 
     @r.post("/jobs")
     def start_job(body: JobIn, u: dict[str, Any] = Depends(user)) -> dict[str, Any]:
-        if body.kind not in ("sync", "rematch", "push_all", "revert_all", "repair"):
+        if body.kind not in ("sync", "rematch", "push_all", "revert_all", "repair", "reset"):
             raise HTTPException(400, "unknown job")
-        if body.kind in ("sync", "push_all", "revert_all", "repair") and not trips.settings(db, u["id"]).get("api_key"):
+        needs_key = ("sync", "push_all", "revert_all", "repair") + (("reset",) if body.params.get("dawarich") else ())
+        if body.kind in needs_key and not trips.settings(db, u["id"]).get("api_key"):
             raise HTTPException(400, "add your Dawarich API key in Settings first")
+        if body.kind == "rematch":
+            once = body.params.get("once")
+            if once is not None:
+                if not isinstance(once, dict):
+                    raise HTTPException(400, "once must be an object")
+                if once.get("match_modes") is not None and (not isinstance(once["match_modes"], list)
+                                                            or set(once["match_modes"]) - set(trips.MOVING)):
+                    raise HTTPException(400, "modes to match must be walk, cycle, drive or train")
+                if once.get("detailed") not in (None, *trips.DETAILED):
+                    raise HTTPException(400, "detailed must be keep or snap")
+                if once.get("strength") not in (None, "fill", "strict"):
+                    raise HTTPException(400, "strength must be fill or strict")
+            if body.params.get("push") and not trips.settings(db, u["id"]).get("api_key"):
+                raise HTTPException(400, "add your Dawarich API key in Settings first")
         return {"job": jobs.enqueue(u["id"], body.kind, body.params)}
 
     @r.post("/import/csv")
@@ -680,6 +716,27 @@ def build(app_state: Any) -> APIRouter:
                 continue
         return {"mounted": True, "root": str(root), "files": files}
 
+    @r.get("/admin/railways")
+    def admin_railways(u: dict[str, Any] = Depends(admin)) -> dict[str, Any]:
+        """Railway networks trains are matched on, and extracts to build more from."""
+        return railways.state(cfg)
+
+    @r.post("/admin/railways/build")
+    def admin_build_railways(body: dict[str, str], u: dict[str, Any] = Depends(admin)) -> dict[str, Any]:
+        try:
+            railways.build(cfg, str(body.get("source") or ""))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return railways.state(cfg)
+
+    @r.delete("/admin/railways/{file}")
+    def admin_remove_railways(file: str, u: dict[str, Any] = Depends(admin)) -> dict[str, Any]:
+        try:
+            railways.remove(cfg, file)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return railways.state(cfg)
+
     @r.get("/admin/valhalla/data/{name}")
     def valhalla_data_file(name: str, u: dict[str, Any] = Depends(admin)) -> FileResponse:
         root = cfg.valhalla_data_dir
@@ -747,9 +804,11 @@ def build(app_state: Any) -> APIRouter:
     def system(u: dict[str, Any] = Depends(user)) -> dict[str, Any]:
         outdated = db.one("SELECT COUNT(*) n FROM trips WHERE user_id=? AND result_version > 0 AND engine_version != ?",
                           (u["id"], ENGINE_VERSION))["n"]
-        url = site.valhalla_url(db)
+        # The admin's address, or the VALHALLA_URL the container was started with.
+        url = site.valhalla_url(db) or os.environ.get("VALHALLA_URL", "")
+        # The address itself is internal: only admins see it.
         return {"valhalla": valhalla.status(timeout=4.0) if url else {},
-                "valhalla_url": url, "regions": site.regions(db),
+                "valhalla_url": (url if u["is_admin"] else "set") if url else "", "regions": site.regions(db),
                 "engine": ENGINE_VERSION, "outdated_trips": outdated,
                 "dry_run": cfg.push_dry_run, "dawarich": cfg.dawarich_url,
                 "is_admin": bool(u["is_admin"]), "signup": site.signup_enabled(db)}
@@ -765,6 +824,8 @@ def _public_settings(s: dict[str, Any], cfg: Any) -> dict[str, Any]:
         "auto_enabled": bool(s.get("auto_enabled")), "interval_min": s.get("interval_min", 60),
         "auto_push": bool(s.get("auto_push")), "start_date": s.get("start_date") or "",
         "trip_gap_min": s.get("trip_gap_min", 30), "strength": s.get("strength") or "fill",
+        "match_modes": trips.match_modes(s.get("match_modes", ",".join(trips.MOVING))),
+        "detailed": s.get("detailed") or "keep", "push_review": bool(s.get("push_review", 1)),
         "last_run": s.get("last_run") or "", "last_error": s.get("last_error") or "",
         "synced_to": s.get("synced_to") or 0,
     }

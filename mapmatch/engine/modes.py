@@ -11,7 +11,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from . import rail
+from . import rail, railnet
 from .geo import haversine
 from .stays import find_stays
 
@@ -33,6 +33,12 @@ TRAIN_MIN_P90_KMH = 40.0
 CYCLE_TOP_KMH = 45.0
 DENSE_DT_S = 10
 DENSE_MIN_FIXES = 20
+# Walking, however brisk, moves at 4-6 km/h; a closely logged "walk" that
+# moves at 7 km/h and more for most of its moving time is a slow ride
+# (climbing, a towpath, riding with someone) with stops in it.
+FAST_WALK_P50_KMH = 7.0
+FAST_WALK_P75_KMH = 8.5
+MOVING_KMH = 3.0
 
 
 def speeds(fixes: list[dict[str, Any]]) -> list[float]:
@@ -84,7 +90,8 @@ def near_rail(fixes: list[dict[str, Any]]) -> list[bool]:
             nr = rail.nearest(p["lat"], p["lon"])
         except FileNotFoundError:
             nr = None
-        hits.append(bool(nr and nr["dist"] <= RAIL_NEAR_M))
+        # The GB timetable shapes, or a railway network built from OpenStreetMap.
+        hits.append(bool(nr and nr["dist"] <= RAIL_NEAR_M) or railnet.distance(p["lat"], p["lon"]) <= RAIL_NEAR_M)
     out = []
     for i in range(len(hits)):
         w = hits[max(0, i - 2): i + 3]
@@ -183,6 +190,22 @@ def _slow_drives_are_rides(leg: list[dict[str, Any]], v: list[float], out: list[
             out[k] = "cycle"
 
 
+def _fast_walks_are_rides(leg: list[dict[str, Any]], v: list[float], out: list[str],
+                          forced: list[bool]) -> None:
+    """Closely logged "walking" that moves at riding speed is a ride."""
+    for m, a, b in runs(out):
+        if m != "walk" or b - a < DENSE_MIN_FIXES or any(forced[a:b]):
+            continue
+        dts = sorted(leg[k]["timestamp"] - leg[k - 1]["timestamp"] for k in range(a + 1, b))
+        if dts[len(dts) // 2] > DENSE_DT_S:
+            continue
+        moving = sorted(v[k] for k in range(a, b) if v[k] > MOVING_KMH)
+        if len(moving) < DENSE_MIN_FIXES:
+            continue
+        if moving[len(moving) // 2] >= FAST_WALK_P50_KMH and moving[int(len(moving) * 0.75)] >= FAST_WALK_P75_KMH:
+            out[a:b] = ["cycle"] * (b - a)
+
+
 def runs(labels: list[str]) -> list[tuple[str, int, int]]:
     out = []
     i = 0
@@ -272,6 +295,8 @@ def label(fixes: list[dict[str, Any]], overrides: list[dict[str, Any]] | None = 
         i = j
     _merge_short(fixes, labels, forced)
     _walk_through_pauses(fixes, labels, forced, stay_id)
+    # Judged over the whole walk, pauses included, not leg by leg.
+    _fast_walks_are_rides(fixes, speeds(fixes) if n else [], labels, forced)
     # Each override is its own run, so a split segment keeps both halves even
     # while they share a mode.
     keys = [f"ov{ov_id[k]}:{labels[k]}" if forced[k] else

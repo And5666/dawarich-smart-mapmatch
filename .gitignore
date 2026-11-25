@@ -13,3 +13,4 @@ bench/cache/
 build/
 *.egg-info/
 portal-data/
+data/*.gpx

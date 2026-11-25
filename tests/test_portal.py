@@ -631,3 +631,148 @@ def test_trip_kept_as_recorded_is_never_written_to_dawarich(env):
     assert d["trip"]["push"] == "outdated" and push.pending_push(db, 1) == [t["id"]]
     assert client.post(f"/api/trips/{t['id']}/push", headers=H).status_code == 200
     assert not dw.ours() and client.get(f"/api/trips/{t['id']}").json()["trip"]["push"] == "recorded"
+
+
+def test_trip_kept_as_recorded_is_drawn_through_its_stops(fake_valhalla):
+    from mapmatch.engine.api import match_trip
+    from mapmatch.portal.trips import matched_preview
+    ride = [(5, 0.5 if k % 20 < 10 else -0.5) for k in range(300)]
+    a = track(ride, dt=1, accuracy=None)
+    stop = track([(0.3, -0.3), (-0.3, 0.3)] * 150, start=(a[-1]["lat"], a[-1]["lon"]),
+                 t0=a[-1]["timestamp"] + 1, dt=1, accuracy=None)
+    b = track(ride, start=(stop[-1]["lat"], stop[-1]["lon"]), t0=stop[-1]["timestamp"] + 1, dt=1, accuracy=None)
+    out = match_trip(a + stop + b)
+    assert out["quality"]["as_recorded"] and "stay" in [s["mode"] for s in out["segments"]]
+    parts = matched_preview(out)
+    assert "stay" in [p["m"] for p in parts]           # the stop is part of the line, not skipped
+
+
+def test_match_settings_are_saved_and_used(env):
+    client, dw, jobs, db = env
+    s = client.put("/api/settings", json={"match_modes": ["cycle"], "detailed": "snap"}, headers=H).json()
+    assert s["match_modes"] == ["cycle"] and s["detailed"] == "snap"
+    assert client.put("/api/settings", json={"match_modes": ["boat"]}, headers=H).status_code == 400
+    assert client.put("/api/settings", json={"detailed": "maybe"}, headers=H).status_code == 400
+    sync(client, jobs)
+    trips = client.get("/api/trips").json()["trips"]
+    # Only bikes are matched, so the two drives keep their GPS and are never pushed.
+    assert trips and all(t["push"] == "recorded" and t["quality"]["kept_because"] == "modes" for t in trips)
+    before = sorted(dw.points)
+    run_job(client, jobs, "push_all")
+    assert sorted(dw.points) == before and not dw.ours()
+
+
+def test_match_once_leaves_saved_settings_alone(env):
+    client, dw, jobs, db = env
+    client.put("/api/settings", json={"match_modes": ["cycle"]}, headers=H)
+    run_job(client, jobs, "sync")
+    run_job(client, jobs, "rematch", {"scope": "new", "once": {"match_modes": ["drive", "walk"]}})
+    trips = client.get("/api/trips").json()["trips"]
+    assert trips and all(t["push"] == "original" and not t["quality"].get("as_recorded") for t in trips)
+    d = client.get(f"/api/trips/{trips[0]['id']}").json()
+    assert d["history"][0]["reason"] == "matched once with chosen settings"
+    assert client.get("/api/me").json()["settings"]["match_modes"] == ["cycle"]
+    r = client.post("/api/jobs", json={"kind": "rematch", "params": {"once": {"match_modes": ["boat"]}}}, headers=H)
+    assert r.status_code == 400
+
+
+def test_match_once_can_push_afterwards(env):
+    client, dw, jobs, db = env
+    run_job(client, jobs, "sync")
+    run_job(client, jobs, "rematch", {"scope": "all", "once": {"match_modes": ["drive", "walk"]}, "push": True})
+    assert dw.ours()
+    assert all(t["push"] == "pushed" for t in client.get("/api/trips").json()["trips"])
+
+
+def test_detailed_gps_choice_can_follow_the_account_again(env):
+    client, dw, jobs, db = env
+    sync(client, jobs)
+    tid = client.get("/api/trips").json()["trips"][0]["id"]
+    d = client.put(f"/api/trips/{tid}/recorded", json={"snap": False}, headers=H).json()
+    assert d["trip"]["recorded_choice"] == "keep"
+    d = client.put(f"/api/trips/{tid}/recorded", json={"snap": None}, headers=H).json()
+    assert d["trip"]["recorded_choice"] == "" and d["history"][0]["reason"] == "detailed GPS follows settings"
+
+
+def test_a_gap_can_be_routed_in_a_trip_that_keeps_its_gaps(env, fake_valhalla):
+    client, dw, jobs, db = env
+    sync(client, jobs)
+    tid = client.get("/api/trips").json()["trips"][0]["id"]
+    client.post(f"/api/trips/{tid}/gaps", json={"route": False}, headers=H)
+    d = client.post(f"/api/trips/{tid}/gaps", json={"route": True, "t0": 1, "t1": 2}, headers=H).json()
+    assert d["trip"]["route_gaps"] == [[1, 2]] and d["trip"]["gap_mode"] == "strict"
+    # A choice for the whole trip replaces the gap-by-gap ones.
+    d = client.post(f"/api/trips/{tid}/gaps", json={"route": None}, headers=H).json()
+    assert d["trip"]["route_gaps"] == [] and d["trip"]["keep_gaps"] == [] and d["trip"]["gap_mode"] == ""
+
+
+def test_trip_can_go_back_to_its_original_gps_and_undo_that(env):
+    client, dw, jobs, db = env
+    sync(client, jobs)
+    tid = client.get("/api/trips").json()["trips"][0]["id"]
+    client.post(f"/api/trips/{tid}/gaps", json={"route": False}, headers=H)
+    d = client.post(f"/api/trips/{tid}/clear", headers=H).json()
+    t = d["trip"]
+    assert t["version"] == 0 and t["state"] == "new" and t["modes"] == [] and t["gap_mode"] == ""
+    assert d["segments"] == [] and len(d["history"]) == 2           # the versions stay
+    d = client.post(f"/api/trips/{tid}/undo", headers=H).json()
+    assert d["trip"]["version"] == 3 and d["trip"]["gap_mode"] == "strict"
+    # Matching again after clearing numbers on, never over an old version.
+    client.post(f"/api/trips/{tid}/clear", headers=H)
+    d = client.post(f"/api/trips/{tid}/recalculate", headers=H).json()
+    assert d["trip"]["version"] == 4
+
+
+def test_reset_everything_here_or_in_dawarich_too(env):
+    client, dw, jobs, db = env
+    originals = sorted(dw.originals())
+    sync(client, jobs)
+    run_job(client, jobs, "push_all")
+    assert dw.ours()
+    run_job(client, jobs, "reset")
+    ts = client.get("/api/trips").json()["trips"]
+    assert all(t["version"] == 0 for t in ts) and all(t["push"] == "outdated" for t in ts)
+    assert dw.ours(), "mapmatch only: Dawarich keeps the pushed match"
+    run_job(client, jobs, "reset", {"dawarich": True})
+    ts = client.get("/api/trips").json()["trips"]
+    assert all(t["push"] == "original" and t["version"] == 0 for t in ts)
+    assert not dw.ours() and sorted(dw.originals()) == originals
+
+
+def test_no_map_trips_do_not_need_a_look(env, fake_valhalla):
+    from mapmatch.portal import trips as T
+    assert not T.needs_review({"raw_frac": 0.9, "no_map_frac": 0.5})
+    assert T.needs_review({"raw_frac": 0.9})
+    client, dw, jobs, db = env
+    fake_valhalla.no_map = True
+    sync(client, jobs)
+    ts = client.get("/api/trips").json()["trips"]
+    assert ts and all(t["no_map"] and t["push"] == "recorded" and t["state"] == "matched" for t in ts)
+
+
+def test_railway_network_built_from_an_openstreetmap_extract(env, tmp_path):
+    pytest.importorskip("osmium")
+    import gzip
+    import json
+    from mapmatch.tools import railways as tool
+    osm = tmp_path / "tiny.osm"
+    osm.write_text("""<?xml version='1.0' encoding='UTF-8'?>
+<osm version="0.6">
+  <node id="1" lat="45.0" lon="9.0" version="1"/><node id="2" lat="45.0" lon="9.01" version="1"/>
+  <node id="3" lat="45.0" lon="9.02" version="1"><tag k="railway" v="station"/></node>
+  <node id="4" lat="45.01" lon="9.0" version="1"/><node id="5" lat="45.02" lon="9.0" version="1"/>
+  <way id="10" version="1"><nd ref="1"/><nd ref="2"/><nd ref="3"/><tag k="railway" v="rail"/></way>
+  <way id="11" version="1"><nd ref="1"/><nd ref="4"/><tag k="railway" v="rail"/><tag k="service" v="siding"/></way>
+  <way id="12" version="1"><nd ref="4"/><nd ref="5"/><tag k="railway" v="abandoned"/></way>
+</osm>""")
+    res = tool.build(str(osm), str(tmp_path / "rail"), name="tiny")
+    assert res["lines"] == 1 and res["stations"] == 1
+    with gzip.open(res["file"], "rt") as f:
+        raw = json.load(f)
+    assert raw["ways"] == [[0, 1, 2]] and len(raw["nodes"]) == 3
+
+    client, dw, jobs, db = env
+    d = client.get("/api/admin/railways").json()
+    assert d["can_build"] and not d["mounted"] and d["status"]["running"] is False
+    assert client.post("/api/admin/railways/build", json={"source": "nope.osm.pbf"}, headers=H).status_code == 400
+    assert client.delete("/api/admin/railways/..%2Fportal.db", headers=H).status_code in (400, 404)

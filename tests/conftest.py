@@ -63,6 +63,7 @@ class FakeValhalla:
         self.unmatched = set()     # indices (within a request) to report unmatched
         self.route_detour = 1.0    # >1 makes routes longer than the chord
         self.fail_route = False
+        self.no_map = False         # the server has no tiles here
 
     def __call__(self, path, body, timeout=120.0):
         self.calls.append(path)
@@ -70,6 +71,8 @@ class FakeValhalla:
             return self._trace(body)
         if path == "/route":
             return self._route(body)
+        if path == "/locate":
+            return [{"edges": [] if self.no_map else [{"way_id": 1}]} for _ in body["locations"]]
         raise AssertionError(path)
 
     def _trace(self, body):

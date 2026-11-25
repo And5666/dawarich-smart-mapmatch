@@ -464,3 +464,110 @@ def test_whole_detailed_trip_keeps_every_fix_stops_and_holes_included(fake_valha
     kept = [c for k, c in enumerate(kept) if not k or c[:2] != kept[k - 1][:2]]   # no repeats of a spot
     assert [(p["lat"], p["lon"], p["timestamp"]) for p in out["stream"]] == kept and len(kept) > 900
     assert "stay" in [s["mode"] for s in out["segments"]]                 # still says where it stopped
+
+
+def test_modes_not_matched_keep_their_gps(fake_valhalla):
+    drive = track(DRIVE * 3)
+    out = match_trip(drive, options={"match_modes": ["cycle"]})
+    assert out["quality"]["as_recorded"] and out["quality"]["kept_because"] == "modes"
+    assert not fake_valhalla.calls
+    assert [(p["lat"], p["lon"]) for p in out["stream"]] == [(p["lat"], p["lon"]) for p in drive]
+    # Set by hand, the same drive is matched after all.
+    forced = match_trip(drive, overrides=[{"t0": drive[0]["timestamp"], "t1": drive[-1]["timestamp"], "mode": "drive"}],
+                        options={"match_modes": ["cycle"]})
+    assert not forced["quality"].get("as_recorded") and "matched" in {p["kind"] for s in forced["segments"] for p in s["pieces"]}
+    # Everything matched by default.
+    assert not match_trip(drive)["quality"].get("as_recorded")
+
+
+def test_only_the_unmatched_mode_keeps_its_gps_in_a_mixed_trip(fake_valhalla):
+    walk = track(WALK * 2)
+    drive = track(DRIVE * 3, start=(walk[-1]["lat"], walk[-1]["lon"]), t0=walk[-1]["timestamp"] + 30)
+    out = match_trip(walk + drive, options={"match_modes": ["drive"]})
+    by_mode = {s["mode"]: {p["kind"] for p in s["pieces"]} for s in out["segments"]}
+    assert "recorded" in by_mode.get("walk", set()) and "matched" in by_mode.get("drive", set()), by_mode
+
+
+def test_one_gap_can_be_routed_in_a_trip_that_keeps_its_gaps(fake_valhalla):
+    fake_valhalla.unmatched = {10, 25}
+    pts = track([(500, 0)] * 40)
+    kept = match_trip(pts, options={"strength": "strict"})
+    holes = [p for s in kept["segments"] for p in s["pieces"] if p.get("gap")]
+    assert len(holes) == 2 and {p["kind"] for p in holes} <= {"raw", "straight"}, holes
+    first = holes[0]["gap"]
+    chosen = match_trip(pts, options={"strength": "strict", "route_gaps": [first]})
+    kinds = {tuple(p["gap"]): p["kind"] for s in chosen["segments"] for p in s["pieces"] if p.get("gap")}
+    assert kinds[tuple(first)] == "filled" and len(kinds) == 2
+    assert all(k in ("raw", "straight") for g, k in kinds.items() if g != tuple(first))
+
+
+def test_each_gap_stays_its_own_piece(fake_valhalla):
+    from mapmatch.engine.assemble import merge_pieces
+    a = {"kind": "raw", "coords": [[0, 0, 0, 1], [0, 1, 1, 1]], "n_in": 2, "km": 0.1}
+    g = {"kind": "raw", "coords": [[0, 1, 1, 1], [0, 2, 9, 1]], "n_in": 0, "km": 0.1, "gap": [1, 9]}
+    out = merge_pieces([a, g, dict(a)])
+    assert len(out) == 3 and out[1]["gap"] == [1, 9]
+
+
+def test_watch_stretch_inside_a_phone_trip_is_kept_and_the_rest_matched(fake_valhalla):
+    from mapmatch.engine.assemble import dense_blocks, precise
+    phone = track([(250, 0)] * 30, dt=30)                                   # 30 km/h, every 30 s
+    watch = track([(5, 0.5 if k % 20 < 10 else -0.5) for k in range(400)], start=(phone[-1]["lat"], phone[-1]["lon"]),
+                  t0=phone[-1]["timestamp"] + 1, dt=1, accuracy=None)
+    pts = phone + watch
+    assert not precise(pts), "mostly logged by the phone, so not a detailed trip"
+    out = match_trip(pts)
+    assert not out["quality"].get("as_recorded")
+    kinds = {p["kind"] for s in out["segments"] for p in s["pieces"]}
+    assert "matched" in kinds and "recorded" in kinds
+    line = {(c[0], c[1]) for s in out["segments"] for p in s["pieces"] for c in p["coords"]}
+    assert all((p["lat"], p["lon"]) in line for p, d in zip(clean(pts)[0], dense_blocks(clean(pts)[0])) if d)
+
+
+def test_closely_logged_walk_at_riding_speed_is_a_ride():
+    # 2.5 m/s (9 km/h) for half the time, stopped for the rest: a slow ride with stops.
+    steps = [(2.5, 0)] * 60 + [(0.05, 0)] * 60
+    pts = track(steps * 4, dt=1, accuracy=None)
+    labels, _, _ = label(pts)
+    assert "walk" not in labels and "cycle" in labels
+    brisk = track([(1.6, 0)] * 400, dt=1, accuracy=None)                    # 5.8 km/h
+    assert set(label(brisk)[0]) == {"walk"}
+
+
+def test_trip_where_the_server_has_no_map_is_kept_as_recorded(fake_valhalla):
+    fake_valhalla.no_map = True
+    pts = track(DRIVE * 3)
+    out = match_trip(pts)
+    assert out["quality"]["as_recorded"] and out["quality"]["kept_because"] == "no_map"
+    assert out["quality"]["no_map_frac"] == 1.0
+    assert "/trace_attributes" not in fake_valhalla.calls
+
+
+def test_train_on_an_openstreetmap_railway_outside_gb(fake_valhalla, tmp_path, monkeypatch):
+    import gzip
+    import json
+    from mapmatch.engine import railnet
+    # A railway running east with a junction halfway, far from any GB line.
+    line = [[LAT0, LON0 + k * 0.005] for k in range(60)]
+    branch = [[LAT0 + k * 0.004, LON0 + 0.15] for k in range(1, 20)]
+    with gzip.open(tmp_path / "railways-test.json.gz", "wt") as f:
+        json.dump({"name": "test", "nodes": line + branch,
+                   "ways": [list(range(30)), list(range(29, 60)), [30] + list(range(60, 79))], "stations": []}, f)
+    monkeypatch.setattr(railnet, "_dirs", [str(tmp_path)])
+    monkeypatch.setattr(railnet, "_nets", None)
+    pts = track([(830, 0)] * 24)                    # 100 km/h along the line, a fix every 30 s
+    out = match_trip(pts)
+    trains = [s for s in out["segments"] if s["mode"] == "train"]
+    assert trains and {p["kind"] for s in trains for p in s["pieces"]} >= {"matched"}
+    assert out["quality"]["p95"] < 15
+    monkeypatch.setattr(railnet, "_nets", None)
+
+
+def test_detail_is_judged_per_watch_block_not_per_mode():
+    from mapmatch.engine.assemble import detailed_fixes, precise
+    ride = track([(5, 0.5 if k % 20 < 10 else -0.5) for k in range(400)], dt=1, accuracy=None)
+    phone = track([(250, 0)] * 20, start=(ride[-1]["lat"], ride[-1]["lon"]), t0=ride[-1]["timestamp"] + 30, dt=30)
+    d = detailed_fixes(ride + phone[1:])
+    assert all(d[:400]) and not any(d[401:])
+    assert not precise(ride[100:121]), "too short to judge on its own"
+    assert all(d[100:121]), "but it sits inside a detailed block"

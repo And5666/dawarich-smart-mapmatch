@@ -4,6 +4,7 @@ import { loadMe, watchJobs, startJob } from "./session.js";
 import { Trips } from "./views/trips.js";
 import { TripView } from "./views/trip.js";
 import { Activity } from "./views/activity.js";
+import { Match } from "./views/match.js";
 import { Settings } from "./views/settings.js";
 import { Admin } from "./views/admin.js";
 import { LinkDawarich } from "./views/link.js";
@@ -102,10 +103,11 @@ function Bar({ route }) {
   const me = useStore((s) => s.me);
   const theme = useStore((s) => s.theme);
   const page = route[0] || "";
-  const tab = (href, name, label) => html`<a href=${href} class=${page === name || (name === "" && page === "trip") ? "on" : ""}><span class="lbl">${label}</span></a>`;
+  const tab = (href, name, label, icon) => html`<a href=${href} class=${page === name || (name === "" && page === "trip") ? "on" : ""}
+    aria-current=${page === name || (name === "" && page === "trip") ? "page" : undefined}><${Icon} name=${icon} small /><span class="lbl">${label}</span></a>`;
   return html`<header class="bar">
     <a class="mark" href="#/"><${Mark} /><span class="name">mapmatch</span></a>
-    <nav class="nav">${tab("#/", "", "Trips")}${tab("#/activity", "activity", "Activity")}${tab("#/settings", "settings", "Settings")}${me?.is_admin ? tab("#/admin", "admin", "Admin") : ""}</nav>
+    <nav class="nav">${tab("#/", "", "Trips", "route")}${tab("#/match", "match", "Match", "sliders")}${tab("#/activity", "activity", "Activity", "clock")}${tab("#/settings", "settings", "Settings", "gear")}${me?.is_admin ? tab("#/admin", "admin", "Admin", "shield") : ""}</nav>
     <span class="grow"></span>
     <${SyncStatus} />
     <${Menu} cls="bare" title="Account" label=${html`<span class="ell" style="max-width:180px">${me?.name}</span><${Icon} name="down" small />`}>
@@ -147,6 +149,7 @@ function App() {
   let view;
   if (page === "trip" && arg) view = html`<${TripView} id=${Number(arg)} key=${arg} />`;
   else if (page === "activity") view = html`<${Activity} />`;
+  else if (page === "match") view = html`<${Match} />`;
   else if (page === "settings") view = html`<${Settings} />`;
   else if (page === "admin") view = html`<${Admin} />`;
   else view = html`<${Trips} />`;

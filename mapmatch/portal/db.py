@@ -179,6 +179,16 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE trips ADD COLUMN snap_recorded INTEGER NOT NULL DEFAULT 0;
     """,
+    # 10: what gets matched: the modes snapped to the map, detailed GPS kept or
+    # snapped, and whether automatic pushes include trips that need a look.
+    # A trip's snap_recorded is now 1 snap, -1 keep, 0 follow the account, and
+    # route_gaps holds gaps to route in a trip that otherwise keeps its gaps.
+    """
+    ALTER TABLE settings ADD COLUMN match_modes TEXT NOT NULL DEFAULT 'walk,cycle,drive,train';
+    ALTER TABLE settings ADD COLUMN detailed TEXT NOT NULL DEFAULT 'keep';
+    ALTER TABLE settings ADD COLUMN push_review INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE trips ADD COLUMN route_gaps TEXT NOT NULL DEFAULT '[]';
+    """,
 ]
 
 

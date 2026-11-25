@@ -2,7 +2,7 @@
 import { html, useState, useEffect, api, useStore, toast, full, ago, navigate } from "../lib.js";
 import { watchJobs } from "../session.js";
 
-const KIND = { sync: "Sync", auto: "Automatic run", import_csv: "CSV import", rematch: "Matching", push_all: "Push", revert_all: "Revert all", repair: "Repair tracks" };
+const KIND = { sync: "Sync", auto: "Automatic run", import_csv: "CSV import", rematch: "Matching", push_all: "Push", revert_all: "Revert all", repair: "Repair tracks", reset: "Start again" };
 const CHANGE = {
   push: (p) => `Pushed version ${p.version}`,
   revert: () => "Put original GPS back",

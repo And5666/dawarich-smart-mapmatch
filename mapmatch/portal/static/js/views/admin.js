@@ -29,6 +29,7 @@ export function Admin() {
     <${People} s=${s} reload=${load} />
     <${Valhalla} s=${s} reload=${load} />
     <${Regions} s=${s} reload=${load} />
+    <${Railways} />
     <${MapData} />
   </div>`;
 }
@@ -278,6 +279,46 @@ function Regions({ s, reload }) {
         </div>`)}</div>
       ${edit && !edit.id && html`<${RegionEditor} start=${{}} busy=${busy} onSave=${save} onCancel=${() => setEdit(null)} />`}
       ${!edit && html`<div class="actions"><button onClick=${() => setEdit({})}>Add a region</button></div>`}
+    </div>
+  </section>`;
+}
+
+// ------------------------------------------------------------------ railways
+function Railways() {
+  const [d, setD] = useState(null);
+  const load = () => api("/admin/railways").then(setD).catch((e) => toast(e.message, "bad"));
+  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    if (!d?.status?.running) return;
+    const t = setTimeout(load, 2000);
+    return () => clearTimeout(t);
+  }, [d]);
+  const build = (source) => api("/admin/railways/build", { method: "POST", body: { source } }).then(setD).catch((e) => toast(e.message, "bad"));
+  const remove = (file) => api(`/admin/railways/${encodeURIComponent(file)}`, { method: "DELETE" }).then((x) => { setD(x); toast("Removed"); }).catch((e) => toast(e.message, "bad"));
+  const st = d?.status || {};
+  return html`<section>
+    <header><h2>Railways</h2><p>What trains are matched on. Great Britain's are built in; anywhere else needs a railway network made from map data.</p></header>
+    <div class="body">
+      ${!d ? html`<p class="help">Checking…</p>` : html`
+        <div class="scroll-x"><table class="t"><thead><tr><th>Network</th><th>Track</th><th>Stations</th><th>Built</th><th></th></tr></thead><tbody>
+          <tr><td>Great Britain <span class="faint">(national timetable, built in)</span></td><td class="num dim">–</td><td class="num dim">–</td><td></td><td></td></tr>
+          ${d.networks.map((n) => html`<tr key=${n.file}>
+            <td>${n.name}</td><td class="num dim" style="white-space:nowrap">${n.km.toLocaleString()} km</td><td class="num dim">${n.stations.toLocaleString()}</td>
+            <td class="num dim" style="white-space:nowrap">${ago(n.built)}</td>
+            <td>${n.removable && html`<${Confirm} cls="sm bare" armedLabel="Remove it?" onConfirm=${() => remove(n.file)}>Remove<//>`}</td></tr>`)}
+        </tbody></table></div>
+        ${st.running && html`<div class="note"><div>Building from ${st.source}: ${st.message}…</div></div>`}
+        ${!st.running && st.error && html`<div class="note bad"><div>Building from ${st.source} failed: ${st.error}</div></div>`}
+        ${!st.running && st.finished && !st.error && html`<div class="note good"><div>Built from ${st.source}: ${st.message}. Match trips there again to use it.</div></div>`}
+        ${!d.can_build ? html`<p class="help">This server can't read map extracts yet: it needs pyosmium (<code>pip install osmium</code>; the mapmatch Docker image has it).</p>`
+          : !d.mounted ? html`<p class="help">Mount the Valhalla data directory (see Map files below) to build a network from the extracts in it, or run
+            <code>python -m mapmatch.tools.railways your-region.osm.pbf</code> in this container.</p>`
+          : !d.sources.length ? html`<p class="help">No <code>.osm.pbf</code> extracts in the map data directory.</p>`
+          : html`<p class="help">Build a network from an OpenStreetMap extract in the map data directory. Big countries take a few minutes.</p>
+            <div class="stack" style="gap:6px">${d.sources.map((x) => html`<div class="row" key=${x.name}>
+              <span class="grow">${x.name} <span class="faint num">${bytes(x.size)}</span></span>
+              <button class="sm" disabled=${st.running} onClick=${() => build(x.name)}>
+                ${d.networks.some((n) => n.name === x.network) ? "Build again" : "Build railways"}</button></div>`)}</div>`}`}
     </div>
   </section>`;
 }

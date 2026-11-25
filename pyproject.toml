@@ -17,6 +17,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+# Building railway networks from OpenStreetMap extracts (trains outside GB).
+rail = ["osmium>=3.7"]
 
 [tool.setuptools.packages.find]
 include = ["mapmatch*"]

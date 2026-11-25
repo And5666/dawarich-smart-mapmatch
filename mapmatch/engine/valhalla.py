@@ -125,6 +125,13 @@ def _cache_path(path: str, body: dict[str, Any]) -> Path | None:
     return p
 
 
+def _web(url: str) -> str:
+    """Only http(s): urllib would also open file: and other schemes."""
+    if not url.lower().startswith(("http://", "https://")):
+        raise ValhallaError("the map server address must start with http:// or https://")
+    return url
+
+
 def post(path: str, body: dict[str, Any], timeout: float = 120.0) -> dict[str, Any]:
     cp = _cache_path(path, body)
     if cp is not None and cp.exists():
@@ -133,7 +140,7 @@ def post(path: str, body: dict[str, Any], timeout: float = 120.0) -> dict[str, A
             raise ValhallaError(cached["__error__"])
         return cached
     req = urllib.request.Request(
-        f"{base_url()}{path}", data=json.dumps(body).encode(),
+        _web(f"{base_url()}{path}"), data=json.dumps(body).encode(),
         headers={"Content-Type": "application/json", "Accept": "application/json"},
         method="POST",
     )
@@ -159,6 +166,24 @@ def post(path: str, body: dict[str, Any], timeout: float = 120.0) -> dict[str, A
     if err:
         raise ValhallaError(err)
     return out
+
+
+def uncovered(points: list[dict[str, Any]], samples: int = 8) -> float | None:
+    """Share of a few fixes spread over the trip where the server has no map
+    at all (no tiles: locate finds no edge however near). None when the
+    server can't say."""
+    if not points:
+        return None
+    step = max(1, len(points) // samples)
+    pick = points[::step][:samples]
+    try:
+        res = post("/locate", {"locations": [{"lat": float(p["lat"]), "lon": float(p["lon"])} for p in pick],
+                               "costing": "pedestrian", "verbose": False})
+    except ValhallaError:
+        return None
+    if not isinstance(res, list) or not res:
+        return None
+    return sum(1 for r in res if not (r or {}).get("edges")) / len(res)
 
 
 def _shape_item(p: dict[str, Any], default_radius: float, narrow: bool = False) -> dict[str, Any]:
@@ -297,7 +322,7 @@ def route(locations: list[dict[str, Any]], profile: str = "auto",
 def status(timeout: float = 5.0, url: str | None = None) -> dict[str, Any]:
     base = (url or base_url()).rstrip("/")
     try:
-        with urllib.request.urlopen(f"{base}/status", timeout=timeout) as resp:
+        with urllib.request.urlopen(_web(f"{base}/status"), timeout=timeout) as resp:  # noqa: S310 - http(s) only
             return json.loads(resp.read())
     except Exception as exc:  # noqa: BLE001
         return {"error": str(exc)}

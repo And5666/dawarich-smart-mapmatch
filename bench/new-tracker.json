@@ -2,14 +2,14 @@
  "summary": {
   "trips": 280,
   "failures": 0,
-  "straight": 118,
-  "straight_25m": 119,
+  "straight": 120,
+  "straight_25m": 120,
   "single_fix_raw": 5,
-  "segments_per_trip": 2.58,
+  "segments_per_trip": 2.56,
   "trips_over_20pct_unmatched": 8,
-  "unmatched_km": 56.2,
+  "unmatched_km": 56.1,
   "km_by_kind": {
-   "filled": 622.8,
+   "filled": 622.9,
    "join": 1.3,
    "matched": 3733.1,
    "raw": 33.6,
@@ -19,7 +19,7 @@
   "out_over_raw_km": 1.031,
   "median_p95": 18.4,
   "mean_p95": 29.1,
-  "seconds": 8.7
+  "seconds": 3.3
  },
  "failures": [],
  "trips": [
@@ -86,7 +86,9 @@
    "straight": 0,
    "straight_25m": 0,
    "km": {
-    "matched": 41.226
+    "matched": 41.099,
+    "join": 0.019,
+    "filled": 0.108
    },
    "unmatched_frac": 0.0,
    "p50": 2.0,
@@ -118,23 +120,25 @@
   {
    "id": 3194,
    "n_in": 180,
-   "n_out": 487,
+   "n_out": 488,
    "raw_km": 40.879,
-   "out_km": 41.048,
-   "segments": 3,
+   "out_km": 41.054,
+   "segments": 4,
    "single_fix_raw": 0,
    "straight": 0,
    "straight_25m": 0,
    "km": {
-    "matched": 40.934,
-    "filled": 0.124,
-    "stay": 0.0
+    "matched": 40.849,
+    "filled": 0.198,
+    "stay": 0.0,
+    "join": 0.017
    },
    "unmatched_frac": 0.0,
    "p50": 2.0,
    "p95": 5.4,
    "modes": [
     "cycle",
+    "stay",
     "stay",
     "drive"
    ]
@@ -243,8 +247,8 @@
    "straight": 0,
    "straight_25m": 0,
    "km": {
-    "matched": 9.916,
-    "filled": 0.233,
+    "matched": 9.885,
+    "filled": 0.264,
     "stay": 0.0,
     "raw": 0.051
    },
@@ -282,29 +286,25 @@
   {
    "id": 3201,
    "n_in": 117,
-   "n_out": 269,
+   "n_out": 260,
    "raw_km": 12.318,
-   "out_km": 12.57,
-   "segments": 6,
+   "out_km": 12.363,
+   "segments": 3,
    "single_fix_raw": 0,
-   "straight": 1,
-   "straight_25m": 1,
+   "straight": 0,
+   "straight_25m": 0,
    "km": {
-    "matched": 12.146,
-    "filled": 0.377,
-    "join": 0.023,
-    "straight": 0.03,
+    "matched": 12.126,
+    "join": 0.006,
+    "filled": 0.236,
     "stay": 0.0
    },
-   "unmatched_frac": 0.002,
-   "p50": 3.2,
-   "p95": 27.6,
+   "unmatched_frac": 0.0,
+   "p50": 3.9,
+   "p95": 37.2,
    "modes": [
     "drive",
-    "walk",
     "stay",
-    "drive",
-    "walk",
     "drive"
    ]
   },
@@ -395,7 +395,7 @@
   {
    "id": 3206,
    "n_in": 73,
-   "n_out": 408,
+   "n_out": 410,
    "raw_km": 39.647,
    "out_km": 41.381,
    "segments": 3,
@@ -680,8 +680,8 @@
    "out_km": 0.324,
    "segments": 1,
    "single_fix_raw": 0,
-   "straight": 1,
-   "straight_25m": 1,
+   "straight": 2,
+   "straight_25m": 2,
    "km": {
     "straight": 0.324
    },
@@ -859,9 +859,9 @@
   {
    "id": 3225,
    "n_in": 26,
-   "n_out": 74,
+   "n_out": 86,
    "raw_km": 34.243,
-   "out_km": 34.701,
+   "out_km": 34.797,
    "segments": 2,
    "single_fix_raw": 0,
    "straight": 2,
@@ -873,7 +873,7 @@
    },
    "unmatched_frac": 0.074,
    "p50": 5.9,
-   "p95": 42.7,
+   "p95": 42.6,
    "modes": [
     "train",
     "cycle"
@@ -995,8 +995,8 @@
    "out_km": 19.094,
    "segments": 2,
    "single_fix_raw": 0,
-   "straight": 3,
-   "straight_25m": 3,
+   "straight": 4,
+   "straight_25m": 4,
    "km": {
     "matched": 14.064,
     "filled": 2.564,
@@ -1329,7 +1329,7 @@
   {
    "id": 3245,
    "n_in": 83,
-   "n_out": 393,
+   "n_out": 394,
    "raw_km": 26.924,
    "out_km": 28.024,
    "segments": 5,
@@ -1607,7 +1607,7 @@
   {
    "id": 3258,
    "n_in": 64,
-   "n_out": 389,
+   "n_out": 390,
    "raw_km": 39.173,
    "out_km": 40.125,
    "segments": 1,
@@ -2388,7 +2388,7 @@
   {
    "id": 3292,
    "n_in": 278,
-   "n_out": 1169,
+   "n_out": 1170,
    "raw_km": 121.229,
    "out_km": 123.752,
    "segments": 11,
@@ -2446,7 +2446,7 @@
    "segments": 15,
    "single_fix_raw": 0,
    "straight": 4,
-   "straight_25m": 5,
+   "straight_25m": 4,
    "km": {
     "join": 0.055,
     "filled": 1.946,
@@ -3591,23 +3591,23 @@
   {
    "id": 3342,
    "n_in": 199,
-   "n_out": 665,
+   "n_out": 668,
    "raw_km": 56.844,
-   "out_km": 58.112,
+   "out_km": 58.19,
    "segments": 4,
    "single_fix_raw": 0,
    "straight": 1,
    "straight_25m": 1,
    "km": {
     "matched": 54.414,
-    "filled": 3.042,
+    "filled": 3.12,
     "raw": 0.505,
     "straight": 0.164,
     "stay": 0.0
    },
    "unmatched_frac": 0.012,
    "p50": 4.2,
-   "p95": 31.9,
+   "p95": 24.4,
    "modes": [
     "cycle",
     "walk",
@@ -3718,21 +3718,21 @@
   {
    "id": 3347,
    "n_in": 94,
-   "n_out": 172,
+   "n_out": 175,
    "raw_km": 40.09,
-   "out_km": 35.078,
+   "out_km": 35.118,
    "segments": 4,
    "single_fix_raw": 0,
    "straight": 3,
    "straight_25m": 3,
    "km": {
-    "filled": 1.117,
+    "filled": 1.157,
     "matched": 33.597,
     "straight": 0.37,
     "stay": 0.0
    },
    "unmatched_frac": 0.009,
-   "p50": 5.6,
+   "p50": 5.3,
    "p95": 24.6,
    "modes": [
     "cycle",
@@ -4502,7 +4502,7 @@
   {
    "id": 3382,
    "n_in": 20,
-   "n_out": 139,
+   "n_out": 140,
    "raw_km": 9.775,
    "out_km": 11.133,
    "segments": 1,
@@ -4653,8 +4653,8 @@
    "out_km": 40.918,
    "segments": 6,
    "single_fix_raw": 0,
-   "straight": 3,
-   "straight_25m": 3,
+   "straight": 4,
+   "straight_25m": 4,
    "km": {
     "matched": 39.295,
     "straight": 0.847,
@@ -5768,18 +5768,18 @@
   {
    "id": 3437,
    "n_in": 311,
-   "n_out": 612,
+   "n_out": 611,
    "raw_km": 44.612,
-   "out_km": 44.966,
-   "segments": 6,
+   "out_km": 44.964,
+   "segments": 4,
    "single_fix_raw": 0,
    "straight": 0,
    "straight_25m": 0,
    "km": {
-    "matched": 44.184,
-    "filled": 0.776,
+    "matched": 44.447,
+    "filled": 0.475,
     "stay": 0.0,
-    "join": 0.014
+    "join": 0.052
    },
    "unmatched_frac": 0.0,
    "p50": 2.0,
@@ -5787,8 +5787,6 @@
    "modes": [
     "drive",
     "stay",
-    "drive",
-    "cycle",
     "drive",
     "stay"
    ]
@@ -6146,15 +6144,15 @@
   {
    "id": 3453,
    "n_in": 150,
-   "n_out": 353,
+   "n_out": 359,
    "raw_km": 31.803,
-   "out_km": 32.378,
+   "out_km": 32.515,
    "segments": 8,
    "single_fix_raw": 0,
    "straight": 3,
    "straight_25m": 3,
    "km": {
-    "filled": 1.44,
+    "filled": 1.578,
     "matched": 30.308,
     "straight": 0.485,
     "stay": 0.0,

@@ -140,6 +140,15 @@ const P = {
   fit: "M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5",
   move: "M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3",
   mark: "M4 18c3.5-.5 4.5-10 8-10s3 6 8 4",
+  route: "M6 19a2 2 0 1 0 0-.01M18 7a2 2 0 1 0 0-.01M6 17V9a3 3 0 0 1 3-3h1M18 9v6a3 3 0 0 1-3 3h-5",
+  sliders: "M4 7h10M18 7h2M4 17h4M12 17h8M14 5v4M8 15v4",
+  clock: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2",
+  gear: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 13.5l1.6 1.2-2 3.4-1.9-.7a7 7 0 0 1-2 1.2L14.8 21h-4l-.3-2.2a7 7 0 0 1-2-1.2l-1.9.7-2-3.4 1.6-1.2a7 7 0 0 1 0-3L4.6 9.3l2-3.4 1.9.7a7 7 0 0 1 2-1.2L10.8 3h4l.3 2.2a7 7 0 0 1 2 1.2l1.9-.7 2 3.4-1.6 1.2a7 7 0 0 1 0 3z",
+  shield: "M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z",
+  push: "M12 16V4M7 9l5-5 5 5M5 20h14",
+  eye: "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
+  filter: "M4 5h16l-6 7.5V19l-4 1.5v-8z",
+  info: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5M12 8h.01",
 };
 export function Icon({ name, small, cls = "" }) {
   return html`<svg class=${`i ${small ? "s" : ""} ${cls}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
@@ -181,3 +190,16 @@ export function Menu({ label, children, cls = "", left = false, title }) {
 }
 
 export function navigate(hash) { if (location.hash !== hash) location.hash = hash; }
+
+// A row of mutually exclusive buttons.
+export function Seg({ value, options, onChange, disabled }) {
+  return html`<div class="seg" role="radiogroup">${options.map(([k, label]) => html`<button role="radio" aria-checked=${value === k}
+    class=${value === k ? "on" : ""} disabled=${disabled} onClick=${() => onChange(k)}>${label}</button>`)}</div>`;
+}
+
+// Larger radio choices, each with a line saying what it does.
+export function Choices({ name, value, options, onChange }) {
+  return html`<div class="choices" role="radiogroup">${options.map(([k, label, help]) => html`<label class=${`choice ${value === k ? "on" : ""}`}>
+    <input type="radio" name=${name} checked=${value === k} onChange=${() => onChange(k)} />
+    <span><b>${label}</b>${help && html`<span class="help">${help}</span>`}</span></label>`)}</div>`;
+}

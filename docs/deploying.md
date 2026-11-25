@@ -54,10 +54,18 @@ Practical notes that have bitten already:
   are written to sit inside those (search radius 80–100 m, breakage 2–3 km) — do
   not lower them, and if you raise `search_radius` in the matcher, raise the
   limit too or Valhalla rejects the call.
-- **Trains are Great Britain only.** `data/rail_shapes.json.gz` and
-  `rail_stations.json.gz` are GB rail alignments. In GB, train legs are snapped
-  to rail; elsewhere train legs are matched as road and look wrong. That is a
-  known limitation, not a config error.
+- **Trains outside Great Britain need a railway network.** GB trains use the
+  bundled national timetable alignments (`data/rail_shapes.json.gz`). For any
+  other country, an admin builds a railway network from the same OpenStreetMap
+  extract Valhalla was built from: **Admin → Railways → Build railways** lists
+  the `.osm.pbf` files in `VALHALLA_DATA_DIR`. Without a mount, run
+  `docker exec mapmatch python -m mapmatch.tools.railways /path/region-latest.osm.pbf`.
+  Networks are written to `PORTAL_DATA/rail/` and used at once; match the trips
+  there again afterwards. Running lines are kept; sidings, yards and disused
+  track are not.
+- **Places with no map.** A trip somewhere Valhalla has no tiles for is kept as
+  recorded and marked "No map here" instead of "Needs a look". Add that
+  region's tiles to Valhalla (and its railways here) to match it.
 - **Throughput.** Matching is one HTTP call per segment, so a big account takes
   minutes and a small one seconds. `MATCH_WORKERS` (default 4) should stay at or
   below the thread count you gave `valhalla_service` (the test instance uses 6).
@@ -177,6 +185,7 @@ straight lines between the points either side of a trip.
 ## What is deliberately not in the image
 
 The container needs `mapmatch/`, `pyproject.toml`, and the two GB rail files.
+Railway networks for other countries are built on the server, into `PORTAL_DATA/rail/`.
 `.dockerignore` is an allowlist, so `bench/`, `tests/`, `docs/`, `out/`, the
 development virtualenv and private CSV exports never enter a build.
 
