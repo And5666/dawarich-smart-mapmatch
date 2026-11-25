@@ -454,9 +454,9 @@ export function TripView({ id }) {
                 <i class="recorded" style=${`width:${pct(q.recorded_frac || 0)}`}></i><i class="matched" style=${`width:${pct(q.matched_frac)}`}></i><i class="filled" style=${`width:${pct(q.filled_frac)}`}></i><i class="raw" style=${`width:${pct(q.raw_frac)}`}></i></div>
               <div class="qlegend num">
                 ${q.recorded_frac > 0 && html`<span><i style="background:var(--rec)"></i>${pct(q.recorded_frac)} as recorded</span>`}
-                <span><i style="background:var(--good)"></i>${pct(q.matched_frac)} on the map</span>
-                <span><i style="background:color-mix(in srgb, var(--good) 45%, var(--sunk))"></i>${pct(q.filled_frac)} routed gaps</span>
-                <span><i style="background:var(--m-raw)"></i>${pct(q.raw_frac)} GPS kept</span>
+                ${(!q.recorded_frac || q.matched_frac > 0) && html`<span><i style="background:var(--good)"></i>${pct(q.matched_frac)} on the map</span>`}
+                ${(!q.recorded_frac || q.filled_frac > 0) && html`<span><i style="background:color-mix(in srgb, var(--good) 45%, var(--sunk))"></i>${pct(q.filled_frac)} routed gaps</span>`}
+                ${(!q.recorded_frac || q.raw_frac > 0) && html`<span><i style="background:var(--m-raw)"></i>${pct(q.raw_frac)} GPS kept</span>`}
               </div>
               ${q.matched_frac > 0 && html`<p class="small faint">Your GPS sits ${Math.round(q.p50 || 0)} m from the line on average.</p>`}
               ${!preview && (hasRecorded || t.snap_recorded) && html`<div class="note"><div>
