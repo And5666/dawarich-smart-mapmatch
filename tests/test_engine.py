@@ -336,7 +336,7 @@ def test_pushed_lines_have_no_long_straight_steps_but_jumps_stay_jumps():
 
 
 def test_one_second_logging_does_not_split_a_ride_at_every_light():
-    # A bike computer logs every second: 4 min riding at 18 km/h, 70 s
+    # A bike computer logs every second: 4 min riding at 18 km/h, 2.5 min
     # waiting in a queue at 3 km/h, 4 min riding again.
     ride = [(5, 0)] * 240
     pts = track(ride + [(0.8, 0)] * 150 + ride, dt=1)
@@ -352,3 +352,16 @@ def test_slow_ride_beside_a_railway_is_not_a_train(monkeypatch):
     assert set(labels) == {"cycle"}
     fast = track([(1000, 0)] * 12)                     # 120 km/h along the line
     assert set(label(fast)[0]) == {"train"}
+
+
+def test_closely_logged_ride_at_town_driving_speed_is_cycling():
+    # A road bike logged every second: 20 min at 30-36 km/h, never past 40.
+    ride = track([(8.5, 0), (9.5, 0), (10, 0), (8.5, 0)] * 300, dt=1)
+    assert set(label(ride)[0]) == {"cycle"}
+    # A car logged as closely gets past 45 km/h, so it stays a drive.
+    car = track([(8.5, 0)] * 300 + [(16, 0)] * 300, dt=1)
+    assert set(label(car)[0]) == {"drive"}
+    # A phone logging every 30 s can miss every fast moment of a drive
+    # through town, so sparse slow driving is left to the speed model.
+    town = track([(280, 0)] * 40)                      # 34 km/h, every 30 s
+    assert set(label(town)[0]) == {"drive"}
