@@ -6,6 +6,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     RAIL_DATA_DIR=/app/data
 
 WORKDIR /app
+# pyosmium (the [rail] extra) links against libexpat at run time; the slim image
+# ships without it, so building railways from an OSM extract fails to import.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libexpat1 \
+ && rm -rf /var/lib/apt/lists/*
 COPY pyproject.toml ./
 COPY mapmatch ./mapmatch
 RUN pip install --no-cache-dir ".[rail]" && rm -rf build *.egg-info
