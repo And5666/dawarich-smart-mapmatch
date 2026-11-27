@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import bisect
 import math
 import os
 import threading
@@ -107,6 +108,51 @@ def nearest(lat: float, lon: float) -> dict[str, Any] | None:
     best["arc"] = _cum[best["shape"]][best["seg"]] + best["t"] * (
         _cum[best["shape"]][best["seg"] + 1] - _cum[best["shape"]][best["seg"]])
     return best
+
+
+def between(lat_a: float, lon_a: float, lat_b: float, lon_b: float,
+            reach: float = 200.0) -> list[tuple[float, float]] | None:
+    """The stretch of railway from a to b: the shortest piece of one timetable
+    shape that passes within `reach` of both, in travel order, or None. For a
+    train ride with no fixes on the way (a tunnel, a dead phone)."""
+    _load()
+
+    def hits(lat: float, lon: float) -> dict[int, list[float]]:
+        out: dict[int, list[float]] = {}
+        ci, cj = int(lat / CELL), int(lon / CELL)
+        for di in (-1, 0, 1):
+            for dj in (-1, 0, 1):
+                for si, pi in _index.get((ci + di, cj + dj), ()):
+                    line = _shapes[si]
+                    d, t = _project(lat, lon, line[pi], line[pi + 1])
+                    if d <= reach:
+                        out.setdefault(si, []).append(_cum[si][pi] + t * (_cum[si][pi + 1] - _cum[si][pi]))
+        return out
+
+    ha, hb = hits(lat_a, lon_a), hits(lat_b, lon_b)
+    chord = _hav(lat_a, lon_a, lat_b, lon_b)
+    best: tuple[float, int, float, float] | None = None
+    for si in ha.keys() & hb.keys():
+        for x in ha[si]:
+            for y in hb[si]:
+                span = abs(y - x)
+                # A shape can pass the same place twice; the span must at least cover the distance.
+                if span >= 0.9 * chord and (best is None or span < best[0]):
+                    best = (span, si, x, y)
+    if best is None:
+        return None
+    _, si, x, y = best
+    line, cum = _shapes[si], _cum[si]
+    lo, hi = min(x, y), max(x, y)
+
+    def at(arc: float) -> tuple[float, float]:
+        k = max(1, min(len(cum) - 1, bisect.bisect_left(cum, arc)))
+        f = 0.0 if cum[k] == cum[k - 1] else (arc - cum[k - 1]) / (cum[k] - cum[k - 1])
+        f = max(0.0, min(1.0, f))
+        return line[k - 1][0] + f * (line[k][0] - line[k - 1][0]), line[k - 1][1] + f * (line[k][1] - line[k - 1][1])
+
+    path = [at(lo)] + [line[k] for k in range(len(cum)) if lo < cum[k] < hi] + [at(hi)]
+    return path if x <= y else path[::-1]
 
 
 def shape_line(si: int) -> list[tuple[float, float]]:

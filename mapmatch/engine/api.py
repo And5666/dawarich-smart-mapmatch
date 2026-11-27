@@ -5,14 +5,20 @@ from typing import Any
 
 from . import assemble, valhalla
 from .clean import clean
+from .geo import haversine
 from .match import fit_score, match_segment
 from .modes import label, runs, summary_speed
-from .quality import deviations, path_km, percentile
+from .quality import between, deviations, path_km, percentile
 
-ENGINE_VERSION = "2.9.1"
+ENGINE_VERSION = "2.10.0"
 MODES = ("walk", "cycle", "drive", "train", "stay", "raw")
 MOVING = ("walk", "cycle", "drive", "train")
 NO_MAP_FRAC = 0.75   # share of sampled fixes with no map under them: the trip is abroad
+
+
+FIT_EDGE = 0.08            # fit_score: 0.08 is 8% more fixes on the network, or 8 m closer
+FIT_EDGE_SLOW = 0.25       # for a segment that never looked faster than a bike
+RIDE_FAST_P90_KMH = 30.0
 
 
 def _choose_road(fixes: list[dict[str, Any]], mode: str) -> tuple[str, dict[str, Any]]:
@@ -26,15 +32,117 @@ def _choose_road(fixes: list[dict[str, Any]], mode: str) -> tuple[str, dict[str,
         alts = ("cycle", "drive")
     else:
         alts = (mode,)
+    # How much better the other mode must fit to win. Any ride on ordinary
+    # streets fits the car network as well as the cycle network, often a
+    # shade better, so a small difference says nothing: a ride that never
+    # passed 30 km/h was being called a drive on it. Only a clear difference
+    # counts (the track is on roads that mode cannot use), and a ride at
+    # cycling speeds needs a clearer one still.
+    edge = 0.03
+    if mode == "cycle":
+        edge = FIT_EDGE_SLOW if sp["p90"] < RIDE_FAST_P90_KMH else FIT_EDGE
+    elif len(alts) > 1:
+        edge = FIT_EDGE
     best = None
     for k, m in enumerate(alts):
         res = match_segment(fixes, m)
         sc = fit_score(fixes, res)
         if k == 0:
-            sc += 0.03  # the speed-based label wins ties
+            sc += edge  # the speed-based label wins unless the other fits clearly better
         if best is None or sc > best[0]:
             best = (sc, m, res)
     return best[1], best[2]
+
+
+HOOK_EXTRA_M = 300.0     # the line is this much longer than the straight hop between two fixes
+HOOK_RATIO = 1.8         # and this many times as long
+HOOK_GAIN = 0.6          # leaving a fix out must take away this share of the extra
+HOOK_MAX = 3             # per segment
+HOOK_END_HOP_M = 300.0   # an end fix is only given up for a hop this short
+
+
+def _unhook(fixes: list[dict[str, Any]], mode: str, res: dict[str, Any]
+            ) -> tuple[list[dict[str, Any]], dict[str, Any], list[dict[str, Any]]]:
+    """One fix a little off the road can pull the matched line round the
+    block: up a side street and back, or to the far carriageway and round a
+    roundabout (seen as 350-500 m loops on a straight main road). Where the
+    line between two fixes is much longer than the hop, try the match again
+    without one of them, the less accurate first, and keep that when the
+    loop goes and the rest of the line stays as it was. The fix is reported
+    as dropped ("hook"); nothing else is touched.
+
+    Returns (fixes, match, dropped)."""
+    dropped: list[dict[str, Any]] = []
+    tried: set[int] = set()          # hops (by their first fix's time) that no dropped fix improved
+    for _ in range(HOOK_MAX * 4):
+        if len(dropped) >= HOOK_MAX:
+            break
+        anchors = res["anchors"]
+        n = len(fixes)
+        found = None
+        for k in range(0, n - 1):
+            if fixes[k]["timestamp"] in tried:
+                continue
+            a0, a1 = anchors[k], anchors[k + 1]
+            if not a0 or not a1 or a0["piece"] != a1["piece"]:
+                continue
+            line = a1["arc"] - a0["arc"]
+            hop = haversine(fixes[k]["lat"], fixes[k]["lon"], fixes[k + 1]["lat"], fixes[k + 1]["lon"])
+            if line - hop >= HOOK_EXTRA_M and line >= HOOK_RATIO * max(hop, 30.0):
+                found = (k, line - hop, hop)
+                break
+        if found is None:
+            break
+        k, extra, hop = found
+        tried.add(fixes[k]["timestamp"])
+        total = sum(1 for a in anchors if a)
+
+        def attempt(x: int) -> dict[str, Any] | None:
+            try:
+                new = match_segment(fixes[:x] + fixes[x + 1:], mode)
+            except Exception:  # noqa: BLE001 - no better match, keep what we have
+                return None
+            return new if sum(1 for a in new["anchors"] if a) >= total - 1 else None
+
+        def take(x: int, new: dict[str, Any]) -> None:
+            nonlocal fixes, res
+            fixes[x]["_drop"] = "hook"
+            dropped.append(fixes[x])
+            fixes, res = fixes[:x] + fixes[x + 1:], {**new, "profile": new.get("profile", res.get("profile"))}
+
+        if k == 0 or k == n - 2:
+            # The first or last hop of the segment (setting off, arriving). The end fix has no
+            # neighbour beyond it to hold the line, so it is the one on the wrong road. Without it
+            # the segment ends one fix earlier, and the short seam to the stop beside it is left
+            # to the gap filler, which draws a short hop straight when every route goes round.
+            if n < 4 or hop > HOOK_END_HOP_M:
+                continue
+            x = 0 if k == 0 else n - 1
+            new = attempt(x)
+            if new is not None:
+                take(x, new)
+            continue
+        before = _span(anchors, k - 1, k + 2)
+        if before is None:
+            continue
+        for x in sorted((k, k + 1), key=lambda i: -(fixes[i].get("accuracy") or 20.0)):
+            new = attempt(x)
+            # The two neighbours sit one place nearer each other in the trial.
+            after = _span(new["anchors"], k - 1, k + 1) if new is not None else None
+            if after is not None and after <= before - HOOK_GAIN * extra:
+                take(x, new)
+                break
+    return fixes, res, dropped
+
+
+def _span(anchors: list[dict[str, Any] | None], i: int, j: int) -> float | None:
+    """Length of matched line from fix i to fix j, when it is one unbroken piece."""
+    if i < 0 or j >= len(anchors):
+        return None
+    a, b = anchors[i], anchors[j]
+    if not a or not b or a["piece"] != b["piece"]:
+        return None
+    return b["arc"] - a["arc"]
 
 
 def _rail_wins(fixes: list[dict[str, Any]], rail_res: dict[str, Any]) -> bool:
@@ -98,7 +206,7 @@ def match_trip(points: list[dict[str, Any]], overrides: list[dict[str, Any]] | N
         if any(lo <= r1 and r0 <= hi for r0, r1 in force_ranges):
             return True
         return "route" if any(lo <= r1 and r0 <= hi for r0, r1 in route_ranges) else False
-    fixes, dropped = clean(points)
+    fixes, dropped = clean(points, jitter=True)
     if not fixes:
         return {"segments": [], "stream": [], "dropped": dropped, "quality": {},
                 "engine_version": ENGINE_VERSION}
@@ -122,6 +230,7 @@ def match_trip(points: list[dict[str, Any]], overrides: list[dict[str, Any]] | N
     keys = [k if forced[i] else f"{k}|{'d' if dense[i] else 's'}" for i, k in enumerate(keys)]
 
     segments: list[dict[str, Any]] = []
+    hooked: list[dict[str, Any]] = []
     for key, i, j in runs(keys):
         mode = labels[i]
         seg_fixes = fixes[i:j]
@@ -132,8 +241,10 @@ def match_trip(points: list[dict[str, Any]], overrides: list[dict[str, Any]] | N
             segments.append({"mode": mode, "forced": False, "profile": None, "n_fixes": 1,
                              "pieces": [], "via": seg_fixes, "key": key})
             continue
-        if mode == "stay" and not snap and all(detailed[i:j]) and len(seg_fixes) > 1:
+        if mode == "stay" and len(seg_fixes) > 1 and (key.startswith("dwell") or (not snap and all(detailed[i:j]))):
             # A stop logged by a watch keeps its points, like the ride around it.
+            # So does a wide stop (see stays.find_dwells): its fixes are up to
+            # 100 m apart and show where in the place you were; one dot would not.
             profile = "recorded"
             pieces = [assemble._piece("recorded", [[p["lat"], p["lon"], p["timestamp"], 1] for p in seg_fixes],
                                       len(seg_fixes))]
@@ -153,13 +264,16 @@ def match_trip(points: list[dict[str, Any]], overrides: list[dict[str, Any]] | N
         else:
             if mode == "train":
                 res = match_segment(seg_fixes, "train")
-                if not is_forced and not _rail_wins(seg_fixes, res):
+                if not is_forced and not key.startswith("auto:") and not _rail_wins(seg_fixes, res):
                     mode = "drive" if summary_speed(seg_fixes)["median"] > 25 else "walk"
                     mode, res = _choose_road(seg_fixes, mode)
             elif is_forced:
                 res = match_segment(seg_fixes, mode)
             else:
                 mode, res = _choose_road(seg_fixes, mode)
+            if mode != "train":
+                seg_fixes, res, off = _unhook(seg_fixes, mode, res)
+                hooked.extend(off)
             profile = res.get("profile")
             pieces = assemble.road_pieces(seg_fixes, mode, res, strength, keep_gap, force_gap)
         segments.append({"mode": mode, "forced": is_forced, "profile": profile,
@@ -169,6 +283,10 @@ def match_trip(points: list[dict[str, Any]], overrides: list[dict[str, Any]] | N
     segments = assemble.merge_same_mode(segments)
     assemble.finish(segments)
     out = assemble.stream(segments)
+    if hooked:
+        gone = {id(p) for p in hooked}
+        fixes = [p for p in fixes if id(p) not in gone]
+        dropped = sorted(dropped + hooked, key=lambda p: p["timestamp"])
     return {
         "segments": segments,
         "stream": out,
@@ -212,6 +330,21 @@ def _as_recorded(fixes: list[dict[str, Any]], dropped: list[dict[str, Any]], lab
     }
 
 
+SPARSE_HOP_M = 200.0
+
+
+def _unsure_km(segments: list[dict[str, Any]]) -> float:
+    total = 0.0
+    for s in segments:
+        for p in s["pieces"]:
+            c = p["coords"]
+            if p["kind"] == "straight":
+                total += p["km"]
+            elif p["kind"] == "raw":
+                total += sum(d for d in (haversine(x[0], x[1], y[0], y[1]) for x, y in zip(c, c[1:])) if d > SPARSE_HOP_M) / 1000.0
+    return total
+
+
 def quality(fixes: list[dict[str, Any]], segments: list[dict[str, Any]],
             out: list[dict[str, Any]]) -> dict[str, Any]:
     km: dict[str, float] = {}
@@ -228,7 +361,12 @@ def quality(fixes: list[dict[str, Any]], segments: list[dict[str, Any]],
         "recorded_frac": round(km.get("recorded", 0.0) / moving, 3) if moving else 0.0,
         "filled_frac": round(km.get("filled", 0.0) / moving, 3) if moving else 0.0,
         "raw_frac": round((km.get("raw", 0.0) + km.get("straight", 0.0)) / moving, 3) if moving else 0.0,
+        # The part of that which is a guess: a straight line across a hole, or kept GPS whose fixes are
+        # so far apart that it is straight lines too. GPS kept point for point along a path the map
+        # does not have is where you were, not a doubt about the match.
+        "unsure_frac": round(_unsure_km(segments) / moving, 3) if moving else 0.0,
         "p50": round(percentile(errs, 0.5), 1),
         "p95": round(percentile(errs, 0.95), 1),
         "segments": len(segments),
+        **between(fixes, segments),
     }

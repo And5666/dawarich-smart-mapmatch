@@ -47,36 +47,55 @@ def build(pbf: str, out_dir: str, name: str | None = None,
 
     say = progress or (lambda _m: None)
     name = name or name_of(pbf)
-    index: dict[int, int] = {}
-    nodes: list[list[float]] = []
-    ways: list[list[int]] = []
     stations: list[list[float]] = []
+    raw_ways: list[list[int]] = []
+    needed: set[int] = set()
 
-    class Handler(osmium.SimpleHandler):
-        def node(self, n: Any) -> None:
-            if n.tags.get("railway") in STATIONS and n.location.valid():
-                stations.append([round(n.location.lat, 6), round(n.location.lon, 6)])
-
+    # Two passes instead of one with a node-location index: that index holds
+    # every node of the extract (several GB for a country) to find the few on
+    # a railway. First the railway ways and the node ids they use, then only
+    # those nodes' positions.
+    class Ways(osmium.SimpleHandler):
         def way(self, w: Any) -> None:
             tags = w.tags
             if tags.get("railway") not in RUNNING or tags.get("service") in NOT_RUNNING_SERVICE:
                 return
             if tags.get("disused") == "yes" or tags.get("abandoned") == "yes":
                 return
-            idx = []
-            for n in w.nodes:
-                if not n.location.valid():
-                    continue
-                k = index.get(n.ref)
-                if k is None:
-                    k = index[n.ref] = len(nodes)
-                    nodes.append([round(n.location.lat, 6), round(n.location.lon, 6)])
-                idx.append(k)
-            if len(idx) >= 2:
-                ways.append(idx)
+            refs = [n.ref for n in w.nodes]
+            if len(refs) >= 2:
+                raw_ways.append(refs)
+                needed.update(refs)
+
+    coords: dict[int, list[float]] = {}
+
+    class Nodes(osmium.SimpleHandler):
+        def node(self, n: Any) -> None:
+            if not n.location.valid():
+                return
+            if n.id in needed:
+                coords[n.id] = [round(n.location.lat, 6), round(n.location.lon, 6)]
+            if n.tags.get("railway") in STATIONS:
+                stations.append([round(n.location.lat, 6), round(n.location.lon, 6)])
 
     say(f"reading {os.path.basename(pbf)}")
-    Handler().apply_file(pbf, locations=True)
+    Ways().apply_file(pbf)
+    Nodes().apply_file(pbf)
+    index: dict[int, int] = {}
+    nodes: list[list[float]] = []
+    ways: list[list[int]] = []
+    for refs in raw_ways:
+        idx = []
+        for ref in refs:
+            if ref not in coords:
+                continue
+            k = index.get(ref)
+            if k is None:
+                k = index[ref] = len(nodes)
+                nodes.append(coords[ref])
+            idx.append(k)
+        if len(idx) >= 2:
+            ways.append(idx)
     os.makedirs(out_dir, exist_ok=True)
     out = os.path.join(out_dir, f"railways-{name}.json.gz")
     tmp = out + ".tmp"

@@ -12,8 +12,9 @@ import math
 from typing import Any
 
 from . import rail, railnet
+from .fill import rail_path
 from .geo import haversine
-from .stays import find_stays
+from .stays import find_dwells, find_stays
 
 MODES = ("walk", "cycle", "drive", "train")
 SWITCH_COST = 6.0
@@ -39,6 +40,18 @@ DENSE_MIN_FIXES = 20
 FAST_WALK_P50_KMH = 7.0
 FAST_WALK_P75_KMH = 8.5
 MOVING_KMH = 3.0
+SPARSE_S = 20             # neighbours this far apart in time: sparse logging
+# One vehicle between stops: a bike does not turn into a car, or a car into a
+# bike, without stopping. Where a ride and a drive touch with no stop between
+# them, and the drive really reached car speed, the "ride" is the car slowing
+# down (the last streets into town, a car park, a queue).
+CAR_PROOF_KMH = 45.0
+# A short, quick hop next to a car journey with only stops in between (to the
+# shop, to the next car park) is the car too. A real ride after driving
+# somewhere is longer and slower than this.
+HOP_MAX_S = 900
+HOP_P50_KMH = 20.0
+HOP_P90_KMH = 27.0
 
 
 def speeds(fixes: list[dict[str, Any]]) -> list[float]:
@@ -63,13 +76,16 @@ def speeds(fixes: list[dict[str, Any]]) -> list[float]:
         dv = fixes[i].get("velocity")
         if dv is not None and dv > 0:
             dev = float(dv) * 3.6
-            # A stale phone reading (seen on trains: 20 km/h reported while
-            # accurate fixes move 3 km every half minute) loses to positions,
-            # but only at train-like speeds: a single GPS jump must not turn a
-            # bike ride into a drive.
-            acc = max(a.get("accuracy") or 50.0, b.get("accuracy") or 50.0)
-            if acc <= 30 and dt >= 20 and pos > 100 and pos > 3 * dev:
-                raw.append(pos)
+            # The reading is the speed at one instant. With a fix every half
+            # minute or more that instant can be a junction or a bend while
+            # the minute around it was driven at 50 (a drive then reads like a
+            # bike ride), and some phones repeat a stale reading. The ground
+            # covered cannot lie that way: it is a floor on the average speed,
+            # less what the position error could add. The floor is the slower
+            # of the hop before and the hop after, so that one GPS jump, which
+            # shows in only one of them, does not turn a ride into a drive.
+            if dt >= SPARSE_S and 0 < i < n - 1:
+                raw.append(max(dev, min(_hop_floor(a, fixes[i]), _hop_floor(fixes[i], b))))
             else:
                 raw.append(dev)
             continue
@@ -79,6 +95,16 @@ def speeds(fixes: list[dict[str, Any]]) -> list[float]:
         w = sorted(raw[max(0, i - 2): i + 3])
         out.append(w[len(w) // 2])
     return out
+
+
+def _hop_floor(p: dict[str, Any], q: dict[str, Any]) -> float:
+    """The least average speed (km/h) between two fixes that their positions allow."""
+    dt = q["timestamp"] - p["timestamp"]
+    if dt <= 0:
+        return 0.0
+    d = haversine(p["lat"], p["lon"], q["lat"], q["lon"])
+    slack = min(p.get("accuracy") or 25.0, 60.0) + min(q.get("accuracy") or 25.0, 60.0)
+    return max(0.0, d - slack) / dt * 3.6
 
 
 def near_rail(fixes: list[dict[str, Any]]) -> list[bool]:
@@ -218,6 +244,107 @@ def runs(labels: list[str]) -> list[tuple[str, int, int]]:
     return out
 
 
+TRAIN_HOLE_MIN_M = 800.0      # a hole at least this long between two fixes (one Underground stop)
+TRAIN_HOLE_MIN_KMH = 9.0      # crossed faster than anyone walks that far (fill.LONG_WALK_KMH)
+TRAIN_HOLE_MAX_KMH = 220.0
+TRAIN_HOLE_STATION_M = 300.0
+
+
+def _near_station(p: dict[str, Any]) -> bool:
+    try:
+        if rail.station_distance(p["lat"], p["lon"]) <= TRAIN_HOLE_STATION_M:
+            return True
+    except (OSError, ValueError):
+        pass
+    return railnet.station_distance(p["lat"], p["lon"]) <= TRAIN_HOLE_STATION_M
+
+
+def _train_holes(fixes: list[dict[str, Any]], labels: list[str], forced: list[bool], pinned: list[bool]) -> None:
+    """A ride with nothing recorded on the way (the Underground, a phone in a
+    pocket on a train) shows as two fixes kilometres apart. With no speeds in
+    between it was labelled a walk and got a walking route. It is a train
+    when a railway joins the two ends, the timing fits one, and the ends are
+    at stations (or the train carries on from there): the two fixes are then
+    labelled train, and the gap between them is filled along the rails."""
+    steps = sorted(b["timestamp"] - a["timestamp"] for a, b in zip(fixes, fixes[1:]))
+    usual = steps[len(steps) // 2] if steps else 0.0
+    for k in range(len(fixes) - 1):
+        a, b = fixes[k], fixes[k + 1]
+        if forced[k] or forced[k + 1] or (labels[k] == "train" and labels[k + 1] == "train"):
+            continue
+        dt = b["timestamp"] - a["timestamp"]
+        # Only where the speeds said nothing, or where the logging really
+        # stopped: a drive or a ride logged once a minute also has fixes a
+        # kilometre apart, and passes stations.
+        quiet = labels[k] in ("walk", "stay", "train") and labels[k + 1] in ("walk", "stay", "train")
+        if not quiet and dt < max(180.0, 4.0 * usual):
+            continue
+        chord = haversine(a["lat"], a["lon"], b["lat"], b["lon"])
+        if dt < 60 or chord < TRAIN_HOLE_MIN_M or chord / dt * 3.6 < TRAIN_HOLE_MIN_KMH:
+            continue
+        if not ((_near_station(a) or labels[k] == "train") and (_near_station(b) or labels[k + 1] == "train")):
+            continue
+        path = rail_path(a, b)
+        if not path:
+            continue
+        length = sum(haversine(p[0], p[1], q[0], q[1]) for p, q in zip(path, path[1:]))
+        if length > 1.6 * chord + 500.0 or length / dt * 3.6 > TRAIN_HOLE_MAX_KMH:
+            continue
+        for x in (k, k + 1):
+            labels[x] = "train"
+            pinned[x] = True
+
+
+def _detailed(fixes: list[dict[str, Any]], i: int, j: int) -> bool:
+    """Logged every few seconds (a watch, a bike computer)."""
+    if j - i < DENSE_MIN_FIXES:
+        return False
+    dts = sorted(fixes[k]["timestamp"] - fixes[k - 1]["timestamp"] for k in range(i + 1, j))
+    return dts[len(dts) // 2] <= DENSE_DT_S
+
+
+def _one_vehicle(fixes: list[dict[str, Any]], labels: list[str], held: list[bool]) -> None:
+    """Rides that are really the car: see CAR_PROOF_KMH and HOP_MAX_S."""
+    n = len(labels)
+    if n < 2:
+        return
+    v = speeds(fixes)
+
+    def pct(i: int, j: int, f: float) -> float:
+        s = sorted(v[i:j])
+        return s[min(len(s) - 1, int(len(s) * f))] if s else 0.0
+
+    changed = True
+    while changed:
+        changed = False
+        rs = runs(labels)
+        for k, (m, i, j) in enumerate(rs):
+            if m != "cycle" or any(held[i:j]) or _detailed(fixes, i, j):
+                continue
+            # Touching a drive that reached car speed, no stop between.
+            for kk in (k - 1, k + 1):
+                if 0 <= kk < len(rs) and rs[kk][0] == "drive" and max(v[rs[kk][1]:rs[kk][2]], default=0.0) >= CAR_PROOF_KMH:
+                    labels[i:j] = ["drive"] * (j - i)
+                    changed = True
+                    break
+            if changed:
+                break
+            # A short quick hop, with a drive on the other side of a stop.
+            dur = fixes[j - 1]["timestamp"] - fixes[i]["timestamp"]
+            if dur > HOP_MAX_S or not (pct(i, j, 0.5) >= HOP_P50_KMH or pct(i, j, 0.9) >= HOP_P90_KMH):
+                continue
+            for step in (-1, 1):
+                kk = k + step
+                while 0 <= kk < len(rs) and rs[kk][0] == "stay":
+                    kk += step
+                if 0 <= kk < len(rs) and kk != k + step and rs[kk][0] == "drive":
+                    labels[i:j] = ["drive"] * (j - i)
+                    changed = True
+                    break
+            if changed:
+                break
+
+
 def _merge_short(fixes: list[dict[str, Any]], labels: list[str], forced: list[bool]) -> None:
     """Merge movement runs too short to be an activity into a neighbour."""
     changed = True
@@ -262,10 +389,12 @@ def label(fixes: list[dict[str, Any]], overrides: list[dict[str, Any]] | None = 
     labels = ["walk"] * n
     forced = [False] * n
     stay_id = [-1] * n
-    for sid, (a, b) in enumerate(find_stays(fixes, trim=True)):
+    stays = find_stays(fixes, trim=True)
+    for sid, (a, b) in enumerate(stays):
         for k in range(a, b):
             labels[k] = "stay"
             stay_id[k] = sid
+    dwell = [False] * n
     ov_id = [-1] * n
     for oi, ov in enumerate(overrides or []):
         for k, p in enumerate(fixes):
@@ -293,14 +422,55 @@ def label(fixes: list[dict[str, Any]], overrides: list[dict[str, Any]] | None = 
         _slow_drives_are_rides(leg, v, out)
         labels[i:j] = out
         i = j
-    _merge_short(fixes, labels, forced)
-    _walk_through_pauses(fixes, labels, forced, stay_id)
+    pinned = [False] * n
+    _train_holes(fixes, labels, forced, pinned)
+    # A pinned fix is kept like one set by hand, without being reported as such.
+    held = [f or p for f, p in zip(forced, pinned)]
+    _merge_short(fixes, labels, held)
+    _walk_through_pauses(fixes, labels, forced, stay_id, dwell)
+    # Wider, slower stops the stay radius misses (see stays.find_dwells),
+    # looked for in what is still movement at this point: ordinary stays keep
+    # their own fixes and stay single dots, and a short pause that was just
+    # folded into its walk can be part of a long one. Only where the trip
+    # starts or ends (nothing but stays beyond it): that is arriving somewhere
+    # and lingering. In the middle of a trip a slow stretch is left to the
+    # rules above (a scramble at 0.6 km/h with a rest on the ridge is a walk).
+    sid = len(stays)
+    i = 0
+    found = False
+    while i < n:
+        if labels[i] == "stay" or forced[i]:
+            i += 1
+            continue
+        j = i
+        while j < n and labels[j] != "stay" and not forced[j]:
+            j += 1
+        for a, b in find_dwells(fixes[i:j]):
+            if not (all(m == "stay" for m in labels[:i + a]) or all(m == "stay" for m in labels[i + b:])):
+                continue
+            for k in range(i + a, i + b):
+                labels[k] = "stay"
+                stay_id[k] = sid
+                dwell[k] = True
+            sid += 1
+            found = True
+        i = j
+    if found:
+        # One or two fixes left between a drive and the stop it ends at.
+        _merge_short(fixes, labels, held)
+    _one_vehicle(fixes, labels, held)
     # Judged over the whole walk, pauses included, not leg by leg.
     _fast_walks_are_rides(fixes, speeds(fixes) if n else [], labels, forced)
     # Each override is its own run, so a split segment keeps both halves even
     # while they share a mode.
+    # A train run that contains such a hole is one ride: keep it one segment.
+    for m, a, b in runs(labels):
+        if m == "train" and any(pinned[a:b]):
+            for x in range(a, b):
+                pinned[x] = not forced[x]
     keys = [f"ov{ov_id[k]}:{labels[k]}" if forced[k] else
-            f"stay{stay_id[k]}" if labels[k] == "stay" else labels[k] for k in range(n)]
+            f"auto:{labels[k]}" if pinned[k] and labels[k] == "train" else
+            f"{'dwell' if dwell[k] else 'stay'}{stay_id[k]}" if labels[k] == "stay" else labels[k] for k in range(n)]
     return labels, forced, keys
 
 
@@ -308,7 +478,7 @@ WALK_PAUSE_S = 1500
 
 
 def _walk_through_pauses(fixes: list[dict[str, Any]], labels: list[str], forced: list[bool],
-                         stay_id: list[int]) -> None:
+                         stay_id: list[int], dwell: list[bool]) -> None:
     """A short stop with walking on both sides is part of the walk.
 
     A hike is a string of pauses (a view, a scramble, lunch on a ridge); as
@@ -331,6 +501,7 @@ def _walk_through_pauses(fixes: list[dict[str, Any]], labels: list[str], forced:
             for k in range(i, j):
                 labels[k] = "walk"
                 stay_id[k] = -1
+                dwell[k] = False
         i = j
 
 
