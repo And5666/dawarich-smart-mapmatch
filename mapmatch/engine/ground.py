@@ -26,7 +26,7 @@ NOT_WATER = ("fountain", "swimming_pool")   # blue on the map, but walked across
 INSIDE_M = 20.0            # a straight step with this much of it under roofs goes through buildings
 STEP_M = 5.0
 MAX_ZOOM = 15
-CACHE = 400
+CACHE = 96              # decoded tiles kept per worker (a city tile is a megabyte or two)
 
 _path: str | None = None
 _file: Any = None
