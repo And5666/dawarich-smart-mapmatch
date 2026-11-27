@@ -28,7 +28,7 @@ from collections import Counter
 from typing import Any, Callable
 
 from ..engine.io import normalize
-from . import archive, trips
+from . import archive, guard, trips
 from .dawarich import Client
 from .db import Database, now
 
@@ -86,6 +86,7 @@ def _tracker(fixes: list[dict[str, Any]]) -> str:
 STOP_REACH_S = 6 * 3600     # how far a stop at either end of the history reaches
 STOP_JOIN_M = 150.0         # fixes this close to a stop's centre belong to it
 STOP_EVERY_S = 1800         # one point per half hour while stopped
+STOP_QUIET_S = guard.QUIET_S   # nothing recorded for longer than this: no stop points across it
 BAD_FIX_M = 100.0           # a lone fix worse than this is noise, not a place
 
 
@@ -108,12 +109,17 @@ def tidy_stops(run: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
     """The fixes recorded while stopped, as clean points, one list per place:
     each place you were becomes its centre, at arrival and departure and every
     half hour between. A lone fix too inaccurate to be a place is dropped (the
-    archive keeps it)."""
+    archive keeps it).
+
+    Points are only made while fixes say you were there: across more than
+    STOP_QUIET_S with nothing recorded (the phone off for weeks) the place is
+    left at the last fix and picked up again at the next, so a day with no
+    data never gets points."""
     from ..engine.geo import haversine
     from ..engine.stays import centroid
     clusters: list[list[dict[str, Any]]] = []
     for p in run:
-        if clusters:
+        if clusters and p["timestamp"] - clusters[-1][-1]["timestamp"] <= STOP_QUIET_S:
             good = [q for q in clusters[-1] if (q.get("accuracy") or 20.0) <= BAD_FIX_M] or clusters[-1]
             lat, lon = centroid(good)
             if haversine(lat, lon, p["lat"], p["lon"]) <= max(STOP_JOIN_M, 1.5 * (p.get("accuracy") or 20.0)):
@@ -134,11 +140,17 @@ def tidy_stops(run: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
             continue
         last = stamps[-1]
         out.append([{"lat": lat, "lon": lon, "timestamp": ts, "accuracy": 10.0, "tracker": dev, "ours": True,
-                     "mode": "stay"} for ts in stamps])
+                     "mode": "stay", "src": "stop"} for ts in stamps])
     return out
 
 
 LINK_MIN_M = 25.0
+# A link is the short step from where you stopped to where a trip begins. A hop
+# longer than this, or with nothing recorded for longer, is a journey nobody
+# logged: guessing a route for it would put a made-up line in Dawarich that the
+# portal never shows, so it is left as a gap.
+LINK_MAX_M = guard.LINK_M
+LINK_MAX_S = guard.LINK_S
 DENSE_M = 150.0   # longest step between pushed points along a matched line
 
 
@@ -157,10 +169,12 @@ def densify(pts: list[dict[str, Any]], max_m: float = DENSE_M) -> list[dict[str,
         d = haversine(a["lat"], a["lon"], b["lat"], b["lon"])
         dt = int(b["timestamp"]) - int(a["timestamp"])
         n = min(int(d // max_m), dt - 1)
+        # A point on the way to or from a link is part of the link, not of the matched line.
+        between = {"src": "link"} if "link" in (a.get("src"), b.get("src")) else {}
         for k in range(1, n + 1):
             f = k / (n + 1)
             out.append({**a, "lat": a["lat"] + (b["lat"] - a["lat"]) * f, "lon": a["lon"] + (b["lon"] - a["lon"]) * f,
-                        "timestamp": int(a["timestamp"]) + int(round(dt * f))})
+                        "timestamp": int(a["timestamp"]) + int(round(dt * f)), **between})
     if pts:
         out.append(pts[-1])
     # whole seconds, strictly increasing
@@ -179,7 +193,7 @@ def link(a: dict[str, Any], b: dict[str, Any], mode: str | None = None) -> list[
     from ..engine.geo import haversine
     dt = int(b["timestamp"]) - int(a["timestamp"])
     d = haversine(a["lat"], a["lon"], b["lat"], b["lon"])
-    if dt < 2 or d < LINK_MIN_M:
+    if dt < 2 or d < LINK_MIN_M or d > LINK_MAX_M or dt > LINK_MAX_S:
         return []
     if mode not in ("walk", "cycle", "drive"):
         v = d / dt * 3.6
@@ -205,10 +219,10 @@ def link(a: dict[str, Any], b: dict[str, Any], mode: str | None = None) -> list[
         t = int(round(ts))
         if last < t < int(b["timestamp"]):
             out.append({"lat": lat, "lon": lon, "timestamp": t, "accuracy": 10.0, "tracker": a.get("tracker"),
-                        "ours": True, "mode": mode})
+                        "ours": True, "mode": mode, "src": "link"})
             last = t
     ends = [{"lat": x["lat"], "lon": x["lon"], "timestamp": int(x["timestamp"]), "kind": "filled", "accuracy": 10.0,
-             "tracker": a.get("tracker"), "ours": True, "mode": mode} for x in (a, b)]
+             "tracker": a.get("tracker"), "ours": True, "mode": mode, "src": "link"} for x in (a, b)]
     return [p for p in densify([ends[0], *out, ends[1]]) if p is not ends[0] and p is not ends[1]]
 
 
@@ -311,6 +325,7 @@ def apply(db: Database, cfg: Any, uid: int, changes: dict[int, bool], transport:
             posts: list[dict[str, Any]] = []
             covered: list[tuple[int, int]] = []
             streams: dict[int, tuple[list[dict[str, Any]], dict[str, Any]]] = {}
+            lines: dict[int, tuple[int, int, list[list[float]]]] = {}
             n_matched = 0
             for t in inside:
                 ver = shown.get(t["id"])
@@ -328,12 +343,14 @@ def apply(db: Database, cfg: Any, uid: int, changes: dict[int, bool], transport:
                     pts = to_stream(res["segments"])
                 except (KeyError, TypeError, ValueError):
                     pts = res["stream"]
-                pts = [{**p, "tracker": dev, "ours": True} for p in pts if t["start_ts"] <= p["timestamp"] <= t["end_ts"]]
+                pts = [{**p, "tracker": dev, "ours": True, "src": "match"} for p in pts if t["start_ts"] <= p["timestamp"] <= t["end_ts"]]
                 stream = densify(_bridge_stops(pts))
                 if len(stream) < 2:
                     raise ValueError(f"the match of trip {t['id']} is empty")
                 posts += stream
                 streams[t["id"]] = (stream, res)
+                lines[t["id"]] = (t["start_ts"], t["end_ts"],
+                                  [c for sg in res["segments"] for pc in sg["pieces"] for c in pc["coords"]])
                 n_matched += len(stream)
                 covered.append((t["start_ts"], t["end_ts"]))
             loose = [p for p in fixes if not any(c <= p["timestamp"] <= d for c, d in covered)]
@@ -363,6 +380,10 @@ def apply(db: Database, cfg: Any, uid: int, changes: dict[int, bool], transport:
                     n_matched += len(tidy)
                 else:
                     posts += [{**p, "tracker": p["tracker_id"], "ours": False} for p in run]
+            # The last word: nothing the portal doesn't show or the GPS doesn't back.
+            problems = guard.check(posts, fixes, lines, (a, b))
+            if problems:
+                raise RuntimeError("refused to write to Dawarich, nothing changed: " + "; ".join(problems[:3]))
             ids = [int(p["id"]) for p in remote if p.get("id") is not None]
             summary["deleted"] += len(ids)
             summary["posted"] += len(posts)

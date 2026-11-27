@@ -1,5 +1,27 @@
 # Changes
 
+## 2.10.1
+
+### Safety: nothing reaches Dawarich that the portal doesn't show or the GPS doesn't back
+
+- **Days with no data got points.** With the phone off from 13 October to
+  26 November, the stop either side was stamped every half hour through all
+  six weeks (48 points a day). Stop points now never bridge more than 12 hours
+  with nothing recorded.
+- **Made-up routes between trips.** An hour with nothing recorded between a
+  stop and the next trip, 4.6 km away, was drawn as a walk the portal never
+  showed. A link between a stop and a trip is now only the short step between
+  them: at most 15 minutes and 1.5 km.
+- **A last check before every write** (`mapmatch/portal/guard.py`), separate
+  from the code that builds the points. A matched point must lie on the line
+  the portal draws; a stop point must sit where fixes were, between two fixes
+  at most 12 hours apart; a link must be a short step between them; a point
+  put back must be in the archive. Anything else and the span is refused: the
+  trip shows the reason and Dawarich is left exactly as it was, for a push by
+  hand and for automatic runs alike.
+- After updating, **Settings → Repair tracks** rewrites what earlier pushes
+  wrote, removing the points above.
+
 ## 2.10.0
 
 Found by running the matcher over a real account (a few hundred trips, two
