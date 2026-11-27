@@ -189,6 +189,11 @@ MIGRATIONS: list[str] = [
     ALTER TABLE settings ADD COLUMN push_review INTEGER NOT NULL DEFAULT 1;
     ALTER TABLE trips ADD COLUMN route_gaps TEXT NOT NULL DEFAULT '[]';
     """,
+    # A trip the user has looked at and passed: the version of the match that was
+    # checked. A later match is a new version, so it is flagged again if it still needs a look.
+    """
+    ALTER TABLE trips ADD COLUMN checked_version INTEGER NOT NULL DEFAULT 0;
+    """,
 ]
 
 

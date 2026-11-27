@@ -776,3 +776,55 @@ def test_railway_network_built_from_an_openstreetmap_extract(env, tmp_path):
     assert d["can_build"] and not d["mounted"] and d["status"]["running"] is False
     assert client.post("/api/admin/railways/build", json={"source": "nope.osm.pbf"}, headers=H).status_code == 400
     assert client.delete("/api/admin/railways/..%2Fportal.db", headers=H).status_code in (400, 404)
+
+
+def test_a_flagged_trip_can_be_passed_and_is_flagged_again_by_a_new_match(env):
+    """'Looks right' takes a trip off the needs-a-look list for the match that
+    was checked; any later match is a new version and is judged afresh."""
+    client, dw, jobs, db = env
+    sync(client, jobs)
+    tid = client.get("/api/trips").json()["trips"][0]["id"]
+    # Make the stored match one that needs a look, whatever the fake map gave.
+    with db.tx() as c:
+        c.execute("UPDATE trips SET quality=? WHERE id=?", ('{"raw_frac": 0.5, "km": 1.0}', tid))
+    t = client.get(f"/api/trips/{tid}").json()["trip"]
+    assert t["state"] == "review" and t["flagged"] and not t["checked"]
+    assert client.post(f"/api/trips/{tid}/checked", json={"ok": True}).status_code == 403, "writes need the page's header"
+    t = client.post(f"/api/trips/{tid}/checked", json={"ok": True}, headers=H).json()["trip"]
+    assert t["state"] == "matched" and t["checked"] and t["flagged"]
+    t = client.post(f"/api/trips/{tid}/checked", json={"ok": False}, headers=H).json()["trip"]
+    assert t["state"] == "review" and not t["checked"]
+    client.post(f"/api/trips/{tid}/checked", json={"ok": True}, headers=H)
+    client.post(f"/api/trips/{tid}/recalculate", headers=H)
+    with db.tx() as c:
+        c.execute("UPDATE trips SET quality=? WHERE id=?", ('{"raw_frac": 0.5, "km": 1.0}', tid))
+    t = client.get(f"/api/trips/{tid}").json()["trip"]
+    assert t["state"] == "review" and not t["checked"], "a new match is checked again"
+    me = client.get("/api/me").json()
+    assert "home_url" in me and me["home_label"] == "Dashboard"
+
+
+def test_site_settings_reach_the_page_and_the_api(tmp_path, fake_valhalla):
+    """A portal that is one page of a larger site: the link home, an extra
+    stylesheet, a shared light/dark key and an offline basemap. All optional."""
+    dw = FakeDawarich()
+    plain = TestClient(create_app(Config(data_dir=tmp_path / "a", base_path="/", dawarich_url="http://dawarich.test", scheduler=False,
+                                         admin_user="admin", admin_password="adminpass"), transport=dw.transport, start_workers=False))
+    page = plain.get("/").text
+    assert "MM_CONFIG = " not in page and "<!--portal-config-->" not in page and page.count("stylesheet") == 2
+    assert plain.post("/api/login", json={"username": "admin", "password": "adminpass"}).status_code == 200
+    me = plain.get("/api/me").json()
+    assert me["basemap"] is None and me["home_url"] == ""
+
+    cfg = Config(data_dir=tmp_path / "b", base_path="/", dawarich_url="http://dawarich.test", scheduler=False,
+                 admin_user="admin", admin_password="adminpass", home_url="/", home_label="Home",
+                 extra_css='/site.css"><script>', theme_key="theme",
+                 pmtiles_url="/maps/world.pmtiles", pmtiles_assets="/maps/lib/")
+    site = TestClient(create_app(cfg, transport=dw.transport, start_workers=False))
+    page = site.get("/").text
+    assert 'window.MM_CONFIG = {"themeKey": "theme"};' in page
+    assert 'href="/site.css&quot;&gt;&lt;script&gt;"' in page, "the stylesheet address is escaped"
+    assert site.post("/api/login", json={"username": "admin", "password": "adminpass"}).status_code == 200
+    me = site.get("/api/me").json()
+    assert me["basemap"] == {"pmtiles": "/maps/world.pmtiles", "assets": "/maps/lib/"}
+    assert (me["home_url"], me["home_label"]) == ("/", "Home")

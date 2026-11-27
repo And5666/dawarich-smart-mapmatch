@@ -4,6 +4,9 @@
 """
 from __future__ import annotations
 
+import html
+import json
+import os
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -11,7 +14,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..engine import valhalla
@@ -28,6 +31,10 @@ def create_app(cfg: Config | None = None, transport: Any = None, start_workers: 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     db = Database(cfg.db_path)
     auth.bootstrap_admin(db, cfg.admin_user, cfg.admin_password)
+    # With REQUIRE_ADMIN=1 the portal refuses to start without an admin account. Without it, an
+    # install with no ADMIN_PASSWORD lets the first visitor register as admin (/register on first run).
+    if os.environ.get("REQUIRE_ADMIN", "").strip() == "1" and not auth.admin_count(db):
+        raise RuntimeError("REQUIRE_ADMIN=1 but there is no admin account: set ADMIN_PASSWORD")
     if not auth.admin_count(db):
         logging.getLogger("mapmatch").warning(
             "no admin account: set ADMIN_USER and ADMIN_PASSWORD to create one")
@@ -53,9 +60,18 @@ def create_app(cfg: Config | None = None, transport: Any = None, start_workers: 
     prefix = cfg.prefix
     app.mount(prefix + "/static", StaticFiles(directory=STATIC), name="static")
 
+    # The page itself, with the two settings it needs before any script runs.
+    page = (STATIC / "index.html").read_text(encoding="utf-8")
+    extra = ""
+    if cfg.theme_key:
+        extra += "<script>window.MM_CONFIG = " + json.dumps({"themeKey": cfg.theme_key}).replace("<", "\\u003c") + ";</script>\n"
+    if cfg.extra_css:
+        extra += f'<link rel="stylesheet" href="{html.escape(cfg.extra_css, quote=True)}">\n'
+    page = page.replace("<!--portal-config-->\n", extra)
+
     @app.get(prefix + "/", include_in_schema=False)
-    def index() -> FileResponse:
-        return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
+    def index() -> HTMLResponse:
+        return HTMLResponse(page, headers={"Cache-Control": "no-cache"})
 
     if prefix:
         @app.get(prefix, include_in_schema=False)

@@ -20,8 +20,22 @@ class Config:
     dawarich_url: str = field(default_factory=lambda: os.environ.get("DAWARICH_URL", "http://dawarich_app:3000").rstrip("/"))
     dawarich_host_header: str = field(default_factory=lambda: os.environ.get("DAWARICH_HOST_HEADER", ""))
     match_workers: int = field(default_factory=lambda: int(os.environ.get("MATCH_WORKERS", "4")))
-    push_dry_run: bool = field(default_factory=lambda: _flag("PUSH_DRY_RUN"))
+    # When PUSH_DRY_RUN is set at all, only an explicit 0/false/no/off means live:
+    # a typo ("y", "ture") must not silently turn dry run off. Unset keeps upstream's default.
+    push_dry_run: bool = field(default_factory=lambda: (os.environ.get("PUSH_DRY_RUN") is not None
+                               and os.environ["PUSH_DRY_RUN"].strip().lower() not in ("0", "false", "no", "off", "")))
     secure_cookie: bool = field(default_factory=lambda: _flag("PORTAL_SECURE_COOKIE"))
+    # When the portal is one page of a larger site: a link back to it in the top bar,
+    # an extra stylesheet (fonts, colours) loaded after the portal's own, and the
+    # localStorage key that site keeps its light/dark choice under, to share it.
+    home_url: str = field(default_factory=lambda: os.environ.get("PORTAL_HOME_URL", "").strip())
+    home_label: str = field(default_factory=lambda: os.environ.get("PORTAL_HOME_LABEL", "Dashboard").strip() or "Dashboard")
+    extra_css: str = field(default_factory=lambda: os.environ.get("PORTAL_EXTRA_CSS", "").strip())
+    theme_key: str = field(default_factory=lambda: os.environ.get("PORTAL_THEME_KEY", "").strip())
+    # An offline basemap instead of CARTO's hosted one: the URL of a Protomaps .pmtiles file
+    # and of the folder holding pmtiles.js, basemaps.js, fonts/ and sprites/v4/. Both or neither.
+    pmtiles_url: str = field(default_factory=lambda: os.environ.get("PORTAL_PMTILES_URL", "").strip())
+    pmtiles_assets: str = field(default_factory=lambda: os.environ.get("PORTAL_PMTILES_ASSETS", "").strip())
     session_days: int = field(default_factory=lambda: int(os.environ.get("PORTAL_SESSION_DAYS", "30")))
     scheduler: bool = field(default_factory=lambda: _flag("PORTAL_SCHEDULER", True))
     # First/admin account. Password empty means no environment admin is made.

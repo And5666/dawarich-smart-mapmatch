@@ -521,7 +521,18 @@ NO_MAP_REVIEW = 0.25   # this much of a trip with no map under it: unmatched par
 def needs_review(q: dict[str, Any]) -> bool:
     if q.get("no_map_frac", 0) >= NO_MAP_REVIEW:
         return False
-    return bool(q) and (q.get("raw_frac", 0) > 0.15 or q.get("p95", 0) > 60)
+    # unsure_frac (newer matches) counts only what is a guess; raw_frac also counts GPS kept
+    # point for point along a path the map does not have, which is nothing to look at.
+    doubt = q["unsure_frac"] if "unsure_frac" in q else q.get("raw_frac", 0)
+    return bool(q) and (doubt > 0.15 or q.get("p95", 0) > 60 or way_round(q))
+
+
+def way_round(q: dict[str, Any]) -> bool:
+    """Somewhere the drawn line is 300 m and 2.5 times longer than the straight
+    hop between the two fixes it joins: a hook or loop that is often invented
+    (a fix snapped to a side street or the far carriageway)."""
+    line, hop = q.get("detour_line_m", 0), q.get("detour_hop_m", 0)
+    return line - hop >= 300 and line >= 2.5 * max(hop, 30)
 
 
 def public(trip: dict[str, Any]) -> dict[str, Any]:
@@ -533,7 +544,7 @@ def public(trip: dict[str, Any]) -> dict[str, Any]:
         state = "failed"
     elif not trip["result_version"]:
         state = "new"
-    elif needs_review(q):
+    elif needs_review(q) and int(trip.get("checked_version") or 0) != int(trip["result_version"]):
         state = "review"
     else:
         state = "matched"
@@ -547,6 +558,8 @@ def public(trip: dict[str, Any]) -> dict[str, Any]:
         "dirty": bool(trip["dirty"]), "error": trip["error"], "km": trip["km"],
         "modes": json.loads(trip["modes"] or "[]"), "quality": q,
         "overrides": json.loads(trip["overrides"] or "[]"), "version": trip["result_version"],
+        "checked": bool(trip["result_version"]) and int(trip.get("checked_version") or 0) == int(trip["result_version"]),
+        "flagged": needs_review(q),
         "point_edits": len(json.loads(trip.get("point_edits") or "{}")),
         "no_map": q.get("no_map_frac", 0) >= NO_MAP_REVIEW,
         "gap_mode": trip.get("gap_mode") or "",

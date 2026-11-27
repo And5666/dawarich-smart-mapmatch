@@ -1,7 +1,7 @@
 // Trips: a day-by-day list beside a map of every trip, segments in their own colours.
 import {
-  html, useState, useEffect, useRef, useMemo, api, useStore, toast, Icon, Ribbon, Menu,
-  MODES, modeVar, cssVar, colorExpr, km, duration, time, day, dayKey, plural, navigate,
+  html, useState, useEffect, useRef, useMemo, api, useStore, toast, Icon, Ribbon, Menu, Dialog, HowItWorks, MapOptions, MapSwitch, setMapPrefs, LINE_WIDTHS,
+  MODES, modeVar, cssVar, colorExpr, km, duration, time, day, dayKey, plural, navigate, pct,
 } from "../lib.js";
 import { startJob } from "../session.js";
 import { createMap, setMapTheme, setOverlay, setData, fc, fitCoords } from "../map.js";
@@ -13,13 +13,17 @@ const SHOW = [["all", "All trips"], ["new", "Not matched yet"], ["review", "Need
 // Matched, finished, not locked, and Dawarich doesn't have this version yet.
 const ready = (t) => t.version && t.closed && !t.locked && (t.push === "original" || t.push === "outdated");
 const SORTS = [["newest", "Newest first"], ["oldest", "Oldest first"], ["longest", "Longest distance"], ["duration", "Longest time"],
-  ["worst", "Needs a look most"], ["points", "Most GPS points"]];
+  ["worst", "Needs a look most"], ["apart", "Furthest from the GPS"], ["points", "Most GPS points"]];
 // How far a match is from good: unmatched GPS and points far from the line.
-const badness = (t) => (t.version ? (t.quality?.raw_frac || 0) + (t.quality?.p95 || 0) / 100 : -1);
+// The share of a trip that is a guess: straight lines across holes (older matches only know "GPS kept").
+const doubt = (q) => (q?.unsure_frac != null ? q.unsure_frac : q?.raw_frac || 0);
+const badness = (t) => (t.version ? doubt(t.quality) + (t.quality?.p95 || 0) / 100 : -1);
+// The area between the GPS joined up and the drawn line, per metre of line: how far apart the two run.
+const apart = (t) => (t.version && t.quality?.gap_m != null ? t.quality.gap_m : -1);
 const SORT_BY = {
   newest: (x, y) => y.start - x.start, oldest: (x, y) => x.start - y.start, longest: (x, y) => y.km - x.km,
   duration: (x, y) => (y.end - y.start) - (x.end - x.start), worst: (x, y) => badness(y) - badness(x),
-  points: (x, y) => y.n_points - x.n_points,
+  points: (x, y) => y.n_points - x.n_points, apart: (x, y) => apart(y) - apart(x),
 };
 const DRAW_MS = matchMedia("(prefers-reduced-motion: reduce)").matches ? 1 : 1200;
 const pref = (k, d) => { try { return localStorage.getItem(k) || d; } catch (e) { return d; } };
@@ -37,6 +41,56 @@ function bounds(period, custom) {
 
 const line = (coords, props) => ({ type: "Feature", properties: props, geometry: { type: "LineString", coordinates: coords.map((c) => [c[1], c[0]]) } });
 
+// Why a trip is flagged, in a few words, for its row in the list.
+export function whyLook(t) {
+  const q = t.quality || {};
+  const out = [];
+  if (doubt(q) > 0.15) out.push(q.unsure_frac != null ? `${pct(doubt(q))} straight across gaps` : `${pct(doubt(q))} left as GPS`);
+  if ((q.detour_line_m || 0) - (q.detour_hop_m || 0) >= 300 && q.detour_line_m >= 2.5 * Math.max(q.detour_hop_m || 0, 30)) out.push("long way round");
+  if ((q.p95 || 0) > 60) out.push("points far from the line");
+  return out;
+}
+
+// Where most trips are. One holiday abroad must not shrink every other trip to a dot.
+function usualCoords(trips) {
+  const all = (list) => list.flatMap((t) => t.preview.flatMap((p) => p.c));
+  const first = (t) => t.preview.find((p) => p.c.length)?.c[0];
+  const starts = trips.map(first).filter(Boolean);
+  if (starts.length < 8) return { coords: all(trips), left: 0 };
+  const mid = (k) => starts.map((c) => c[k]).sort((x, y) => x - y)[Math.floor(starts.length / 2)];
+  const la = mid(0), lo = mid(1);
+  const near = trips.filter((t) => { const c = first(t); return c && Math.abs(c[0] - la) < 1.2 && Math.abs(c[1] - lo) < 1.8; });
+  if (near.length < 0.6 * trips.length || near.length === trips.length) return { coords: all(trips), left: 0 };
+  return { coords: all(near), left: trips.length - near.length };
+}
+
+// The shape of a trip, small, in its mode colours: easier to recognise than a time.
+const thumbs = new Map();
+function Thumb({ t }) {
+  const key = `${t.id}:${t.version}:${t.n_points}`;
+  let parts = thumbs.get(key);
+  if (!parts) {
+    const pts = t.preview.flatMap((p) => p.c);
+    parts = [];
+    if (pts.length > 1) {
+      let a = Infinity, b = Infinity, c = -Infinity, d = -Infinity;
+      for (const [la, lo] of pts) { a = Math.min(a, lo); b = Math.min(b, la); c = Math.max(c, lo); d = Math.max(d, la); }
+      const kx = Math.cos(((b + d) / 2) * Math.PI / 180), W = 40, H = 30, P = 3;
+      const s = Math.min((W - 2 * P) / Math.max((c - a) * kx, 1e-6), (H - 2 * P) / Math.max(d - b, 1e-6));
+      const ox = (W - (c - a) * kx * s) / 2, oy = (H - (d - b) * s) / 2;
+      for (const p of t.preview) {
+        if (p.c.length < 2) continue;
+        const step = Math.max(1, Math.floor(p.c.length / 60));
+        const pick = p.c.filter((_, i) => i % step === 0 || i === p.c.length - 1);
+        parts.push([p.m, pick.map(([la, lo], i) => `${i ? "L" : "M"}${(ox + (lo - a) * kx * s).toFixed(1)} ${(H - oy - (la - b) * s).toFixed(1)}`).join("")]);
+      }
+    }
+    if (thumbs.size > 4000) thumbs.clear();
+    thumbs.set(key, parts);
+  }
+  return html`<svg class="thumb" viewBox="0 0 40 30" aria-hidden="true">${parts.map(([m, dpath]) => html`<path d=${dpath} style=${modeVar(m)} />`)}</svg>`;
+}
+
 function tripFeatures(t, label) {
   return t.preview.filter((p) => p.c.length > 1).map((p) => line(p.c, { tid: t.id, m: p.m, label }));
 }
@@ -45,6 +99,10 @@ export function Trips() {
   const theme = useStore((s) => s.theme);
   const version = useStore((s) => s.dataVersion);
   const job = useStore((s) => s.job);
+  const me = useStore((s) => s.me);
+  const [ask, setAsk] = useState(null);            // trips waiting for a yes before they are pushed
+  const [left, setLeft] = useState(0);             // trips outside the opening view of the map
+  const [intro, setIntro] = useState(() => pref("mm-intro", "show") === "show");
   const [period, setPeriod] = useState(() => pref("mm-period", "all"));
   const [custom, setCustom] = useState({ from: "", to: "" });
   const [show, setShow] = useState("all");
@@ -55,7 +113,9 @@ export function Trips() {
   const [hot, setHot] = useState(null);
   const [selecting, setSelecting] = useState(false);
   const [picked, setPicked] = useState(() => new Set());
-  const [allPts, setAllPts] = useState(false);
+  const prefs = useStore((s) => s.mapPrefs);
+  const allPts = prefs.points;
+  const look = useRef("");
   const [drawing, setDrawing] = useState(() => new Set());
   const mapEl = useRef(null);
   const mapRef = useRef(null);
@@ -79,6 +139,10 @@ export function Trips() {
     .sort(SORT_BY[sort] || SORT_BY.newest), [data, show, onlyMode, sort]);
   const unmatched = useMemo(() => (data?.trips || []).filter((t) => !t.version && !t.locked), [data]);
   const pushing = useMemo(() => (data?.trips || []).filter(ready), [data]);
+  // Trips that matching changed (the rest are kept as recorded and never pushed), and those of them Dawarich has.
+  const corrected = useMemo(() => (data?.trips || []).filter((t) => t.version && t.push !== "recorded"), [data]);
+  const inDawarich = useMemo(() => corrected.filter((t) => t.push === "pushed" || t.push === "outdated"), [corrected]);
+  const [undoAll, setUndoAll] = useState(false);
   const reviewing = useMemo(() => (data?.trips || []).filter((t) => t.state === "review").sort((x, y) => y.start - x.start), [data]);
   const totals = useMemo(() => {
     const by = {};
@@ -107,7 +171,7 @@ export function Trips() {
     }
     return () => map.remove();
   }, []);
-  useEffect(() => setMapTheme(mapRef.current, theme), [theme]);
+  useEffect(() => setMapTheme(mapRef.current, theme, prefs.style), [theme, prefs.style]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -118,22 +182,31 @@ export function Trips() {
       return tripFeatures(shown, `<b>${day(t.start)}, ${time(t.start)}–${time(t.end)}</b><br>${what}`);
     });
     const data = fc(feats);
-    if (map._mm.overlays.has("trips")) setData(map, "trips", data);
-    else setOverlay(map, "trips", { data, layers: () => [
-      { id: "trips-casing", type: "line", layout: { "line-cap": "round", "line-join": "round" },
-        paint: { "line-color": cssVar("--casing"), "line-width": ["case", ["==", ["get", "m"], "none"], 5, 5.5], "line-opacity": 0.9 } },
-      { id: "trips-hot", type: "line", filter: ["==", ["get", "tid"], -1], layout: { "line-cap": "round", "line-join": "round" },
-        paint: { "line-color": cssVar("--ink"), "line-width": 9, "line-opacity": 0.3 } },
-      { id: "trips-raw", type: "line", filter: ["==", ["get", "m"], "none"], layout: { "line-join": "round" },
-        paint: { "line-color": cssVar("--m-none"), "line-width": 2.6, "line-dasharray": [2.2, 1.4] } },
-      { id: "trips-line", type: "line", filter: ["!=", ["get", "m"], "none"], layout: { "line-cap": "round", "line-join": "round" },
-        paint: { "line-color": colorExpr(), "line-width": 3 } },
-    ] });
+    const W = LINE_WIDTHS[prefs.width] || 1;
+    const vis = { visibility: prefs.routes ? "visible" : "none" };
+    const key = `${prefs.width}|${prefs.routes}`;
+    if (map._mm.overlays.has("trips") && look.current === key) setData(map, "trips", data);
+    else {
+      look.current = key;
+      setOverlay(map, "trips", { data, layers: () => [
+        { id: "trips-casing", type: "line", layout: { ...vis, "line-cap": "round", "line-join": "round" },
+          paint: { "line-color": cssVar("--casing"), "line-width": ["case", ["==", ["get", "m"], "none"], 5 * W, 5.5 * W], "line-opacity": 0.9 } },
+        { id: "trips-hot", type: "line", filter: ["==", ["get", "tid"], -1], layout: { ...vis, "line-cap": "round", "line-join": "round" },
+          paint: { "line-color": cssVar("--ink"), "line-width": 9 * W, "line-opacity": 0.3 } },
+        { id: "trips-raw", type: "line", filter: ["==", ["get", "m"], "none"], layout: { ...vis, "line-join": "round" },
+          paint: { "line-color": cssVar("--m-none"), "line-width": 2.6 * W, "line-dasharray": [2.2, 1.4] } },
+        { id: "trips-line", type: "line", filter: ["!=", ["get", "m"], "none"], layout: { ...vis, "line-cap": "round", "line-join": "round" },
+          paint: { "line-color": colorExpr(), "line-width": 3 * W } },
+      ] });
+      // the recorded points stay on top of the routes
+      const ap = map._mm.overlays.get("allpts");
+      if (ap) setOverlay(map, "allpts", ap);
+    }
     if (!fitted.current && feats.length && !anims.current.size) {
-      const go = () => { fitCoords(map, trips.flatMap((t) => t.preview.flatMap((p) => p.c)), 40, false); fitted.current = true; };
+      const go = () => { const u = usualCoords(trips); fitCoords(map, u.coords, 40, false); setLeft(u.left); fitted.current = true; };
       map.loaded() ? go() : map.once("load", go);
     }
-  }, [trips, drawing]);
+  }, [trips, drawing, prefs.width, prefs.routes]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -151,7 +224,8 @@ export function Trips() {
       const d = fc(x.points.map(([lat, lon]) => ({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [lon, lat] } })));
       if (map._mm.overlays.has("allpts")) setData(map, "allpts", d);
       else setOverlay(map, "allpts", { data: d, layers: () => [{ id: "allpts", type: "circle", paint: {
-        "circle-radius": ["interpolate", ["linear"], ["zoom"], 6, 1, 13, 2.2, 17, 4], "circle-color": cssVar("--ink-2"), "circle-opacity": 0.55 } }] });
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 1.3, 11, 2.2, 14, 3.2, 17, 5], "circle-color": cssVar("--ink"), "circle-opacity": 0.8,
+        "circle-stroke-color": cssVar("--panel"), "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 11, 0, 14, 0.8] } }] });
       if (x.total > x.points.length) toast(`Showing ${x.points.length.toLocaleString()} of ${x.total.toLocaleString()} points`);
     }).catch((e) => toast(e.message, "bad"));
   }, [allPts, a, b, version]);
@@ -240,6 +314,12 @@ export function Trips() {
   // ---------------------------------------------------------------- actions
   const match = (scope, params, label) => startJob("rematch", { scope, ...params }).then((ok) => ok && toast(label));
   const push = (ids, label) => startJob("push_all", { ids }).then((ok) => ok && toast(label));
+  const review = () => {
+    // The trip page steps through these in order, so a batch can be checked without coming back here.
+    try { sessionStorage.setItem("mm-review", JSON.stringify(reviewing.map((t) => t.id))); } catch (e) { /* ignore */ }
+    navigate(`#/trip/${reviewing[0].id}`);
+  };
+  const showAll = () => { fitCoords(mapRef.current, trips.flatMap((t) => t.preview.flatMap((p) => p.c)), 40); setLeft(0); };
   const togglePick = (id) => setPicked((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const groups = useMemo(() => {
     const g = [];
@@ -272,22 +352,34 @@ export function Trips() {
           <span class="faint">to</span>
           <input type="date" aria-label="To" value=${custom.to} onChange=${(e) => { setCustom({ ...custom, to: e.target.value }); fitted.current = false; }} /></div>`}
         ${data && data.trips.length > 0 && html`<div class="todo" role="group" aria-label="What needs doing">
-          <div class=${`todo-card ${show === "new" ? "on" : ""} ${unmatched.length ? "" : "done"}`}>
-            <button class="todo-main" onClick=${() => setShow(show === "new" ? "all" : "new")} aria-pressed=${show === "new"}>
-              <b class="num">${unmatched.length}</b><span>Not matched yet</span></button>
-            <button class="sm go" disabled=${!unmatched.length || !!job}
-              onClick=${() => match("ids", { ids: unmatched.map((t) => t.id) }, `Matching ${plural(unmatched.length, "trip")}`)}>Match</button>
+          ${reviewing.length > 0 && html`<div class=${`todo-row warn ${show === "review" ? "on" : ""}`}>
+            <button class="todo-main" onClick=${() => setShow(show === "review" ? "all" : "review")} aria-pressed=${show === "review"}
+              title="Show only these in the list">
+              <b class="num">${reviewing.length}</b><span><strong>${reviewing.length === 1 ? "needs" : "need"} a look</strong><small>The line may be wrong somewhere</small></span></button>
+            <button class="go" onClick=${review}>Review</button>
+          </div>`}
+          ${unmatched.length > 0 && html`<div class=${`todo-row ${show === "new" ? "on" : ""}`}>
+            <button class="todo-main" onClick=${() => setShow(show === "new" ? "all" : "new")} aria-pressed=${show === "new"} title="Show only these in the list">
+              <b class="num">${unmatched.length}</b><span><strong>not matched yet</strong><small>New trips, still as recorded</small></span></button>
+            <button disabled=${!!job} onClick=${() => match("ids", { ids: unmatched.map((t) => t.id) }, `Matching ${plural(unmatched.length, "trip")}`)}>Match</button>
+          </div>`}
+        </div>`}
+        ${data && corrected.length > 0 && html`<div class="dw" role="group" aria-label="Dawarich">
+          <div class="dw-head"><b>In Dawarich</b>
+            <button class="link" onClick=${() => setShow(show === "pushed" ? "all" : "pushed")} aria-pressed=${show === "pushed"}
+              title="Show only the trips that are in Dawarich">${inDawarich.length} of ${plural(corrected.length, "corrected trip")}</button></div>
+          <div class="dw-bar" aria-hidden="true"><i style=${`width:${(100 * inDawarich.length) / corrected.length}%`}></i></div>
+          <div class="dw-actions">
+            <button class=${pushing.length && !reviewing.length ? "go" : ""} disabled=${!pushing.length || !!job}
+              title=${pushing.length ? "Replace these trips' points in Dawarich with the corrected routes" : "Every corrected trip is already in Dawarich"}
+              onClick=${() => setAsk({ ids: pushing.map((t) => t.id), flagged: pushing.filter((t) => t.state === "review").length })}>
+              <${Icon} name="push" small />${pushing.length ? `Push ${pushing.length === corrected.length ? "all" : ""} ${pushing.length}…` : "All pushed"}</button>
+            <button disabled=${!inDawarich.length || !!job} onClick=${() => setUndoAll(true)}
+              title=${inDawarich.length ? "Put the points you recorded back in Dawarich, for every pushed trip" : "Nothing has been pushed yet, so there is nothing to undo"}>
+              <${Icon} name="undo" small />Undo all…</button>
           </div>
-          <div class=${`todo-card ${show === "review" ? "on" : ""} ${reviewing.length ? "warn" : "done"}`}>
-            <button class="todo-main" onClick=${() => setShow(show === "review" ? "all" : "review")} aria-pressed=${show === "review"}>
-              <b class="num">${reviewing.length}</b><span>Need a look</span></button>
-            <button class="sm" disabled=${!reviewing.length} onClick=${() => reviewing.length && navigate(`#/trip/${reviewing[0].id}`)}>Open</button>
-          </div>
-          <div class=${`todo-card ${show === "ready" ? "on" : ""} ${pushing.length ? "" : "done"}`}>
-            <button class="todo-main" onClick=${() => setShow(show === "ready" ? "all" : "ready")} aria-pressed=${show === "ready"}>
-              <b class="num">${pushing.length}</b><span>Ready to push</span></button>
-            <button class="sm go" disabled=${!pushing.length || !!job} onClick=${() => push(pushing.map((t) => t.id), `Pushing ${plural(pushing.length, "trip")}`)}>Push</button>
-          </div>
+          <p class="dw-note">${me?.dry_run ? "Test mode: a push only shows what would change."
+            : inDawarich.length ? "Undo puts your recorded points back. You can do it at any time." : "A push can be undone at any time: your recorded points are kept."}</p>
         </div>`}
         ${totals.by.length > 0 && html`<div class="modefilter" role="group" aria-label="Show trips with">
           <button class=${!onlyMode ? "on" : ""} aria-pressed=${!onlyMode} onClick=${() => setOnlyMode("")}>All</button>
@@ -305,12 +397,16 @@ export function Trips() {
             <button disabled=${!data?.trips.length || !!job} onClick=${() => match("range", { start: a, end: b }, `Matching every trip in ${periodLabel}`)}>
               <${Icon} name="sync" small />Match every trip in ${periodLabel} again</button>
             <button onClick=${() => { setSelecting(true); setPicked(new Set()); }}><${Icon} name="check" small />Choose trips to match or push…</button>
+            <button onClick=${() => { setIntro(true); save("mm-intro", "show"); }}><${Icon} name="help" small />How this works</button>
             <div class="sep"></div>
             <a href="#/match"><${Icon} name="sliders" small />Match settings…</a>
           <//>
         </div>
       </div>
       <div class=${`list ${byDay ? "" : "flat"}`}>
+        ${intro && data && data.trips.length > 0 && html`<div class="intro">
+          <div class="row"><b class="grow">How this works</b><button class="sm bare" onClick=${() => { setIntro(false); save("mm-intro", "done"); }}>Got it</button></div>
+          <${HowItWorks} dry=${me?.dry_run} /></div>`}
         ${!data && html`<p class="faint" style="padding:16px">Loading…</p>`}
         ${data && !trips.length && !noData && html`<p class="faint" style="padding:16px">Nothing here with these filters.</p>`}
         ${groups.map((g) => html`<div key=${g.key}>
@@ -323,30 +419,46 @@ export function Trips() {
               onKeyDown=${(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selecting ? togglePick(t.id) : navigate(`#/trip/${t.id}`); } }}>
             <span class="picker"><input type="checkbox" tabindex="-1" checked=${picked.has(t.id)} /></span>
             <div class="when num">${byDay ? time(t.start) : day(t.start)}<span>${byDay ? duration(t.end - t.start) : `${time(t.start)} · ${duration(t.end - t.start)}`}</span></div>
+            <${Thumb} t=${t} />
             <div class="what"><${Ribbon} modes=${t.modes} />
               <div class="modes"><span class="ell">${t.modes.length ? t.modes.map((m) => MODES[m.mode]?.label).join(" → ")
                 : html`<span class="faint">Not matched yet</span>`}</span>
-                ${t.state === "review" && html`<span class="chip warn">needs a look</span>`}
+                ${t.state === "review" && html`<span class="chip warn" title="Needs a look">${whyLook(t)[0] || "needs a look"}</span>`}
                 ${t.state === "failed" && html`<span class="chip bad">couldn't match</span>`}
                 ${t.push === "pushed" && html`<span class="chip good">in Dawarich</span>`}
                 ${t.no_map && html`<span class="chip" title="The map server has no map data here">no map here</span>`}
                 ${t.push === "recorded" && !t.no_map && html`<span class="chip">as recorded</span>`}
                 ${t.push === "outdated" && html`<span class="chip warn">changed</span>`}</div></div>
-            <div class="dist num">${km(t.km)}</div>
+            <div class="dist num" title=${sort === "apart" && apart(t) >= 0 ? "Average distance between your GPS and the drawn line" : undefined}>${sort === "apart" && apart(t) >= 0 ? `${Math.round(apart(t))} m apart` : km(t.km)}</div>
           </div>`)}
         </div>`)}
       </div>
       ${selecting && html`<div class="selbar">
         <span class="grow small">${picked.size ? plural(picked.size, "trip") + " selected" : "Tap trips to select them"}</span>
         <button class="go" disabled=${!picked.size} onClick=${() => { match("ids", { ids: [...picked] }, `Matching ${plural(picked.size, "trip")}`); setSelecting(false); setPicked(new Set()); }}>Match</button>
-        <button disabled=${!picked.size} onClick=${() => { startJob("push_all", { ids: [...picked] }); setSelecting(false); setPicked(new Set()); }}>Push</button>
+        <button disabled=${!picked.size} onClick=${() => { setAsk({ ids: [...picked], flagged: trips.filter((t) => picked.has(t.id) && t.state === "review").length }); setSelecting(false); setPicked(new Set()); }}>Push…</button>
         <button class="bare" onClick=${() => { setSelecting(false); setPicked(new Set()); }}>Cancel</button>
       </div>`}
     </aside>
     <div class="map-wrap">
       <div class="map" ref=${mapEl}></div>
-      <div class="float tl"><label class=${`toggle ${allPts ? "on" : ""}`} title="Every GPS point in this period"><input type="checkbox" checked=${allPts}
-        onChange=${(e) => setAllPts(e.target.checked)} /><i class="k pt"></i>GPS points</label></div>
+      <div class="float tl">
+        <${MapOptions}>
+          <${MapSwitch} on=${prefs.routes} onChange=${(v) => setMapPrefs({ routes: v })} hint="The line drawn for each trip, in its travel colours">Matched routes<//>
+          <${MapSwitch} on=${prefs.points} onChange=${(v) => setMapPrefs({ points: v })} hint="Every point you recorded in this period, exactly where it was logged">Original GPS points<//>
+        <//>
+        ${left > 0 && html`<button class="sm bare" onClick=${showAll} title="The map opened on where most of your trips are">Show ${plural(left, "trip")} further away</button>`}</div>
+      ${undoAll && html`<${Dialog} title="Put your recorded points back in Dawarich?" danger confirmLabel=${me?.dry_run ? "Run the test" : `Undo ${plural(inDawarich.length, "push", "es")}`}
+        onClose=${() => setUndoAll(false)} onConfirm=${() => startJob("revert_all").then((ok) => ok && toast(`Putting the original points back for ${plural(inDawarich.length, "trip")}`))}>
+        <p>${plural(inDawarich.length, "trip")} in Dawarich ${inDawarich.length === 1 ? "goes" : "go"} back to the GPS you recorded.</p>
+        <p>The corrected routes stay here in mapmatch, so you can push them again whenever you like.</p>
+        ${me?.dry_run && html`<p><b>Test mode is on, so nothing in Dawarich will change.</b></p>`}<//>`}
+      ${ask && html`<${Dialog} title=${`Push ${plural(ask.ids.length, "trip")} to Dawarich?`} confirmLabel=${me?.dry_run ? "Run the test" : `Push ${plural(ask.ids.length, "trip")}`}
+        onClose=${() => setAsk(null)} onConfirm=${() => push(ask.ids, `Pushing ${plural(ask.ids.length, "trip")}`)}>
+        ${me?.dry_run
+          ? html`<p><b>Test mode is on, so nothing in Dawarich will change.</b> This works out what a real push would do and lists it under Activity.</p>`
+          : html`<p>For each trip, the points recorded in Dawarich are replaced by the corrected route. Your recorded points are kept, and <b>Undo all</b> (or Undo push on a single trip) puts them back at any time.</p>`}
+        ${ask.flagged > 0 && html`<p class="note warn">${plural(ask.flagged, "trip")} of these still ${ask.flagged === 1 ? "needs" : "need"} a look. Check ${ask.flagged === 1 ? "it" : "them"} first if you can.</p>`}<//>`}
       ${matching && html`<div class="float bc" aria-live="polite"><span class="pulse"></span>
         <span>${job.kind === "rematch" ? "Matching" : "Downloading"} <span class="dim num">${job.message || ""}</span></span><span class="meter"><i style=${`width:${job.progress}%`}></i></span></div>`}
       ${noData && html`<div class="empty"><div>

@@ -293,6 +293,12 @@ def apply(db: Database, cfg: Any, uid: int, changes: dict[int, bool], transport:
         summary["spans"] = len(groups)
         def _span(a: int, b: int) -> None:
             remote = dw.points(a, b)
+            # Never trust the server's range filter with a delete: every
+            # fetched point is about to be removed, so all of them must lie in the window.
+            stray = sum(1 for p in remote if p.get("timestamp") is not None
+                        and not (a - 1 <= int(p["timestamp"]) <= b + 1))
+            if stray:
+                raise RuntimeError(f"Dawarich returned {stray} points outside the window asked for; nothing changed")
             originals, ours = archive.split_remote(db, uid, remote)
             archive.add_api(db, uid, originals)
             missing = sum(1 for raw in originals
@@ -366,6 +372,14 @@ def apply(db: Database, cfg: Any, uid: int, changes: dict[int, bool], transport:
                 # Delete first: Dawarich merges a posted point into an existing
                 # one at the same place and second, so posting first and then
                 # deleting would delete what was just written.
+                # Note the span BEFORE deleting: a crash, a kill or a
+                # half-finished delete then still shows as needing "Put them back".
+                # Every point is in the archive already. The note is cleared only
+                # once the write has gone through.
+                _record(db, uid, 0, "incomplete", None, len(ids), 0, False, {"span": [a, b]})
+                # What we are about to write is remembered first too, so a write that
+                # half-lands is never archived later as if it were recorded GPS.
+                archive.remember_written(db, uid, [p for p in posts if p["ours"]])
                 dw.delete(ids)
                 for attempt in range(3):
                     try:
@@ -373,12 +387,11 @@ def apply(db: Database, cfg: Any, uid: int, changes: dict[int, bool], transport:
                         break
                     except Exception:
                         if attempt == 2:
-                            # Every point is in the archive; note the span so a
-                            # repair can write it back once Dawarich answers.
-                            _record(db, uid, 0, "incomplete", None, len(ids), 0, False, {"span": [a, b]})
                             raise
                         time.sleep(1.5 * (attempt + 1))
-                archive.remember_written(db, uid, [p for p in posts if p["ours"]])
+                with db.tx() as c:
+                    c.execute("UPDATE pushes SET kind='incomplete-done' WHERE user_id=? AND kind='incomplete'"
+                              " AND detail=?", (uid, json.dumps({"span": [a, b]})))
             for t in inside:
                 if t["id"] not in changes:
                     continue

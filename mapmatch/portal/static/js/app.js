@@ -1,5 +1,5 @@
 // App shell: sign-in, top bar, router, toasts.
-import { html, render, useState, useEffect, api, store, useStore, setTheme, Icon, Menu, ago } from "./lib.js";
+import { html, render, useState, useEffect, api, store, useStore, setTheme, Icon, Menu, Dialog, HowItWorks, ago } from "./lib.js";
 import { loadMe, watchJobs, startJob } from "./session.js";
 import { Trips } from "./views/trips.js";
 import { TripView } from "./views/trip.js";
@@ -95,8 +95,8 @@ function SyncStatus() {
   return html`<div class="sync">
     ${st.last_error ? html`<span class="msg" style="color:var(--bad)" title=${st.last_error}>Last sync failed</span>`
       : html`<span class="msg">Synced ${ago(st.last_run)}</span>`}
-    <button class="sm" onClick=${() => startJob("sync")} title="Download new GPS points from Dawarich. Nothing is matched yet.">
-      <${Icon} name="sync" small />Sync</button></div>`;
+    <button class="sm" onClick=${() => startJob("sync")} title="Get new GPS points from Dawarich. Nothing there is changed.">
+      <${Icon} name="sync" small /><span class="lbl">Get new points</span></button></div>`;
 }
 
 function Bar({ route }) {
@@ -105,17 +105,30 @@ function Bar({ route }) {
   const page = route[0] || "";
   const tab = (href, name, label, icon) => html`<a href=${href} class=${page === name || (name === "" && page === "trip") ? "on" : ""}
     aria-current=${page === name || (name === "" && page === "trip") ? "page" : undefined}><${Icon} name=${icon} small /><span class="lbl">${label}</span></a>`;
+  const [about, setAbout] = useState("");
   return html`<header class="bar">
+    ${me?.home_url && html`<a class="home" href=${me.home_url} title=${`Back to ${me.home_label}`} aria-label=${`Back to ${me.home_label}`}>
+      <${Icon} name="home" small /><span class="lbl">${me.home_label}</span></a>`}
     <a class="mark" href="#/"><${Mark} /><span class="name">mapmatch</span></a>
     <nav class="nav">${tab("#/", "", "Trips", "route")}${tab("#/match", "match", "Match", "sliders")}${tab("#/activity", "activity", "Activity", "clock")}${tab("#/settings", "settings", "Settings", "gear")}${me?.is_admin ? tab("#/admin", "admin", "Admin", "shield") : ""}</nav>
     <span class="grow"></span>
+    ${me?.dry_run && html`<button class="testmode" onClick=${() => setAbout("test")} title="Pushing only shows what would change. Dawarich is left alone.">
+      <${Icon} name="flask" small /><span class="lbl">Test mode</span></button>`}
     <${SyncStatus} />
     <${Menu} cls="bare" title="Account" label=${html`<span class="ell" style="max-width:180px">${me?.name}</span><${Icon} name="down" small />`}>
       <div class="label">${me?.is_admin ? "Admin" : "Member"}${me?.username ? html` · @${me.username}` : ""}</div>
+      <button onClick=${() => setAbout("how")}><${Icon} name="help" small />How it works</button>
       <button onClick=${() => setTheme(theme === "dark" ? "light" : "dark")}><${Icon} name=${theme === "dark" ? "sun" : "moon"} small />${theme === "dark" ? "Light" : "Dark"} theme</button>
       <div class="sep"></div>
       <button onClick=${async () => { await api("/logout", { method: "POST" }).catch(() => {}); store.set({ me: null }); }}>Sign out</button>
     <//>
+    ${about === "test" && html`<${Dialog} title="Test mode is on" cancelLabel="Close" onClose=${() => setAbout("")}>
+      <p>Pushing a trip only works out what would change and lists it under Activity. <b>Nothing in Dawarich is changed.</b></p>
+      <p>Everything else is real: getting new points, matching, and your corrections all stay here in mapmatch.</p>
+      <p class="faint">Whoever runs this server switches test mode off when you're ready for real pushes.</p><//>`}
+    ${about === "how" && html`<${Dialog} title="How mapmatch works" cancelLabel="Close" onClose=${() => setAbout("")}>
+      <${HowItWorks} dry=${me?.dry_run} />
+      <p class="faint">Keys on a trip page: <span class="kbd">j</span> next trip, <span class="kbd">k</span> previous, <span class="kbd">Esc</span> back to the list.</p><//>`}
   </header>`;
 }
 

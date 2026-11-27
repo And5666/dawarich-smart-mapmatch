@@ -1,8 +1,9 @@
 // Session and background-job helpers shared by the shell and the views.
 import { api, store, toast, refreshData } from "./lib.js";
+import { configureBasemap } from "./map.js";
 
 export async function loadMe() {
-  try { store.set({ me: await api("/me") }); }
+  try { const me = await api("/me"); configureBasemap(me.basemap); store.set({ me }); }
   catch (e) { store.set({ me: e.status === 401 ? null : store.get().me ?? null }); if (e.status !== 401) toast(e.message, "bad"); }
 }
 
