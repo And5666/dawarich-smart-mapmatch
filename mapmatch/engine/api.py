@@ -10,7 +10,7 @@ from .match import fit_score, match_segment
 from .modes import label, runs, summary_speed
 from .quality import between, deviations, path_km, percentile
 
-ENGINE_VERSION = "2.12.0"
+ENGINE_VERSION = "2.12.1"
 MODES = ("walk", "cycle", "drive", "train", "stay", "raw")
 MOVING = ("walk", "cycle", "drive", "train")
 NO_MAP_FRAC = 0.75   # share of sampled fixes with no map under them: the trip is abroad
@@ -378,6 +378,10 @@ def quality(fixes: list[dict[str, Any]], segments: list[dict[str, Any]],
     # the fixes scattered round it are not points the route missed.
     stops = [(s["pieces"][0]["coords"][0][2], s["pieces"][-1]["coords"][-1][2]) for s in segments
              if s["mode"] == "stay" and s["pieces"] and s["pieces"][0]["coords"]]
+    # Nor are fixes the line does not claim to follow: set aside as scatter, or inside a
+    # stretch left unconnected or drawn as a plain line (that doubt is unsure_frac's to count).
+    stops += [(p["coords"][0][2], p["coords"][-1][2]) for s in segments for p in s["pieces"]
+              if len(p["coords"]) >= 2 and (p.get("scatter") or p.get("unlinked") or p["kind"] == "straight")]
     errs = deviations([p for p in fixes if not any(a < p["timestamp"] < b for a, b in stops)], out)
     raw_km = path_km(fixes)
     return {

@@ -330,8 +330,11 @@ def match(points: list[dict[str, Any]], profile: str, timeout: float = 120.0,
 
 
 def route(locations: list[dict[str, Any]], profile: str = "auto",
-          timeout: float = 60.0) -> dict[str, Any] | None:
-    """Route through locations (first/last are break points, middle are `through`)."""
+          timeout: float = 60.0, radius: float | None = None) -> dict[str, Any] | None:
+    """Route through locations (first/last are break points, middle are `through`).
+
+    radius: the two ends may start from any way within this many metres, not
+    only the nearest one (which can be a pontoon, or the far carriageway)."""
     if len(locations) < 2:
         return None
     cfg = PROFILES.get(profile, PROFILES["auto"])
@@ -340,6 +343,8 @@ def route(locations: list[dict[str, Any]], profile: str = "auto",
         item: dict[str, Any] = {"lat": float(p["lat"]), "lon": float(p["lon"])}
         if 0 < k < len(locations) - 1:
             item["type"] = "through"
+        elif radius:
+            item["radius"] = float(radius)
         locs.append(item)
     body = {"locations": locs, "costing": cfg["costing"],
             "costing_options": cfg["costing_options"],

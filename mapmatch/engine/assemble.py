@@ -184,6 +184,7 @@ def _fixpt(p: dict[str, Any], lat: float | None = None, lon: float | None = None
 
 CALM_OVER = 1.3        # kept GPS may ask for this many times the usual pace of its stretch
 TORTUOUS = 1.3         # kept GPS this many times as long as it is far (plus 30 m) is scatter
+STOP_SEAM_M = 150.0    # the seam between a stop's dot and the trip either side of it
 BLOCK_MIN_M = 25.0     # a straight step this long is checked against water and buildings
 INDOOR_RUN_S = 20      # kept GPS this long under one roof is drift, or a shop: not part of the line
 PROBE_MIN_M = 60.0     # a straight step this long is checked for paths under it
@@ -247,6 +248,7 @@ def _filled(a: dict[str, Any], mids: list[dict[str, Any]], b: dict[str, Any], mo
         # scatter (between tall buildings, over water), and the line through it a zigzag.
         sure = [p for p in mids if (p.get("accuracy") or 0.0) < UNSURE_ACC_M]
         shape = None
+        scatter = False
         if not forced and (strength != "strict" or direct):
             slow = mode in ("walk", "cycle") and ground.available()
             if slow:
@@ -261,6 +263,8 @@ def _filled(a: dict[str, Any], mids: list[dict[str, Any]], b: dict[str, Any], mo
             through = slow and any(haversine(p["lat"], p["lon"], q["lat"], q["lon"]) >= BLOCK_MIN_M
                                    and ground.blocked(p["lat"], p["lon"], q["lat"], q["lon"]) for p, q in zip(line, line[1:]))
             pace = pace or TYPICAL_KMH.get(mode, 5.0)
+            if through or (sure and path > TORTUOUS * chord + 30.0) or len(sure) < len(mids):
+                scatter = True
             if through or (sure and path > TORTUOUS * chord + 30.0):
                 # Still a zigzag: scatter round a walk the map could not follow, not a walk
                 # off the paths (that is as long as it is far). The fixes are no guide,
@@ -280,6 +284,8 @@ def _filled(a: dict[str, Any], mids: list[dict[str, Any]], b: dict[str, Any], mo
         else:
             coords = [[p["lat"], p["lon"], p["timestamp"], 1] for p in (a, *sure, b)]
             pc = _piece("raw" if sure else "straight", coords, n_in)
+        if scatter:
+            pc["scatter"] = True      # fixes in here were set aside as scatter: the line is not judged by them
     else:
         pc = _piece(f["kind"], timed(f["coords"], a["timestamp"], b["timestamp"], mids), n_in)
         if f.get("via"):
@@ -573,7 +579,21 @@ def connect(segments: list[dict[str, Any]], strength: str, keep: Any = None,
                     chord = haversine(a["lat"], a["lon"], b["lat"], b["lon"])
                     mode = "walk" if chord < 1500 else "drive"
                     vmax = VMAX_KMH["drive"]
-                pc = _filled(a, vias, b, mode, strength, len(vias), vmax, keep, force)
+                seam = haversine(a["lat"], a["lon"], b["lat"], b["lon"])
+                if not vias and "stay" in (s["mode"], t["mode"]) and seam <= STOP_SEAM_M and strength != "strict" \
+                        and not (keep and keep(a["timestamp"], b["timestamp"])):
+                    # The last steps to a stop, or the first away from it. The stop is a dot in
+                    # the middle of where you stood about, so the clock either side of the
+                    # seam says nothing about pace: the path there, else the plain line.
+                    f = fill(a, [], b, mode, "fill", vmax, True)
+                    # (With the clock waved the filler takes any route: only one about as
+                    # long as the seam is the way to a place a few steps off.)
+                    path = f["kind"] == "filled" and length_m(f["coords"]) <= 1.6 * seam + 60.0
+                    line = f["coords"] if path else [(a["lat"], a["lon"]), (b["lat"], b["lon"])]
+                    pc = _piece("filled" if path else "join", timed(line, a["timestamp"], b["timestamp"]), 0)
+                    pc["gap"] = [int(a["timestamp"]), int(b["timestamp"])]
+                else:
+                    pc = _filled(a, vias, b, mode, strength, len(vias), vmax, keep, force)
                 if t["mode"] == "stay" and s["mode"] != "stay":
                     s["pieces"] = merge_pieces(s["pieces"] + [pc])
                 else:
@@ -694,6 +714,7 @@ def unlink(segments: list[dict[str, Any]]) -> None:
                     else:
                         pc = {"kind": "straight", "coords": hop, "n_in": 0, "km": round(length_m(hop) / 1000.0, 4), "unlinked": True}
                     pc["gap"] = [int(hop[0][2]), int(hop[1][2])]
+                    pc["scatter"] = True
                     out.append(pc)
                     start = k + 1
         s["pieces"] = out

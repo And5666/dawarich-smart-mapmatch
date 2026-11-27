@@ -1,5 +1,22 @@
 # Changes
 
+## 2.12.1
+
+Six trips flagged "need a look" after 2.12.0, each traced to a rule:
+
+- **The last steps to a stop.** A stop is a dot in the middle of where you
+  stood about, so the seam to it (up to 150 m) is not judged by the clock:
+  the path there when it is about as long as the seam, else the plain line.
+  It was a "too fast" straight line, counted as doubt.
+- **The router may start from any way within 30 m** of a hole's ends when the
+  nearest one gives a route that is too long or goes round: the nearest can be
+  a pontoon, or the far carriageway.
+- **A hole that cannot go straight** (the basemap shows water or buildings in
+  the way) may take a longer path when there was time to walk it.
+- **"Points far from the line"** counts the fixes the line claims to follow:
+  not those set aside as scatter, nor those inside a stretch left unconnected
+  or drawn as a plain line (that doubt is counted once, as unsure).
+
 ## 2.12.0
 
 - **The engine can read the basemap** (`MAPMATCH_GROUND_PMTILES`, the same
