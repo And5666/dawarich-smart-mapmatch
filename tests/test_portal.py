@@ -633,7 +633,7 @@ def test_trip_kept_as_recorded_is_never_written_to_dawarich(env):
     assert not dw.ours() and client.get(f"/api/trips/{t['id']}").json()["trip"]["push"] == "recorded"
 
 
-def test_trip_kept_as_recorded_is_drawn_through_its_stops(fake_valhalla):
+def test_a_detailed_trip_is_drawn_through_its_stops(fake_valhalla):
     from mapmatch.engine.api import match_trip
     from mapmatch.portal.trips import matched_preview
     ride = [(5, 0.5 if k % 20 < 10 else -0.5) for k in range(300)]
@@ -642,9 +642,12 @@ def test_trip_kept_as_recorded_is_drawn_through_its_stops(fake_valhalla):
                  t0=a[-1]["timestamp"] + 1, dt=1, accuracy=None)
     b = track(ride, start=(stop[-1]["lat"], stop[-1]["lon"]), t0=stop[-1]["timestamp"] + 1, dt=1, accuracy=None)
     out = match_trip(a + stop + b)
-    assert out["quality"]["as_recorded"] and "stay" in [s["mode"] for s in out["segments"]]
+    assert "stay" in [s["mode"] for s in out["segments"]]
     parts = matched_preview(out)
-    assert "stay" in [p["m"] for p in parts]           # the stop is part of the line, not skipped
+    assert [p["m"] for p in parts] == ["cycle", "cycle"]      # the stop itself is a dot, not a tangle
+    from mapmatch.engine.geo import haversine
+    a, b = parts[0]["c"][-1], parts[1]["c"][0]
+    assert haversine(a[0], a[1], b[0], b[1]) < 60          # and the line runs up to it and on from it
 
 
 def test_match_settings_are_saved_and_used(env):
@@ -853,3 +856,31 @@ def test_a_push_that_would_invent_points_changes_nothing(env, monkeypatch):
     assert sorted(dw.points.items()) == before and not dw.ours()
     assert any("refused to write" in (t["error"] or "") for t in client.get("/api/trips").json()["trips"])
     assert not client.get("/api/me").json()["dawarich_needs_repair"]
+
+
+def test_trips_only_push_touches_nothing_outside_the_trip(env, monkeypatch):
+    """PUSH_TRIPS_ONLY: the trip's own fixes are swapped for its matched line. Every other
+    point in Dawarich (the stops either side, the other trips) is neither deleted nor
+    rewritten, no stop point or link is added, and a revert puts the trip's fixes back."""
+    from mapmatch.portal import push
+    client, dw, jobs, db = env
+    originals = dw.originals()
+    sync(client, jobs)
+    real = push.apply
+
+    def trips_only(db_, cfg, *a, **k):
+        object.__setattr__(cfg, "push_trips_only", True)
+        return real(db_, cfg, *a, **k)
+    monkeypatch.setattr(push, "apply", trips_only)
+    trip = client.get("/api/trips").json()["trips"][-1]
+    outside = {k for k in originals if not trip["start"] <= k[0] <= trip["end"]}
+    ids_before = {i for i, p in dw.points.items() if not trip["start"] <= p["timestamp"] <= trip["end"]}
+    assert client.post(f"/api/trips/{trip['id']}/push", headers=H).status_code == 200
+    ours = dw.ours()
+    assert ours and all(trip["start"] <= p["timestamp"] <= trip["end"] for p in ours), "only the trip's own line is written"
+    assert {k for k in dw.originals() if not trip["start"] <= k[0] <= trip["end"]} == outside
+    assert ids_before <= set(dw.points), "no point outside the trip was deleted and re-created"
+    assert not [k for k in dw.originals() if trip["start"] <= k[0] <= trip["end"]], "the trip's fixes made way for the line"
+    assert client.post(f"/api/trips/{trip['id']}/revert", headers=H).status_code == 200
+    assert dw.originals() == originals and not dw.ours()
+    assert ids_before <= set(dw.points)

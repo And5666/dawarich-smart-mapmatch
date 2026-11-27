@@ -15,7 +15,7 @@ from .db import Database, now, pack, unpack
 KEEP_RESULTS = 30
 PREVIEW_TOLERANCE_M = 4.0
 RECORDED_TOLERANCE_M = 1.0   # a line kept as recorded is drawn as recorded
-PREVIEW_VERSION = "4"
+PREVIEW_VERSION = "5"
 
 
 # ---------------------------------------------------------------- segmentation
@@ -200,10 +200,16 @@ def matched_preview(result: dict[str, Any]) -> list[dict[str, Any]]:
         recorded = bool(s["pieces"]) and all(p["kind"] == "recorded" for p in s["pieces"])
         if s["mode"] == "stay" and not recorded:
             continue
-        coords = [c for p in s["pieces"] for c in p["coords"]]
-        if len(coords) >= 2:
-            parts.append({"m": s["mode"], "c": _simplified(coords, RECORDED_TOLERANCE_M if recorded
-                                                           else PREVIEW_TOLERANCE_M)})
+        tol = RECORDED_TOLERANCE_M if recorded else PREVIEW_TOLERANCE_M
+        run: list[Any] = []
+        # A hole nothing could explain is not drawn: the line stops and starts again.
+        for p in [*s["pieces"], None]:
+            if p is None or p.get("unlinked"):
+                if len(run) >= 2:
+                    parts.append({"m": s["mode"], "c": _simplified(run, tol)})
+                run = []
+            else:
+                run += p["coords"]
     return parts
 
 

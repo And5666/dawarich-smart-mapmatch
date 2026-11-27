@@ -1,5 +1,73 @@
 # Changes
 
+## 2.12.1
+
+Six trips flagged "need a look" after 2.12.0, each traced to a rule:
+
+- **The last steps to a stop.** A stop is a dot in the middle of where you
+  stood about, so the seam to it (up to 150 m) is not judged by the clock:
+  the path there when it is about as long as the seam, else the plain line.
+  It was a "too fast" straight line, counted as doubt.
+- **The router may start from any way within 30 m** of a hole's ends when the
+  nearest one gives a route that is too long or goes round: the nearest can be
+  a pontoon, or the far carriageway.
+- **A hole that cannot go straight** (the basemap shows water or buildings in
+  the way) may take a longer path when there was time to walk it.
+- **"Points far from the line"** counts the fixes the line claims to follow:
+  not those set aside as scatter, nor those inside a stretch left unconnected
+  or drawn as a plain line (that doubt is counted once, as unsure).
+
+## 2.12.0
+
+- **The engine can read the basemap** (`MAPMATCH_GROUND_PMTILES`, the same
+  Protomaps PMTiles file the portal can draw offline; `mapmatch/engine/ground.py`,
+  pure Python). It answers three questions the road network cannot: is this
+  point on water, is it under a roof, and does a straight line between two
+  points cross water or run through buildings. Without the file nothing changes.
+- With it: fixes on water are dropped unless a run of them travels (a ferry);
+  positions matched to a "footway" that is on water (a floating pontoon) are
+  not trusted; a trip that ends under a roof stops at the first fix inside when
+  nothing after it gets further than a room away; kept GPS that stays under one
+  roof for twenty seconds is taken out; a straight step of 25 m or more across
+  water or through buildings is routed if a path fits the time, else left
+  unconnected; and across open ground (a car park, a square) a short hop goes
+  straight instead of round the aisles.
+- "Points far from the line" no longer counts the fixes of a stop: a stop is
+  one dot, and the scatter round it is not something the route missed.
+
+## 2.11.0
+
+Found by looking at the overview map of a whole city with every trip drawn:
+lines over water, tangles inside shops, loops round car parks, straight lines
+through blocks. Each is a rule, measured over 580 trips (`line drawn while
+stopped` 135 km to 5 km; straight jumps of 150 m+ in kept GPS 42 to 4; fixes
+dropped as end-of-trip scatter 24 to 1,150; watch-ride truth 97.0% to 97.5%).
+
+- **A stop is one dot, however it was logged.** A watch left running in a shop
+  drew a tangle a hundred metres wide; so did a "wide stop". Five minutes of
+  milling about on one spot anywhere in a walk or a ride is a stop too.
+- **A trip logged in fine detail is no longer exempt.** Its holes are routed or
+  left unconnected and its stops are dots, like any other trip. It is reported
+  as "kept as recorded" only when nothing in it needed tidying; otherwise it
+  can be pushed like any corrected trip. The same goes for a trip abroad.
+- **Where a trip ends indoors**, the last fixes (and the first of the trip out)
+  scatter over the building. Such a tangle is the way in and one position.
+- **Kept GPS is pruned and judged.** Fixes that could not have been walked to
+  at the stretch's own pace go. What is still a zigzag is scatter, not a walk
+  off the paths: it becomes the path there was time for, else a plain line.
+- **Holes from 200 m** (was 1 km) are tried every way and otherwise left
+  unconnected; kept GPS is cut where a step is 150 m and eight times the
+  usual step of its track (a watch that lost signal for 700 m).
+- **No ferry lines for walks and rides.** A ferry route is the only "path" out
+  on a harbour and a walk along the quay snapped to it.
+- **Car parks.** Nobody on foot or a bike follows the parking aisles: positions
+  matched to an aisle are not trusted, and no route is tried across them. A
+  matched or routed stretch may be 1.3 times the GPS it replaces (was 1.4 to 2).
+- **A straight line of 60 m or more is drawn only where a path runs under it**
+  (`valhalla.off_paths`); otherwise the two ends are left unconnected.
+- Known limit: floating pontoons are footways on the map, so a line can still
+  follow one along a quay. Telling them from land needs a water layer.
+
 ## 2.10.1
 
 ### Safety: nothing reaches Dawarich that the portal doesn't show or the GPS doesn't back
@@ -19,8 +87,33 @@
   put back must be in the archive. Anything else and the span is refused: the
   trip shows the reason and Dawarich is left exactly as it was, for a push by
   hand and for automatic runs alike.
+- **`PUSH_TRIPS_ONLY=1`** for those who want Dawarich changed as little as
+  possible: a push swaps each pushed trip's fixes for its matched line and
+  touches nothing else. Stops keep their recorded fixes (no half-hourly stop
+  points, which sit on one spot and read as duplicates in Dawarich), no links
+  are drawn, and trips that are not pushed are not deleted and written again.
 - After updating, **Settings → Repair tracks** rewrites what earlier pushes
   wrote, removing the points above.
+
+### Matching: trains on the real rails, long gaps, unreliable fixes (engine 2.10.1)
+
+- **Trains follow the real rails.** The shipped timetable shapes are coarse
+  (often one point per station, a straight line between), so a train was
+  drawn as chords across the country. Where an OpenStreetMap railway network
+  is installed, trains are matched on its rails, by a matcher that follows
+  one track (snapping fix by fix ran to a crossover and back whenever two
+  fixes fell on different tracks of a double line). A watch-logged trip with
+  a train ride in the middle keeps its detailed parts and gets the ride on
+  the railway.
+- **Holes.** Two fixes a kilometre or more apart with nothing between them
+  are tried every way the ground could have been covered in the time (train
+  between stations, on foot, by bike, by car). If nothing fits they are left
+  unconnected: no line is drawn, the gap can still be routed by hand, and
+  its length still counts as distance. Kept GPS is cut at such holes too.
+- **Unreliable fixes on a walk.** A fix the phone itself rates at 25 m or
+  worse, that a walker would have had to run to, is dropped; and GPS that is
+  kept because no path fits is drawn only through the fixes the phone was
+  sure of. Walks between tall buildings were being drawn out over water.
 
 ## 2.10.0
 

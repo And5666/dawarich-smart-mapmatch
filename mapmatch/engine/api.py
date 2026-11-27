@@ -10,7 +10,7 @@ from .match import fit_score, match_segment
 from .modes import label, runs, summary_speed
 from .quality import between, deviations, path_km, percentile
 
-ENGINE_VERSION = "2.10.0"
+ENGINE_VERSION = "2.12.1"
 MODES = ("walk", "cycle", "drive", "train", "stay", "raw")
 MOVING = ("walk", "cycle", "drive", "train")
 NO_MAP_FRAC = 0.75   # share of sampled fixes with no map under them: the trip is abroad
@@ -211,8 +211,16 @@ def match_trip(points: list[dict[str, Any]], overrides: list[dict[str, Any]] | N
         return {"segments": [], "stream": [], "dropped": dropped, "quality": {},
                 "engine_version": ENGINE_VERSION}
     labels, forced, keys = label(fixes, overrides)
-    if not snap and assemble.precise(fixes):
-        return _as_recorded(fixes, dropped, labels, forced, keys, "detailed")
+    # A trip logged in fine detail is left as recorded, unless it has a train
+    # ride with nothing recorded on the way (a watch paused at one station
+    # and started again at another): that hole is a 17 km straight line as
+    # recorded, and belongs on the railway. The detailed parts either side
+    # are still kept point for point, each judged on its own below.
+    train_hole = any(k.startswith("auto:train") for k in keys)
+    # Kept point for point does not mean kept blindly: the holes in it are routed or
+    # left unconnected, and a stop is one dot, like in any other trip. Only when
+    # nothing of that kind was found is the trip reported as "kept as recorded".
+    whole = not snap and not train_hole and assemble.precise(fixes)
     moving = [(labels[i], any(forced[i:j])) for _, i, j in runs(keys) if labels[i] in MOVING]
     if moving and all(left_alone(m, f) for m, f in moving):
         # Nothing in this trip is a mode that gets matched.
@@ -227,7 +235,8 @@ def match_trip(points: list[dict[str, Any]], overrides: list[dict[str, Any]] | N
     # judged on its own, so the watch part is kept and the phone part matched.
     dense = assemble.dense_blocks(fixes)
     detailed = assemble.detailed_fixes(fixes)
-    keys = [k if forced[i] else f"{k}|{'d' if dense[i] else 's'}" for i, k in enumerate(keys)]
+    # (A train ride found across a hole is one run whatever was logged either side of it.)
+    keys = [k if forced[i] or k.startswith("auto:") else f"{k}|{'d' if dense[i] else 's'}" for i, k in enumerate(keys)]
 
     segments: list[dict[str, Any]] = []
     hooked: list[dict[str, Any]] = []
@@ -241,14 +250,9 @@ def match_trip(points: list[dict[str, Any]], overrides: list[dict[str, Any]] | N
             segments.append({"mode": mode, "forced": False, "profile": None, "n_fixes": 1,
                              "pieces": [], "via": seg_fixes, "key": key})
             continue
-        if mode == "stay" and len(seg_fixes) > 1 and (key.startswith("dwell") or (not snap and all(detailed[i:j]))):
-            # A stop logged by a watch keeps its points, like the ride around it.
-            # So does a wide stop (see stays.find_dwells): its fixes are up to
-            # 100 m apart and show where in the place you were; one dot would not.
-            profile = "recorded"
-            pieces = [assemble._piece("recorded", [[p["lat"], p["lon"], p["timestamp"], 1] for p in seg_fixes],
-                                      len(seg_fixes))]
-        elif mode == "stay":
+        if mode == "stay":
+            # One dot, however it was logged. A watch left running in a shop draws a
+            # tangle a hundred metres wide: where the stop was is its middle.
             pieces = assemble.stay_pieces(seg_fixes)
         elif mode == "raw":
             pieces = assemble.raw_pieces(seg_fixes)
@@ -257,7 +261,7 @@ def match_trip(points: list[dict[str, Any]], overrides: list[dict[str, Any]] | N
             profile = "kept"
             pieces = [assemble._piece("recorded", [[p["lat"], p["lon"], p["timestamp"], 1] for p in seg_fixes],
                                       len(seg_fixes))]
-        elif mode != "train" and not snap and (all(detailed[i:j]) or assemble.precise(seg_fixes)):
+        elif mode != "train" and not snap and (whole or all(detailed[i:j]) or assemble.precise(seg_fixes)):
             # Already a better line than the map would give: keep it.
             profile = "recorded"
             pieces = assemble.recorded_pieces(seg_fixes, mode, strength, keep_gap, force_gap)
@@ -281,17 +285,22 @@ def match_trip(points: list[dict[str, Any]], overrides: list[dict[str, Any]] | N
 
     segments = assemble.connect(segments, strength, keep_gap, force_gap)
     segments = assemble.merge_same_mode(segments)
+    assemble.unlink(segments)
     assemble.finish(segments)
     out = assemble.stream(segments)
     if hooked:
         gone = {id(p) for p in hooked}
         fixes = [p for p in fixes if id(p) not in gone]
         dropped = sorted(dropped + hooked, key=lambda p: p["timestamp"])
+    q = {**quality(fixes, segments, out), **({"no_map_frac": round(no_map, 3)} if no_map else {})}
+    if whole and all(p["kind"] in ("recorded", "join") for s in segments for p in s["pieces"]):
+        q["as_recorded"] = True          # nothing in it needed cleaning: Dawarich already has it right
+        q["kept_because"] = "detailed"
     return {
         "segments": segments,
         "stream": out,
         "dropped": [{k: p.get(k) for k in ("lat", "lon", "timestamp", "accuracy", "_drop")} for p in dropped],
-        "quality": {**quality(fixes, segments, out), **({"no_map_frac": round(no_map, 3)} if no_map else {})},
+        "quality": q,
         "engine_version": ENGINE_VERSION,
     }
 
@@ -305,7 +314,14 @@ def _as_recorded(fixes: list[dict[str, Any]], dropped: list[dict[str, Any]], lab
     for the record; the portal does not change such a trip in Dawarich."""
     rs = runs(keys)
     segments = []
+    dot = False
     for k, (key, i, j) in enumerate(rs):
+        if labels[i] == "stay" and j - i > 1:
+            # A stop is one dot here too: it needs no map, and its scatter is not a route.
+            segments.append({"mode": "stay", "forced": any(forced[i:j]), "profile": None, "n_fixes": j - i,
+                             "key": key if any(forced[i:j]) else None, "pieces": assemble.stay_pieces(fixes[i:j])})
+            dot = True
+            continue
         # Each part runs on to the first fix of the next, so the line is unbroken.
         part = fixes[i:j + 1] if k + 1 < len(rs) else fixes[i:j]
         coords = [[p["lat"], p["lon"], p["timestamp"], 1] for p in part]
@@ -314,10 +330,13 @@ def _as_recorded(fixes: list[dict[str, Any]], dropped: list[dict[str, Any]], lab
                          "n_fixes": j - i, "key": key if any(forced[i:j]) else None,
                          "pieces": [assemble._piece("recorded", coords, j - i)]})
     segments = assemble.merge_same_mode(segments)
+    assemble.unlink(segments)
     assemble.finish(segments)
     out = assemble.stream(segments)
     q = quality(fixes, segments, out)
-    q["as_recorded"] = True
+    # Reported as kept only when nothing in it was tidied: a stop drawn as a dot or a
+    # hole left unconnected is a change the portal shows and can push.
+    q["as_recorded"] = not dot and not any(p.get("unlinked") or p["kind"] != "recorded" for s in segments for p in s["pieces"])
     q["kept_because"] = why
     if no_map is not None:
         q["no_map_frac"] = round(no_map, 3)
@@ -348,15 +367,27 @@ def _unsure_km(segments: list[dict[str, Any]]) -> float:
 def quality(fixes: list[dict[str, Any]], segments: list[dict[str, Any]],
             out: list[dict[str, Any]]) -> dict[str, Any]:
     km: dict[str, float] = {}
+    holes = 0.0
     for s in segments:
         for p in s["pieces"]:
             km[p["kind"]] = km.get(p["kind"], 0.0) + p["km"]
+            if p.get("unlinked"):
+                holes += p["km"]            # not drawn: nothing is known about the way
     moving = sum(v for k, v in km.items() if k != "stay")
-    errs = deviations(fixes, out)
+    # How far the fixes lie from the line, where there is a line: a stop is one dot, and
+    # the fixes scattered round it are not points the route missed.
+    stops = [(s["pieces"][0]["coords"][0][2], s["pieces"][-1]["coords"][-1][2]) for s in segments
+             if s["mode"] == "stay" and s["pieces"] and s["pieces"][0]["coords"]]
+    # Nor are fixes the line does not claim to follow: set aside as scatter, or inside a
+    # stretch left unconnected or drawn as a plain line (that doubt is unsure_frac's to count).
+    stops += [(p["coords"][0][2], p["coords"][-1][2]) for s in segments for p in s["pieces"]
+              if len(p["coords"]) >= 2 and (p.get("scatter") or p.get("unlinked") or p["kind"] == "straight")]
+    errs = deviations([p for p in fixes if not any(a < p["timestamp"] < b for a, b in stops)], out)
     raw_km = path_km(fixes)
     return {
         "raw_km": round(raw_km, 3),
         "km": round(path_km(out), 3),
+        "unlinked_km": round(holes, 3),
         "matched_frac": round(km.get("matched", 0.0) / moving, 3) if moving else 0.0,
         "recorded_frac": round(km.get("recorded", 0.0) / moving, 3) if moving else 0.0,
         "filled_frac": round(km.get("filled", 0.0) / moving, 3) if moving else 0.0,
@@ -364,7 +395,7 @@ def quality(fixes: list[dict[str, Any]], segments: list[dict[str, Any]],
         # The part of that which is a guess: a straight line across a hole, or kept GPS whose fixes are
         # so far apart that it is straight lines too. GPS kept point for point along a path the map
         # does not have is where you were, not a doubt about the match.
-        "unsure_frac": round(_unsure_km(segments) / moving, 3) if moving else 0.0,
+        "unsure_frac": round(min(1.0, _unsure_km(segments) / moving), 3) if moving else 0.0,
         "p50": round(percentile(errs, 0.5), 1),
         "p95": round(percentile(errs, 0.95), 1),
         "segments": len(segments),

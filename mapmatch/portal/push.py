@@ -19,6 +19,9 @@ Safety rules:
   the span is left untouched.
 - The archive is never modified beyond adding points.
 - PUSH_DRY_RUN computes and records the plan without changing Dawarich.
+- PUSH_TRIPS_ONLY rewrites the pushed trips and nothing else: stops are not
+  tidied, no links are drawn, and every point outside a trip being pushed or
+  undone is left as it is.
 """
 from __future__ import annotations
 
@@ -292,8 +295,16 @@ def apply(db: Database, cfg: Any, uid: int, changes: dict[int, bool], transport:
         b = rows[i + 1]["start_ts"] if i + 1 < len(rows) else rows[i]["end_ts"] + STOP_REACH_S
         return min(a, rows[i]["start_ts"]), max(b, rows[i]["end_ts"])
 
-    seeds = [reach_of(t) for t in [*changes, *(also or [])] if t in byid]
-    seeds += [(int(a), int(b)) for a, b in (extra_spans or [])]
+    only = bool(getattr(cfg, "push_trips_only", False))
+    named = {t for t in [*changes, *(also or [])] if t in byid}
+    if only:
+        # PUSH_TRIPS_ONLY: each trip is rewritten inside its own window. The stops and the trips
+        # around it are not read into the rewrite at all, so they stay exactly as Dawarich has them.
+        seeds = [(byid[t]["start_ts"], byid[t]["end_ts"]) for t in named]
+    else:
+        seeds = [reach_of(t) for t in named]
+    repairs = [(int(a), int(b)) for a, b in (extra_spans or [])]
+    seeds += repairs
     dry = cfg.push_dry_run
     summary = {"dry_run": dry, "spans": 0, "deleted": 0, "posted": 0, "matched_points": 0,
                "original_points": 0, "failed_spans": 0}
@@ -302,8 +313,11 @@ def apply(db: Database, cfg: Any, uid: int, changes: dict[int, bool], transport:
     say = progress or (lambda *_: None)
     with client_for(db, cfg, uid, transport) as dw:
         lo, hi = min(a for a, _ in seeds), max(b for _, b in seeds)
-        tracks = dw.tracks(lo - 86400, hi + 86400)
-        groups = spans(seeds, tracks + [(t["start_ts"], t["end_ts"]) for t in rows])
+        if only:
+            groups = _merge(seeds)
+        else:
+            tracks = dw.tracks(lo - 86400, hi + 86400)
+            groups = spans(seeds, tracks + [(t["start_ts"], t["end_ts"]) for t in rows])
         summary["spans"] = len(groups)
         def _span(a: int, b: int) -> None:
             remote = dw.points(a, b)
@@ -363,7 +377,7 @@ def apply(db: Database, cfg: Any, uid: int, changes: dict[int, bool], transport:
                 # between trips that both show their original GPS stays as is.
                 before = max((t for t in rows if t["end_ts"] < run[0]["timestamp"]), key=lambda t: t["end_ts"], default=None)
                 after = min((t for t in rows if t["start_ts"] > run[-1]["timestamp"]), key=lambda t: t["start_ts"], default=None)
-                if any(t is not None and shown.get(t["id"]) for t in (before, after)):
+                if not only and any(t is not None and shown.get(t["id"]) for t in (before, after)):
                     places = tidy_stops(run)
                     tidy = [q for c in places for q in c]
                     # Join the places to each other and to the pushed trips
@@ -380,6 +394,15 @@ def apply(db: Database, cfg: Any, uid: int, changes: dict[int, bool], transport:
                     n_matched += len(tidy)
                 else:
                     posts += [{**p, "tracker": p["tracker_id"], "ours": False} for p in run]
+            if only:
+                # Two trips whose windows touch share a span. Only what lies in a trip that is being
+                # pushed or undone (or in a span under repair) is deleted and written; the rest is not touched.
+                mine = [(t["start_ts"], t["end_ts"]) for t in inside if t["id"] in named] + repairs
+                remote = [p for p in remote if p.get("timestamp") is not None
+                          and any(c <= int(p["timestamp"]) <= d for c, d in mine)]
+                kept = [p for p in posts if any(c <= int(p["timestamp"]) <= d for c, d in mine)]
+                n_matched -= sum(1 for p in posts if p.get("ours")) - sum(1 for p in kept if p.get("ours"))
+                posts = kept
             # The last word: nothing the portal doesn't show or the GPS doesn't back.
             problems = guard.check(posts, fixes, lines, (a, b))
             if problems:

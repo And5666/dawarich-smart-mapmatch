@@ -190,6 +190,8 @@ push does in Dawarich.
 | `PORTAL_BASE_PATH` | none | e.g. `/mapmatch` when served under a path |
 | `PORTAL_SECURE_COOKIE` | `0` | `1` behind https |
 | `PUSH_DRY_RUN` | `0` (`1` in the example compose) | `1` works out pushes without changing Dawarich |
+| `PUSH_TRIPS_ONLY` | `0` | `1` makes a push rewrite the pushed trips and nothing else: stops are not tidied, no links are drawn, and no point outside a trip being pushed or undone is deleted or written |
+| `MAPMATCH_GROUND_PMTILES` | unset | Path (inside the container) of a Protomaps basemap `.pmtiles` file. The matcher then knows water, buildings and bridges: no lines over water or through buildings, no walks along pontoons |
 | `MATCH_WORKERS` | `4` | Trips matched in parallel; keep at or below Valhalla's thread count |
 | `VALHALLA_DATA_DIR` | none | Optional read-only mount of Valhalla's data, so admins can see the map files and build railways from them |
 | `REQUIRE_ADMIN` | `0` | `1` refuses to start without an admin account, so a first visitor can never register as admin |

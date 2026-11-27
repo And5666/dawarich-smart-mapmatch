@@ -4,7 +4,8 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from .fill import TRAIL_DEV_M, TRAIL_MODES, VMAX_KMH, fill, max_deviation
+from . import ground, valhalla
+from .fill import END_SNAP_M, PROFILE, TRAIL_DEV_M, TRAIL_MODES, TYPICAL_KMH, VMAX_KMH, fill, max_deviation
 from .geo import dist_point_segment, haversine, point_at, project_arc, subline
 from .stays import centroid
 from .valhalla import unreported
@@ -127,6 +128,7 @@ def length_m(coords: list[Any]) -> float:
 
 
 VIA_REACH_M = 80.0     # a fix this close to the line says when the line was there
+UNSURE_ACC_M = 25.0    # a reported accuracy this poor: the fix is not drawn through when GPS is kept
 
 
 def timed(coords: list[tuple[float, float]], ta: float, tb: float,
@@ -180,9 +182,55 @@ def _fixpt(p: dict[str, Any], lat: float | None = None, lon: float | None = None
             "timestamp": p["timestamp"], "accuracy": p.get("accuracy")}
 
 
+CALM_OVER = 1.3        # kept GPS may ask for this many times the usual pace of its stretch
+TORTUOUS = 1.3         # kept GPS this many times as long as it is far (plus 30 m) is scatter
+STOP_SEAM_M = 150.0    # the seam between a stop's dot and the trip either side of it
+BLOCK_MIN_M = 25.0     # a straight step this long is checked against water and buildings
+INDOOR_RUN_S = 20      # kept GPS this long under one roof is drift, or a shop: not part of the line
+PROBE_MIN_M = 60.0     # a straight step this long is checked for paths under it
+PROBE_EVERY_M = 30.0
+CALM_MIN_SAVE_M = 10.0
+
+
+def usual_kmh(fixes: list[dict[str, Any]]) -> float | None:
+    """The pace this stretch usually goes at: the median over steps of ten seconds or more."""
+    v = []
+    i = 0
+    for j in range(1, len(fixes)):
+        dt = fixes[j]["timestamp"] - fixes[i]["timestamp"]
+        if dt >= 10:
+            v.append(haversine(fixes[i]["lat"], fixes[i]["lon"], fixes[j]["lat"], fixes[j]["lon"]) / dt * 3.6)
+            i = j
+    return sorted(v)[len(v) // 2] if len(v) >= 5 else None
+
+
+def calm(a: dict[str, Any], mids: list[dict[str, Any]], b: dict[str, Any], pace: float) -> list[dict[str, Any]]:
+    """Kept GPS without the fixes that could not have been walked to.
+
+    Scatter makes the line longer than the time allows: a walker at 5 km/h does
+    not zigzag across a harbour at 11. While the line asks for more than the
+    stretch's usual pace (with CALM_OVER to spare), the fix that lengthens it
+    most goes. A real walk off the paths is the right length and keeps every fix."""
+    dt = b["timestamp"] - a["timestamp"]
+    if dt <= 0 or not mids:
+        return mids
+    pts = [a, *mids, b]
+    d = lambda p, q: haversine(p["lat"], p["lon"], q["lat"], q["lon"])  # noqa: E731
+    allowed = max(d(a, b), CALM_OVER * pace / 3.6 * dt)
+    path = sum(d(p, q) for p, q in zip(pts, pts[1:]))
+    while len(pts) > 2 and path > allowed:
+        save, k = max((d(pts[k - 1], pts[k]) + d(pts[k], pts[k + 1]) - d(pts[k - 1], pts[k + 1]), k)
+                      for k in range(1, len(pts) - 1))
+        if save < CALM_MIN_SAVE_M:
+            break
+        del pts[k]
+        path -= save
+    return pts[1:-1]
+
+
 def _filled(a: dict[str, Any], mids: list[dict[str, Any]], b: dict[str, Any], mode: str,
             strength: str, n_in: int, vmax: float | None = None,
-            keep: Any = None, force: Any = None) -> dict[str, Any]:
+            keep: Any = None, force: Any = None, pace: float | None = None, direct: bool = False) -> dict[str, Any]:
     # keep(t0, t1) says whether this particular hole must stay as recorded, even
     # when the trip is otherwise happy to route across gaps. force(t0, t1) is the
     # explicit "route it anyway": the plausibility gate lets it through. It may
@@ -191,12 +239,57 @@ def _filled(a: dict[str, Any], mids: list[dict[str, Any]], b: dict[str, Any], mo
     forced = bool(keep and keep(a["timestamp"], b["timestamp"]))
     choice = force(a["timestamp"], b["timestamp"]) if force else False
     gate = choice is True or choice == "gate"
-    f = fill(a, mids, b, mode, "strict" if forced else "fill" if choice else strength, vmax, gate)
+    # direct: across a car park, where every route follows the aisles: no route is tried.
+    direct = direct and not forced and not choice and strength != "strict"
+    f = fill(a, mids, b, mode, "strict" if forced or direct else "fill" if choice else strength, vmax, gate)
     if f["kind"] == "raw":
-        coords = [[p["lat"], p["lon"], p["timestamp"], 1] for p in (a, *mids, b)]
-        pc = _piece("raw", coords, n_in)
+        # GPS kept because no path fits it. Kept means the fixes the phone was sure of:
+        # one it rated 25 m or worse, between two positions that are on the map, is
+        # scatter (between tall buildings, over water), and the line through it a zigzag.
+        sure = [p for p in mids if (p.get("accuracy") or 0.0) < UNSURE_ACC_M]
+        shape = None
+        scatter = False
+        if not forced and (strength != "strict" or direct):
+            slow = mode in ("walk", "cycle") and ground.available()
+            if slow:
+                # A fix the basemap puts on water is scatter. (One under a roof may be a
+                # pavement fix ten metres out: the steps between fixes are judged below.)
+                sure = [p for p in sure if not ground.wet(p["lat"], p["lon"])]
+            if pace:
+                sure = calm(a, sure, b, pace)
+            line = [a, *sure, b]
+            chord = haversine(a["lat"], a["lon"], b["lat"], b["lon"])
+            path = length_m([(p["lat"], p["lon"]) for p in line])
+            through = slow and any(haversine(p["lat"], p["lon"], q["lat"], q["lon"]) >= BLOCK_MIN_M
+                                   and ground.blocked(p["lat"], p["lon"], q["lat"], q["lon"]) for p, q in zip(line, line[1:]))
+            pace = pace or TYPICAL_KMH.get(mode, 5.0)
+            if through or (sure and path > TORTUOUS * chord + 30.0) or len(sure) < len(mids):
+                scatter = True
+            if through or (sure and path > TORTUOUS * chord + 30.0):
+                # Still a zigzag: scatter round a walk the map could not follow, not a walk
+                # off the paths (that is as long as it is far). The fixes are no guide,
+                # so the way there is the path a walker had time for, or failing that
+                # the plain line between the two good positions either side.
+                sure = []
+                dt = b["timestamp"] - a["timestamp"]
+                r = valhalla.route([a, b], PROFILE[mode]) if mode in PROFILE and not direct else None
+                if r and dt > 0 and len(r["shape"]) >= 2:
+                    rl = length_m(r["shape"])
+                    near = haversine(a["lat"], a["lon"], *r["shape"][0]) <= END_SNAP_M and \
+                        haversine(b["lat"], b["lon"], *r["shape"][-1]) <= END_SNAP_M
+                    if near and rl <= max(1.3 * chord + 30.0, CALM_OVER * pace / 3.6 * dt) and rl <= 3.0 * chord + 100.0:
+                        shape = [(a["lat"], a["lon"]), *r["shape"], (b["lat"], b["lon"])]
+        if shape:
+            pc = _piece("filled", timed(shape, a["timestamp"], b["timestamp"]), n_in)
+        else:
+            coords = [[p["lat"], p["lon"], p["timestamp"], 1] for p in (a, *sure, b)]
+            pc = _piece("raw" if sure else "straight", coords, n_in)
+        if scatter:
+            pc["scatter"] = True      # fixes in here were set aside as scatter: the line is not judged by them
     else:
         pc = _piece(f["kind"], timed(f["coords"], a["timestamp"], b["timestamp"], mids), n_in)
+        if f.get("via"):
+            pc["via"] = f["via"]          # routed as another mode than the stretch it is in
     if f.get("why"):
         pc["why"] = f["why"]
     # The hole this piece bridges, so the editor can offer it as a gap to choose.
@@ -227,14 +320,19 @@ def road_pieces(fixes: list[dict[str, Any]], mode: str, m: dict[str, Any],
     def trusted(k: int) -> bool:
         # On foot or by bike, a fix snapped much further away than its own
         # accuracy usually landed on the wrong path.
+        if mode in ("walk", "cycle") and "parking_aisle" in anchors[k]["kind"]:
+            return False          # nobody on foot or a bike follows the aisles of a car park
+        if mode in ("walk", "cycle") and ground.wet(anchors[k]["lat"], anchors[k]["lon"]):
+            return False          # a "footway" on the water is a pontoon: boats moor there
         if not trail:
             return True
         acc = fixes[k].get("accuracy") or 20.0
         return anchors[k]["dist"] <= max(TRAIL_ANCHOR_M, min(1.5 * acc, 40.0))
 
     A = [k for k, a in enumerate(anchors) if a and trusted(k)]
+    pace = usual_kmh(fixes) if mode in ("walk", "cycle") else None
     if not A:
-        return [_filled(_fixpt(fixes[0]), fixes[1:-1], _fixpt(fixes[-1]), mode, strength, n, None, keep, force)]
+        return [_filled(_fixpt(fixes[0]), fixes[1:-1], _fixpt(fixes[-1]), mode, strength, n, None, keep, force, pace)]
 
     def snapped(k: int) -> dict[str, Any]:
         a = anchors[k]
@@ -248,7 +346,7 @@ def road_pieces(fixes: list[dict[str, Any]], mode: str, m: dict[str, Any],
     # and from the platform, and gaps inside it are filled on foot or not at all.
     edge_mode = "walk" if mode == "train" else mode
     if A[0] > 0:
-        out.append(_filled(_fixpt(fixes[0]), fixes[1:A[0]], snapped(A[0]), edge_mode, strength, A[0], vmax, keep, force))
+        out.append(_filled(_fixpt(fixes[0]), fixes[1:A[0]], snapped(A[0]), edge_mode, strength, A[0], vmax, keep, force, pace))
     for k1, k2 in zip(A, A[1:]):
         a1, a2 = anchors[k1], anchors[k2]
         ok = False
@@ -263,20 +361,24 @@ def road_pieces(fixes: list[dict[str, Any]], mode: str, m: dict[str, Any],
             # itself is the evidence there, so no speed check.
             ok = along <= max(2.0 * raw_path + 100.0, 1.5 * chord + 200.0) and \
                 (mode == "train" or dt <= 0 or along / dt * 3.6 <= vmax * 1.3 + 10.0)
+            if ok and mode == "cycle" and along > 1.3 * raw_path + 30.0:
+                ok = False        # round the aisles of a car park the GPS went straight through
             if ok:
                 seg = subline(pc["poly"], pc["cum"], a1["arc"], a2["arc"]) if along > 0.5 else \
                     [point_at(pc["poly"], pc["cum"], a1["arc"])[:2], point_at(pc["poly"], pc["cum"], a2["arc"])[:2]]
                 if trail:
                     ref = [(p["lat"], p["lon"]) for p in span]
                     slack = min(max(p.get("accuracy") or 15.0 for p in span), 30.0)
-                    ok = along <= 1.4 * raw_path + 40.0 and max_deviation(seg, ref) <= TRAIL_DEV_M + slack
+                    ok = along <= 1.3 * raw_path + 20.0 and max_deviation(seg, ref) <= TRAIL_DEV_M + slack
             if ok:
                 out.append(_piece("matched", timed(seg, fixes[k1]["timestamp"], fixes[k2]["timestamp"]), k2 - k1))
         if not ok:
-            out.append(_filled(snapped(k1), fixes[k1 + 1:k2], snapped(k2), mode, strength, k2 - k1, None, keep, force))
+            aisle = any(anchors[k] and "parking_aisle" in anchors[k]["kind"] for k in range(k1 + 1, k2))
+            out.append(_filled(snapped(k1), fixes[k1 + 1:k2], snapped(k2), mode, strength, k2 - k1, None, keep, force, pace,
+                               direct=aisle and mode in ("walk", "cycle")))
     if A[-1] < n - 1:
         out.append(_filled(snapped(A[-1]), fixes[A[-1] + 1:-1], _fixpt(fixes[-1]), edge_mode, strength,
-                           n - 1 - A[-1], vmax, keep, force))
+                           n - 1 - A[-1], vmax, keep, force, pace))
     out = merge_pieces(out)
     # In a phone track a fix without an accuracy is suspect; in a GPX-style
     # track (no accuracies at all) it is simply not reported.
@@ -477,7 +579,21 @@ def connect(segments: list[dict[str, Any]], strength: str, keep: Any = None,
                     chord = haversine(a["lat"], a["lon"], b["lat"], b["lon"])
                     mode = "walk" if chord < 1500 else "drive"
                     vmax = VMAX_KMH["drive"]
-                pc = _filled(a, vias, b, mode, strength, len(vias), vmax, keep, force)
+                seam = haversine(a["lat"], a["lon"], b["lat"], b["lon"])
+                if not vias and "stay" in (s["mode"], t["mode"]) and seam <= STOP_SEAM_M and strength != "strict" \
+                        and not (keep and keep(a["timestamp"], b["timestamp"])):
+                    # The last steps to a stop, or the first away from it. The stop is a dot in
+                    # the middle of where you stood about, so the clock either side of the
+                    # seam says nothing about pace: the path there, else the plain line.
+                    f = fill(a, [], b, mode, "fill", vmax, True)
+                    # (With the clock waved the filler takes any route: only one about as
+                    # long as the seam is the way to a place a few steps off.)
+                    path = f["kind"] == "filled" and length_m(f["coords"]) <= 1.6 * seam + 60.0
+                    line = f["coords"] if path else [(a["lat"], a["lon"]), (b["lat"], b["lon"])]
+                    pc = _piece("filled" if path else "join", timed(line, a["timestamp"], b["timestamp"]), 0)
+                    pc["gap"] = [int(a["timestamp"]), int(b["timestamp"])]
+                else:
+                    pc = _filled(a, vias, b, mode, strength, len(vias), vmax, keep, force)
                 if t["mode"] == "stay" and s["mode"] != "stay":
                     s["pieces"] = merge_pieces(s["pieces"] + [pc])
                 else:
@@ -507,6 +623,101 @@ def merge_same_mode(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
         else:
             out.append(s)
     return out
+
+
+UNLINK_M = 200.0      # a straight line this long that no route explains is not drawn
+CUT_M = 1000.0        # kept GPS is cut where two fixes are this far apart
+CUT_S = 180           # and this long apart in time,
+CUT_HOP_M = 150.0     # or this far apart and
+CUT_HOPS = 8.0        # this many times the usual step of the track they are in
+
+
+def unlink(segments: list[dict[str, Any]]) -> None:
+    """Two fixes far apart with nothing known between them are not joined.
+
+    A straight line a kilometre or more long says "went this way", which is
+    the one thing known to be false: it crosses fields, rivers and buildings.
+    Every hole has been offered to the gap filler by now (its own mode, then
+    any other way of covering the ground in the time). What is left is marked
+    `unlinked`: it is not drawn, and it shows as a gap the user can still
+    route by hand. Its length still counts as distance: the ground between
+    its two ends was covered somehow, and the straight line is the least it
+    can have been. Kept GPS (raw, or recorded by a watch) is cut at such a
+    hole too, after the gap filler has had its try: a watch paused in one
+    town and started again in the next."""
+    for s in segments:
+        out: list[dict[str, Any]] = []
+        for p in s["pieces"]:
+            c = p["coords"]
+            if p["kind"] in ("straight", "join"):
+                d = length_m(c)
+                if p["kind"] == "straight" and d >= UNLINK_M:
+                    p["unlinked"] = True
+                elif d >= BLOCK_MIN_M and len(c) == 2 and s["mode"] in ("walk", "cycle") and not p.get("kept") \
+                        and ground.blocked(c[0][0], c[0][1], c[1][0], c[1][1]):
+                    p["unlinked"] = True          # across water or through buildings: not drawn
+                elif d >= PROBE_MIN_M and len(c) == 2 and s["mode"] in ("walk", "cycle") and not p.get("kept"):
+                    # A shorter straight line is fine across a car park or a square. Across
+                    # water or through a block of buildings it is not: no path runs under it.
+                    k = int(d // PROBE_EVERY_M)
+                    mids = [(c[0][0] + (c[1][0] - c[0][0]) * i / (k + 1), c[0][1] + (c[1][1] - c[0][1]) * i / (k + 1))
+                            for i in range(1, k + 1)]
+                    if not ground.available() and valhalla.off_paths(mids):
+                        p["unlinked"] = True          # (with a basemap, water and buildings were asked above)
+                out.append(p)
+                continue
+            if p["kind"] not in ("raw", "recorded") or len(c) < 2:
+                out.append(p)
+                continue
+            slow = s["mode"] in ("walk", "cycle") and ground.available()
+            if slow and len(c) > 2:
+                # Kept GPS that stays under one roof for twenty seconds is a watch drifting
+                # indoors (or you, in a shop): those fixes go, and the step across is judged below.
+                inside = [ground.indoors(x[0], x[1]) for x in c]
+                keep = [True] * len(c)
+                i = 1
+                while i < len(c) - 1:
+                    if not inside[i]:
+                        i += 1
+                        continue
+                    j = i
+                    while j + 1 < len(c) - 1 and inside[j + 1]:
+                        j += 1
+                    if c[j][2] - c[i][2] >= INDOOR_RUN_S:
+                        keep[i:j + 1] = [False] * (j + 1 - i)
+                    i = j + 1
+                if not all(keep):
+                    c = [x for x, k in zip(c, keep) if k]
+                    p = {**p, "coords": c, "n_in": len(c), "km": round(length_m(c) / 1000.0, 4)}
+            hop = [haversine(c[k][0], c[k][1], c[k + 1][0], c[k + 1][1]) for k in range(len(c) - 1)]
+            usual = sorted(hop)[len(hop) // 2]
+            cuts = [k for k in range(len(c) - 1)
+                    if (hop[k] >= CUT_M and c[k + 1][2] - c[k][2] >= CUT_S)
+                    or (len(hop) >= 10 and hop[k] >= max(CUT_HOP_M, CUT_HOPS * usual))
+                    or (slow and hop[k] >= BLOCK_MIN_M and ground.blocked(c[k][0], c[k][1], c[k + 1][0], c[k + 1][1]))]
+            if not cuts:
+                out.append(p)
+                continue
+            start = 0
+            for k in [*cuts, None]:
+                part = c[start:] if k is None else c[start:k + 1]
+                if part:
+                    out.append({**p, "coords": part, "n_in": len(part), "km": round(length_m(part) / 1000.0, 4)})
+                if k is not None:
+                    hop = [c[k], c[k + 1]]
+                    ends = [{"lat": x[0], "lon": x[1], "timestamp": x[2]} for x in hop]
+                    f = fill(ends[0], [], ends[1], s["mode"]) if s["mode"] in VMAX_KMH else {"kind": "straight"}
+                    if f["kind"] == "filled":
+                        pc = _piece("filled", timed(f["coords"], hop[0][2], hop[1][2]), 0)
+                        if f.get("via"):
+                            pc["via"] = f["via"]
+                    else:
+                        pc = {"kind": "straight", "coords": hop, "n_in": 0, "km": round(length_m(hop) / 1000.0, 4), "unlinked": True}
+                    pc["gap"] = [int(hop[0][2]), int(hop[1][2])]
+                    pc["scatter"] = True
+                    out.append(pc)
+                    start = k + 1
+        s["pieces"] = out
 
 
 def finish(segments: list[dict[str, Any]]) -> None:

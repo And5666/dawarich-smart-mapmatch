@@ -456,7 +456,7 @@ def test_detailed_track_is_kept_as_recorded(fake_valhalla):
     pts = track(steps, dt=1, accuracy=None)
     out = match_trip(pts)
     kinds = {p["kind"] for s in out["segments"] for p in s["pieces"]}
-    assert kinds == {"recorded"} and not fake_valhalla.calls
+    assert kinds == {"recorded"} and out["quality"]["as_recorded"] and out["quality"]["kept_because"] == "detailed"
     line = [c for s in out["segments"] for p in s["pieces"] for c in p["coords"]]
     assert len(line) == len(pts) and all(abs(c[0] - p["lat"]) < 1e-9 for c, p in zip(line, pts))
     assert out["quality"]["recorded_frac"] == 1.0 and out["quality"]["raw_frac"] == 0.0
@@ -476,7 +476,9 @@ def test_phone_track_and_holes_in_a_detailed_one():
     assert any(p.get("gap") for p in pcs)                               # the tunnel is a gap to choose
 
 
-def test_whole_detailed_trip_keeps_every_fix_stops_and_holes_included(fake_valhalla):
+def test_a_detailed_trip_is_tidied_where_it_stops_and_where_it_has_a_hole(fake_valhalla):
+    """Kept point for point where it moves. The five minutes at a cafe are one dot, not a
+    tangle, and the 200 m with no signal are routed or left open, not a straight line."""
     ride = [(5, 0.5 if k % 20 < 10 else -0.5) for k in range(300)]
     a = track(ride, dt=1, accuracy=None)
     stop = track([(0.3, -0.3), (-0.3, 0.3)] * 150, start=(a[-1]["lat"], a[-1]["lon"]),
@@ -485,12 +487,15 @@ def test_whole_detailed_trip_keeps_every_fix_stops_and_holes_included(fake_valha
               dt=1, accuracy=None)                                       # signal lost under a bridge
     pts = a + stop + b
     out = match_trip(pts)
-    assert out["quality"]["as_recorded"] and not fake_valhalla.calls
-    assert {p["kind"] for s in out["segments"] for p in s["pieces"]} == {"recorded"}
-    kept = [(p["lat"], p["lon"], p["timestamp"]) for p in clean(pts)[0]]
-    kept = [c for k, c in enumerate(kept) if not k or c[:2] != kept[k - 1][:2]]   # no repeats of a spot
-    assert [(p["lat"], p["lon"], p["timestamp"]) for p in out["stream"]] == kept and len(kept) > 900
-    assert "stay" in [s["mode"] for s in out["segments"]]                 # still says where it stopped
+    assert not out["quality"].get("as_recorded"), "something was tidied, so there is something to push"
+    stays = [s for s in out["segments"] if s["mode"] == "stay"]
+    assert stays and all(len({(c[0], c[1]) for p in s["pieces"] for c in p["coords"]}) == 1 for s in stays), "a stop is one dot"
+    rec = [p for s in out["segments"] for p in s["pieces"] if p["kind"] == "recorded"]
+    assert sum(len(p["coords"]) for p in rec) >= 580, "both rides are kept point for point"
+    from mapmatch.engine.geo import haversine
+    assert all(haversine(a[0], a[1], b[0], b[1]) < 100 for p in rec for a, b in zip(p["coords"], p["coords"][1:])), \
+        "the hole is not part of the recorded line"
+    assert any(p.get("gap") for s in out["segments"] for p in s["pieces"]), "it is a gap, routed or left open"
 
 
 def test_modes_not_matched_keep_their_gps(fake_valhalla):
@@ -727,3 +732,208 @@ def test_a_routed_gap_keeps_the_times_of_the_fixes_along_it():
     assert [c[2] for c in pinned] == sorted(c[2] for c in pinned)
     far = {"lat": LAT0 + 0.01, "lon": line[5][1], "timestamp": T0 + 10}                # over a kilometre off the line
     assert [c[2] for c in timed(line, T0, T0 + 120, [far])] == [c[2] for c in even]
+
+
+def _two_track_network(tmp_path):
+    """A double-track main line running east for 6 km, the tracks 4 m apart and joined only by a
+    crossover at each end: the shape of a real railway in OpenStreetMap."""
+    import gzip
+    import json
+    nodes, ways = [], []
+    for row, north in enumerate((0.0, 4.0)):
+        ids = []
+        for k in range(61):                                   # a node every 100 m
+            lat, lon = offset(LAT0, LON0, 100.0 * k, north)
+            ids.append(len(nodes))
+            nodes.append([lat, lon])
+        ways.append(ids)
+    ways.append([0, 61])                                      # crossovers at the two ends
+    ways.append([60, 121])
+    d = tmp_path / "rail"
+    d.mkdir()
+    with gzip.open(d / "railways-test.json.gz", "wt") as f:
+        json.dump({"name": "test", "nodes": nodes, "ways": ways, "stations": [nodes[5], nodes[55]]}, f)
+    return d
+
+
+def test_a_train_keeps_to_one_track(tmp_path, monkeypatch):
+    """Fixes fall on either track at random. Snapped one by one the line runs to a crossover and
+    back each time they change; followed as a journey it is one track, as long as the ground covered."""
+    from mapmatch.engine import railnet
+    monkeypatch.setattr(railnet, "_dirs", [str(_two_track_network(tmp_path))])
+    monkeypatch.setattr(railnet, "_nets", None)
+    fixes = []
+    for k in range(11):                                       # every 500 m, alternately nearer each track
+        lat, lon = offset(LAT0, LON0, 500.0 * k + 250.0, 3.5 if k % 2 else 0.5)
+        fixes.append({"lat": lat, "lon": lon, "timestamp": T0 + 30 * k, "accuracy": 10.0})
+    res = railnet.match(fixes)
+    assert all(res["anchors"]) and len(res["pieces"]) == 1
+    assert 4900 < res["pieces"][0]["cum"][-1] < 5200, "5 km of ground, 5 km of rails: no trips to the crossovers"
+    assert max(a["dist"] for a in res["anchors"]) < 5
+    path = railnet.between(fixes[0]["lat"], fixes[0]["lon"], fixes[-1]["lat"], fixes[-1]["lon"])
+    assert path and len(path) > 40
+
+
+def test_a_poor_fix_a_walker_would_have_to_run_to_is_dropped():
+    pts = [{**p, "accuracy": 12.0} for p in _walk(16)]
+    pts[8] = {**pts[8], "lat": pts[8]["lat"] + 110 / 110540.0, "accuracy": 38.0}     # 110 m out, and the phone says it is unsure
+    kept, dropped = clean(pts, jitter=True)
+    assert [p["timestamp"] for p in dropped] == [pts[8]["timestamp"]]
+    sure = [{**p, "accuracy": 8.0} for p in pts]                                     # the same shape from a fix it trusts
+    sure[8]["lat"] = pts[8]["lat"] - 110 / 110540.0 + 45 / 110540.0                  # 45 m: too small for the side-step rule
+    kept, dropped = clean(sure, jitter=True)
+    assert not dropped, "a good fix off the line is where the walker was"
+
+
+def test_a_hole_nothing_explains_is_left_unconnected(fake_valhalla):
+    from mapmatch.engine import assemble
+    lat, lon = offset(LAT0, LON0, 3000, 0)
+    hop = [[LAT0, LON0, T0, 1], [lat, lon, T0 + 600, 1]]                             # 3 km, ten minutes, nothing between
+    near = [[LAT0, LON0, T0, 1], [offset(LAT0, LON0, 150, 0)[0], offset(LAT0, LON0, 150, 0)[1], T0 + 60, 1]]
+    segs = [{"mode": "walk", "pieces": [{"kind": "straight", "coords": hop, "n_in": 0, "km": 3.0},
+                                        {"kind": "straight", "coords": near, "n_in": 0, "km": 0.15}]}]
+    assemble.unlink(segs)
+    assert segs[0]["pieces"][0].get("unlinked") is True and not segs[0]["pieces"][1].get("unlinked")
+    # Kept GPS is cut at such a hole; with no route to be had the two halves are not joined.
+    fake_valhalla.fail_route = True
+    track_ = [[LAT0, LON0 + k * 0.0003, T0 + 20 * k, 1] for k in range(5)]
+    far = [[LAT0 + 0.03, LON0 + k * 0.0003, T0 + 1000 + 20 * k, 1] for k in range(5)]
+    segs = [{"mode": "walk", "pieces": [{"kind": "recorded", "coords": track_ + far, "n_in": 10, "km": 3.5}]}]
+    assemble.unlink(segs)
+    kinds = [(p["kind"], bool(p.get("unlinked"))) for p in segs[0]["pieces"]]
+    assert kinds == [("recorded", False), ("straight", True), ("recorded", False)]
+    # With a route, the hole is the route: here a ride, since nobody walks 3.3 km in 15 minutes.
+    fake_valhalla.fail_route = False
+    segs = [{"mode": "walk", "pieces": [{"kind": "recorded", "coords": track_ + far, "n_in": 10, "km": 3.5}]}]
+    assemble.unlink(segs)
+    mid = segs[0]["pieces"][1]
+    assert mid["kind"] == "filled" and mid.get("via") == "cycle" and not mid.get("unlinked")
+
+
+def test_kept_gps_is_not_drawn_through_fixes_the_phone_was_unsure_of(fake_valhalla):
+    from mapmatch.engine.assemble import _filled
+    a, m1, m2, b = track([(40, 0), (40, 0), (40, 0)])
+    m1 = {**m1, "lat": m1["lat"] + 90 / 111_320.0, "accuracy": 39.0}                 # scatter: 90 m off, rated poor
+    fake_valhalla.fail_route = True
+    pc = _filled(a, [m1, m2], b, "walk", "fill", 2)
+    assert pc["kind"] == "raw" and len(pc["coords"]) == 3, "the poor fix is left out, the good one kept"
+
+
+def test_kept_gps_loses_the_fixes_nobody_could_have_walked_to():
+    from mapmatch.engine.assemble import calm
+    def at(east, north, dt):
+        lat, lon = offset(LAT0, LON0, east, north)
+        return {"lat": lat, "lon": lon, "timestamp": T0 + dt, "accuracy": 12.0}
+    a, b = at(0, 0, 0), at(200, 0, 150)                       # 200 m in 150 s: a walk
+    zig = [at(66, 80, 50), at(133, -80, 100)]                 # ...that the fixes make 380 m of
+    assert len(calm(a, zig, b, 5.0)) < 2
+    straight = [at(66, 3, 50), at(133, -3, 100)]
+    assert calm(a, straight, b, 5.0) == straight, "a walk the right length keeps every fix"
+
+
+def test_the_tangle_where_a_trip_ends_indoors_is_one_position():
+    def at(east, north, k):
+        lat, lon = offset(LAT0, LON0, east, north)
+        return {"lat": lat, "lon": lon, "timestamp": T0 + 30 * k, "accuracy": 14.0}
+    walk = [at(40 * k, 0, k) for k in range(20)]              # 800 m to the shop
+    star = [at(760 + e, n, 20 + k) for k, (e, n) in enumerate([(45, 40), (-30, -35), (50, -20), (-40, 30), (20, 55), (-15, -50), (35, 10), (0, 0)])]
+    kept, dropped = clean(walk + star, jitter=True)
+    assert len(dropped) >= 6 and all(p["timestamp"] >= walk[17]["timestamp"] for p in dropped), "only the last 90 m"
+    assert len([p for p in kept if p["timestamp"] <= walk[16]["timestamp"]]) == 17, "the walk there is untouched"
+    assert len(kept) <= 20
+
+
+def test_a_ferry_line_is_not_a_path_for_a_walk():
+    """The map-matcher's answer runs road, ferry, road. The ferry edge is left out: the
+    fix on it has no anchor and the line is two pieces, one each side of the water."""
+    from mapmatch.engine import valhalla
+    pts = [offset(LAT0, LON0, 100.0 * k, 0) for k in range(4)]
+    raw = {"shape": "x",
+           "edges": [{"begin_shape_index": 0, "end_shape_index": 1, "use": "footway"},
+                     {"begin_shape_index": 1, "end_shape_index": 2, "use": "ferry"},
+                     {"begin_shape_index": 2, "end_shape_index": 3, "use": "footway"}],
+           "matched_points": [{"type": "matched", "edge_index": k, "lat": pts[k][0], "lon": pts[k][1],
+                               "distance_along_edge": 0.5, "distance_from_trace_point": 3.0} for k in range(3)]}
+    real, real_decode = valhalla.post, valhalla.decode_polyline
+    valhalla.post = lambda path, body, timeout=120.0: raw
+    valhalla.decode_polyline = lambda s, precision=6: list(pts)
+    try:
+        fixes = [{"lat": p[0], "lon": p[1], "timestamp": T0 + 30 * k, "accuracy": 10.0} for k, p in enumerate(pts[:3])]
+        m = valhalla.match(fixes, "pedestrian")
+        assert len(m["pieces"]) == 2 and m["anchors"][1] is None and m["anchors"][0] and m["anchors"][2]
+        assert len(valhalla.match(fixes, "auto")["pieces"]) == 1, "a car ferry is a road for a car"
+    finally:
+        valhalla.post, valhalla.decode_polyline = real, real_decode
+
+
+def _vt_tile():
+    """A vector tile by hand: a square of water with a bridge across it, and a building."""
+    def vi(n):
+        out = b""
+        while True:
+            b = n & 0x7F
+            n >>= 7
+            out += bytes([b | (0x80 if n else 0)])
+            if not n:
+                return out
+    def fld(k, w, payload):
+        return vi(k << 3 | w) + (payload if w == 0 else vi(len(payload)) + payload)
+    zz = lambda v: vi((v << 1) ^ (v >> 31))                                     # noqa: E731
+    def geom(pts, close):
+        out = vi(1 << 3 | 1) + zz(pts[0][0]) + zz(pts[0][1]) + vi((len(pts) - 1) << 3 | 2)
+        for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+            out += zz(x1 - x0) + zz(y1 - y0)
+        return out + (vi(1 << 3 | 7) if close else b"")
+    def layer(name, feats, keys=(), vals=()):
+        body = fld(1, 2, name.encode()) + b"".join(fld(2, 2, f) for f in feats)
+        body += b"".join(fld(3, 2, k.encode()) for k in keys) + b"".join(fld(4, 2, v) for v in vals)
+        return fld(3, 2, body + fld(5, 0, vi(4096)) + fld(15, 0, vi(2)))
+    def feat(typ, pts, tags=()):
+        return fld(2, 2, b"".join(vi(t) for t in tags)) + fld(3, 0, vi(typ)) + fld(4, 2, geom(pts, typ == 3))
+    sq = lambda a, b: [(a, a), (b, a), (b, b), (a, b)]                           # noqa: E731
+    return layer("water", [feat(3, sq(1000, 2000))]) + layer("buildings", [feat(3, sq(2500, 3000))]) + \
+        layer("roads", [feat(2, [(900, 1500), (2100, 1500)], (0, 0))], ["is_bridge"], [fld(7, 0, vi(1))])
+
+
+def test_the_basemap_says_what_is_water_a_roof_or_a_bridge():
+    from mapmatch.engine import ground
+    t = ground._Tile(_vt_tile())
+    assert t._inside(t.water, 1500, 1200) and not t._inside(t.water, 500, 500)
+    assert t._inside(t.roofs, 2700, 2700) and not t._inside(t.roofs, 1500, 1200)
+    assert t.near_bridge(1500, 1520, 60) and not t.near_bridge(1500, 1200, 60), "on the bridge the water is not water"
+    assert ground._tile_id(0, 0, 0) == 0 and ground._tile_id(1, 0, 0) == 1 and ground._tile_id(2, 0, 0) == 5
+    ground.configure("")                                                         # no basemap: every answer is no
+    assert not ground.available() and not ground.wet(LAT0, LON0) and not ground.blocked(LAT0, LON0, LAT0 + 0.01, LON0)
+    ground.configure(None)
+
+
+def test_fixes_on_water_go_unless_they_travel(monkeypatch):
+    from mapmatch.engine import clean as cl, ground
+    def at(east, north, k):
+        lat, lon = offset(LAT0, LON0, east, north)
+        return {"lat": lat, "lon": lon, "timestamp": T0 + 30 * k, "accuracy": 12.0}
+    water = lambda lat, lon: lat > LAT0 + 30 / 110540.0                          # noqa: E731  (water north of the quay)
+    monkeypatch.setattr(ground, "available", lambda: True)
+    monkeypatch.setattr(ground, "wet", water)
+    monkeypatch.setattr(ground, "indoors", lambda lat, lon: False)
+    walk = [at(40 * k, 45 if k in (6, 7) else 0, k) for k in range(14)]          # two fixes out in the harbour
+    kept, dropped = cl._afloat(walk)
+    assert [p["_drop"] for p in dropped] == ["water", "water"] and len(kept) == 12
+    ferry = [at(40 * k, 60, k) for k in range(14)]                               # 520 m across open water: a boat
+    kept, dropped = cl._afloat(ferry)
+    assert not dropped
+
+
+def test_a_straight_line_through_buildings_is_not_drawn(monkeypatch):
+    from mapmatch.engine import assemble, ground
+    lat, lon = offset(LAT0, LON0, 80, 0)
+    hop = [[LAT0, LON0, T0, 1], [lat, lon, T0 + 60, 1]]
+    monkeypatch.setattr(ground, "available", lambda: True)
+    monkeypatch.setattr(ground, "blocked", lambda *a: "buildings")
+    segs = [{"mode": "walk", "pieces": [{"kind": "straight", "coords": hop, "n_in": 0, "km": 0.08}]}]
+    assemble.unlink(segs)
+    assert segs[0]["pieces"][0].get("unlinked") is True
+    monkeypatch.setattr(ground, "blocked", lambda *a: "")
+    segs = [{"mode": "walk", "pieces": [{"kind": "straight", "coords": hop, "n_in": 0, "km": 0.08}]}]
+    assemble.unlink(segs)
+    assert not segs[0]["pieces"][0].get("unlinked"), "across a square it is"

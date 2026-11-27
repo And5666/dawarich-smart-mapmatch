@@ -107,8 +107,9 @@ class Net:
         for d, a, b, t in found:
             pa, pb = self.nodes[a], self.nodes[b]
             la, lo = pa[0] + (pb[0] - pa[0]) * t, pa[1] + (pb[1] - pa[1]) * t
-            # One snap per track: skip the next segment of a track already taken.
-            if any(_hav(la, lo, o["lat"], o["lon"]) < 8.0 for o in out):
+            # The same spot twice (two segments of one track meeting at a vertex) is one candidate.
+            # Parallel tracks, 3-4 m apart, are different candidates.
+            if any(_hav(la, lo, o["lat"], o["lon"]) < 1.5 for o in out):
                 continue
             out.append({"net": self, "a": a, "b": b, "t": t, "dist": d, "lat": la, "lon": lo})
             if len(out) >= most:
@@ -212,9 +213,11 @@ def between(lat_a: float, lon_a: float, lat_b: float, lon_b: float,
     recorded on the way (the Underground, a tunnel)."""
     chord = _hav(lat_a, lon_a, lat_b, lon_b)
     best: tuple[float, list[tuple[float, float]]] | None = None
+    # A big station has many tracks of several lines within reach: all of them are tried,
+    # since only one line goes where the train went.
     for net in networks():
-        for sa in net.near(lat_a, lon_a, reach):
-            for sb in net.near(lat_b, lon_b, reach):
+        for sa in net.near(lat_a, lon_a, reach, BETWEEN_CANDIDATES):
+            for sb in net.near(lat_b, lon_b, reach, BETWEEN_CANDIDATES):
                 path = net.route(sa, sb, max(2000.0, 2.0 * chord + 1000.0))
                 if path is None:
                     continue
@@ -234,51 +237,107 @@ def distance(lat: float, lon: float) -> float:
     return n["dist"] if n else 1e9
 
 
+CANDIDATES = 6           # tracks tried per fix
+BETWEEN_CANDIDATES = 20  # tracks tried at each end of a ride with nothing recorded between
+DETOUR_FREE_M = 150.0    # rails longer than the straight hop by this much cost nothing (curves)
+
+
+def _route_len(net: "Net", s: dict[str, Any], g: dict[str, Any], limit: float) -> tuple[float, list[tuple[float, float]]] | None:
+    """Length along the rails from one snap to another, and the track positions between them."""
+    path = net.route(s, g, limit)
+    if path is None:
+        return None
+    line = [(s["lat"], s["lon"]), *path, (g["lat"], g["lon"])]
+    return cumulative(line)[-1], path
+
+
 def match(fixes: list[dict[str, Any]]) -> dict[str, Any]:
     """Match a train journey on the railway networks. Same shape as the road
-    matcher's result: pieces of track, and per fix an anchor on one of them."""
-    anchors: list[dict[str, Any] | None] = [None] * len(fixes)
+    matcher's result: pieces of track, and per fix an anchor on one of them.
+
+    A main line is several tracks a few metres apart, joined only at
+    crossovers. Snapping each fix to its nearest track and routing between
+    them sends the line through a crossover and back whenever two fixes fall
+    on different tracks (seen as 38 km of line for a 30 km journey, in seven
+    pieces). So each fix gets several candidate tracks and the journey is the
+    sequence of candidates whose rails are nearest in length to the ground
+    covered between the fixes: one track followed, as a train does."""
+    n = len(fixes)
+    anchors: list[dict[str, Any] | None] = [None] * n
     pieces: list[dict[str, Any]] = []
-    poly: list[tuple[float, float]] = []
-    arcs: list[tuple[int, int]] = []           # (fix index, position in poly)
-    last: dict[str, Any] | None = None
+    cands: list[list[dict[str, Any]]] = []
+    for p in fixes:
+        near = nearest(p["lat"], p["lon"])
+        cands.append(near["net"].near(p["lat"], p["lon"], SNAP_M, CANDIDATES) if near and near["dist"] <= SNAP_M else [])
+    idx = [k for k in range(n) if cands[k]]
 
-    def close() -> None:
-        nonlocal poly, arcs
-        if len(poly) >= 2:
-            cum = cumulative(poly)
-            for i, k in arcs:
-                anchors[i]["piece"] = len(pieces)
-                anchors[i]["arc"] = cum[k]
-            pieces.append({"poly": poly, "cum": cum})
-        else:
-            for i, _ in arcs:
-                anchors[i] = None
-        poly, arcs = [], []
-
-    for i, p in enumerate(fixes):
-        s = nearest(p["lat"], p["lon"])
-        if not s or s["dist"] > SNAP_M:
-            continue
-        here = (s["lat"], s["lon"])
-        if last is not None and s["net"] is last["net"]:
-            chord = _hav(last["lat"], last["lon"], s["lat"], s["lon"])
-            if chord < 15.0:
-                # Standing still or GPS jitter: no new track position.
-                anchors[i] = {"piece": 0, "arc": 0.0, "lat": poly[-1][0], "lon": poly[-1][1],
-                              "dist": _hav(poly[-1][0], poly[-1][1], p["lat"], p["lon"]), "kind": "rail"}
-                arcs.append((i, len(poly) - 1))
+    def emit(run: list[tuple[int, dict[str, Any], list[tuple[float, float]]]]) -> None:
+        """One unbroken stretch of track: [(fix index, snap, rails from the previous snap)]."""
+        poly: list[tuple[float, float]] = []
+        at: list[tuple[int, int]] = []
+        for k, c, path in run:
+            here = (c["lat"], c["lon"])
+            if poly and _hav(poly[-1][0], poly[-1][1], here[0], here[1]) < 15.0 and not path:
+                at.append((k, len(poly) - 1))        # standing still, or GPS jitter: no new track position
                 continue
-            path = s["net"].route(last, s, max(2000.0, 3.0 * chord + 1000.0))
-            if path is None:
-                close()
-            else:
-                poly.extend(path)
-        elif last is not None:
-            close()
-        poly.append(here)
-        anchors[i] = {"piece": 0, "arc": 0.0, "lat": s["lat"], "lon": s["lon"], "dist": s["dist"], "kind": "rail"}
-        arcs.append((i, len(poly) - 1))
-        last = s
-    close()
+            poly.extend(path)
+            poly.append(here)
+            at.append((k, len(poly) - 1))
+        if len(poly) < 2:
+            return
+        cum = cumulative(poly)
+        for k, pos in at:
+            lat, lon = poly[pos]
+            anchors[k] = {"piece": len(pieces), "arc": cum[pos], "lat": lat, "lon": lon,
+                          "dist": _hav(lat, lon, fixes[k]["lat"], fixes[k]["lon"]), "kind": "rail"}
+        pieces.append({"poly": poly, "cum": cum})
+
+    start = 0
+    while start < len(idx):
+        # cost[j], and for each fix the candidate it came from and the rails between
+        k0 = idx[start]
+        cost = [c["dist"] for c in cands[k0]]
+        back: list[list[tuple[int, list[tuple[float, float]]] | None]] = [[None] * len(cands[k0])]
+        end = start
+        while end + 1 < len(idx):
+            kp, kc = idx[end], idx[end + 1]
+            hop = _hav(fixes[kp]["lat"], fixes[kp]["lon"], fixes[kc]["lat"], fixes[kc]["lon"])
+            limit = max(2000.0, 2.0 * hop + 1000.0)
+            new_cost: list[float] = []
+            new_back: list[tuple[int, list[tuple[float, float]]] | None] = []
+            for g in cands[kc]:
+                best: tuple[float, int, list[tuple[float, float]]] | None = None
+                for i, s in enumerate(cands[kp]):
+                    if s["net"] is not g["net"] or cost[i] >= 1e17:
+                        continue
+                    if _hav(s["lat"], s["lon"], g["lat"], g["lon"]) < 15.0 and hop < 30.0:
+                        length, path = 0.0, []                       # not moving
+                    else:
+                        r = _route_len(s["net"], s, g, limit)
+                        if r is None:
+                            continue
+                        length, path = r
+                    c = cost[i] + max(0.0, abs(length - hop) - DETOUR_FREE_M) + g["dist"]
+                    if best is None or c < best[0]:
+                        best = (c, i, path)
+                new_cost.append(best[0] if best else 1e18)
+                new_back.append((best[1], best[2]) if best else None)
+            if min(new_cost) >= 1e17:
+                break                                               # the rails do not join here: a new piece
+            cost = new_cost
+            back.append(new_back)
+            end += 1
+        # walk back from the cheapest end
+        j = min(range(len(cost)), key=lambda x: cost[x])
+        run: list[tuple[int, dict[str, Any], list[tuple[float, float]]]] = []
+        for step in range(end, start - 1, -1):
+            k = idx[step]
+            link = back[step - start][j]
+            run.append((k, cands[k][j], link[1] if link else []))
+            if link is None:
+                break
+            j = link[0]
+        run.reverse()
+        emit(run)
+        start = end + 1
     return {"pieces": pieces, "anchors": anchors, "profile": "rail"}
