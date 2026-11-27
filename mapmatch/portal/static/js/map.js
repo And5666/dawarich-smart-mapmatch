@@ -1,10 +1,44 @@
 // MapLibre helpers. Overlays are re-applied whenever the basemap style changes.
 /* global maplibregl */
-const STYLES = {
+// Two kinds of basemap:
+//  - online (the default): CARTO's hosted styles;
+//  - offline: a Protomaps .pmtiles file and its assets served from your own site
+//    (PORTAL_PMTILES_URL and PORTAL_PMTILES_ASSETS, see docs/deploying.md), for servers
+//    that must not tell a third party which areas are being looked at.
+const CARTO = {
   light: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+  colour: "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
   dark: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
 };
-// Shown if the CARTO style cannot be fetched (offline, blocked): overlays still draw.
+const FLAVOR = { light: "light", dark: "dark", grey: "grayscale", white: "white" };   // Protomaps flavours
+let offline = null;   // { pmtiles, assets } once configured
+let libs = null;      // pmtiles.js and basemaps.js, loaded once
+const abs = (u) => new URL(u, location.href).href;
+export function configureBasemap(cfg) {
+  offline = cfg && cfg.pmtiles && cfg.assets ? { pmtiles: abs(cfg.pmtiles), assets: abs(cfg.assets).replace(/\/?$/, "/") } : null;
+}
+// The styles a user can pick, for the Map button.
+export const mapStyles = () => (offline
+  ? [["auto", "Auto"], ["light", "Light"], ["grey", "Grey"], ["white", "Plain"], ["dark", "Dark"]]
+  : [["auto", "Auto"], ["light", "Light"], ["colour", "Colour"], ["dark", "Dark"]]);
+function loadLibs() {
+  if (!libs) {
+    libs = Promise.all(["pmtiles.js", "basemaps.js"].map((name) => new Promise((ok, fail) => {
+      const el = document.createElement("script");
+      el.src = offline.assets + name; el.onload = ok; el.onerror = fail;
+      document.head.appendChild(el);
+    }))).then(() => maplibregl.addProtocol("pmtiles", new window.pmtiles.Protocol().tile));
+  }
+  return libs;
+}
+const offlineStyle = (flavor) => ({
+  version: 8,
+  glyphs: offline.assets + "fonts/{fontstack}/{range}.pbf",
+  sprite: offline.assets + "sprites/v4/" + flavor,
+  sources: { protomaps: { type: "vector", url: "pmtiles://" + offline.pmtiles, attribution: "© OpenStreetMap" } },
+  layers: window.basemaps.layers("protomaps", window.basemaps.namedFlavor(flavor), { lang: "en" }),
+});
+// Shown until the basemap arrives, and if it cannot be fetched: overlays still draw.
 const BLANK = { version: 8, sources: {}, layers: [{ id: "bg", type: "background", paint: { "background-color": "#e9ecf0" } }] };
 const BLANK_DARK = { version: 8, sources: {}, layers: [{ id: "bg", type: "background", paint: { "background-color": "#2a2f37" } }] };
 
@@ -60,38 +94,48 @@ function liftDark(_prev, next) {
   }
   return next;
 }
-function loadBasemap(map, theme) {
-  if (theme === "dark") map.setStyle(STYLES.dark, { diff: false, transformStyle: liftDark });
-  else map.setStyle(STYLES.light, { diff: false });
+// The map style is a setting of its own: "auto" follows the page's light or dark.
+export const savedMapStyle = () => { try { return JSON.parse(localStorage.getItem("mm-map") || "{}").style || "auto"; } catch (e) { return "auto"; } };
+const flavorOf = (theme, style) => (style && style !== "auto" && mapStyles().some(([k]) => k === style) ? style : (theme === "dark" ? "dark" : "light"));
+function loadBasemap(map, theme, style) {
+  const f = flavorOf(theme, style);
+  const opts = f === "dark" ? { diff: false, transformStyle: liftDark } : { diff: false };
+  if (!offline) { map.setStyle(CARTO[f] || CARTO.light, opts); return; }
+  // Offline: if the files are missing the map stays on its plain background. Nothing is fetched elsewhere.
+  loadLibs().then(() => { if (!gone(map)) map.setStyle(offlineStyle(FLAVOR[f] || "light"), opts); }).catch(() => {});
 }
 
-export function createMap(el, theme, { center = [-0.9, 51.35], zoom = 9 } = {}) {
+export function createMap(el, theme, { center = [-0.9, 51.35], zoom = 9, style = savedMapStyle() } = {}) {
   const map = new maplibregl.Map({
-    container: el, style: theme === "dark" ? BLANK_DARK : BLANK, center, zoom,
+    container: el, style: flavorOf(theme, style) === "dark" ? BLANK_DARK : BLANK, center, zoom,
     attributionControl: { compact: true }, dragRotate: false, pitchWithRotate: false,
   });
-  loadBasemap(map, theme);
+  loadBasemap(map, theme, style);
   map.touchZoomRotate.disableRotation();
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
-  map._mm = { overlays: new Map(), theme };
+  map._mm = { overlays: new Map(), theme, style };
   el.__map = map; // reachable from devtools / browser tests
   map.on("style.load", () => applyAll(map));
   map.on("error", (e) => {
     if (!map._mm.fellBack && e?.error && /style|Failed to fetch/i.test(String(e.error.message || e.error))) {
       map._mm.fellBack = true;
-      map.setStyle(map._mm.theme === "dark" ? BLANK_DARK : BLANK);
+      map.setStyle(flavorOf(map._mm.theme, map._mm.style) === "dark" ? BLANK_DARK : BLANK);
     }
   });
   return map;
 }
 
-export function setMapTheme(map, theme) {
-  if (gone(map) || map._mm.theme === theme) return;
-  map._mm.theme = theme;
+export function setMapTheme(map, theme, style) {
+  if (gone(map)) return;
+  if (style === undefined) style = map._mm.style;
+  if (map._mm.theme === theme && map._mm.style === style) return;
+  const same = flavorOf(map._mm.theme, map._mm.style) === flavorOf(theme, style);
+  map._mm.theme = theme; map._mm.style = style;
+  if (same) { applyAll(map); return; }   // same map underneath: only our own colours change
   if (map._mm.fellBack) { applyAll(map); return; }
   // diff:false forces a full reload, which drops our layers; put them back
   // as soon as the new style is usable.
-  loadBasemap(map, theme);
+  loadBasemap(map, theme, style);
   const again = () => { if (ready(map)) { map.off("styledata", again); applyAll(map); } };
   map.on("styledata", again);
 }

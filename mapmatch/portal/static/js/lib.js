@@ -1,6 +1,7 @@
 // Shared: rendering, API, store, formatting, modes, icons, small components.
 export { html, render, useState, useEffect, useRef, useMemo, useCallback, useLayoutEffect } from "../vendor/standalone.module.js";
 import { html, useState, useEffect, useRef } from "../vendor/standalone.module.js";
+import { mapStyles } from "./map.js";
 
 // ------------------------------------------------------------------ API
 const BASE = new URL(".", location.href).pathname;
@@ -23,9 +24,21 @@ export async function api(path, { method = "GET", body, form } = {}) {
   if (!r.ok) {
     let msg = data.detail;
     if (Array.isArray(msg)) msg = msg.map((d) => d.msg).join("; ");
-    throw new ApiError(r.status, msg || r.statusText || "Something went wrong");
+    throw new ApiError(r.status, plain(msg || r.statusText || "Something went wrong"));
   }
   return data;
+}
+
+// Errors from the server side are written for a log. Say what happened and what it means.
+export function plain(msg) {
+  const m = String(msg || "");
+  if (/Errno 111|Connection refused|Name or service not known|Temporary failure in name resolution|timed out|Errno 113/i.test(m)) {
+    if (/valhalla/i.test(m)) return "The map server didn't answer, so nothing was matched. Try again in a minute.";
+    return "Couldn't reach Dawarich, so nothing was changed. Try again in a minute.";
+  }
+  if (/^Valhalla:/i.test(m)) return "The map server couldn't match this trip. Nothing was changed.";
+  if (/HTTP 401|HTTP 403|Unauthorized/i.test(m)) return "Dawarich refused the key. Check it in Settings. Nothing was changed.";
+  return m;
 }
 
 // ------------------------------------------------------------------ store
@@ -38,7 +51,16 @@ function createStore(initial) {
     subscribe(f) { subs.add(f); return () => subs.delete(f); },
   };
 }
-export const store = createStore({ me: undefined, job: null, toasts: [], theme: currentTheme(), dataVersion: 0 });
+// What the maps show and how they look: kept in this browser.
+const MAP_DEFAULTS = { style: "auto", width: "normal", routes: true, points: false };
+function savedMapPrefs() { try { return { ...MAP_DEFAULTS, ...JSON.parse(localStorage.getItem("mm-map") || "{}") }; } catch (e) { return { ...MAP_DEFAULTS }; } }
+export const LINE_WIDTHS = { thin: 0.65, normal: 1, bold: 1.5 };
+export const store = createStore({ me: undefined, job: null, toasts: [], theme: currentTheme(), dataVersion: 0, mapPrefs: savedMapPrefs() });
+export function setMapPrefs(patch) {
+  const next = { ...store.get().mapPrefs, ...patch };
+  try { localStorage.setItem("mm-map", JSON.stringify(next)); } catch (e) { /* private mode */ }
+  store.set({ mapPrefs: next });
+}
 export function useStore(select) {
   const [v, setV] = useState(() => select(store.get()));
   useEffect(() => store.subscribe((s) => setV(select(s))), []);
@@ -47,12 +69,15 @@ export function useStore(select) {
 let toastId = 0;
 export function toast(message, kind = "") {
   const id = ++toastId;
+  if (kind === "bad") message = plain(message);
   store.set((s) => ({ toasts: [...s.toasts, { id, message, kind }] }));
   setTimeout(() => store.set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), kind === "bad" ? 6500 : 3200);
 }
 export const refreshData = () => store.set((s) => ({ dataVersion: s.dataVersion + 1 }));
 
 // ------------------------------------------------------------------ theme
+// Where the light/dark choice is kept. PORTAL_THEME_KEY lets the portal share it with a site it is part of.
+const THEME_KEY = (window.MM_CONFIG && window.MM_CONFIG.themeKey) || "mm-theme";
 function currentTheme() {
   const t = document.documentElement.dataset.theme;
   if (t) return t;
@@ -60,12 +85,12 @@ function currentTheme() {
 }
 export function setTheme(t) {
   document.documentElement.dataset.theme = t;
-  try { localStorage.setItem("mm-theme", t); } catch (e) { /* private mode */ }
+  try { localStorage.setItem(THEME_KEY, t); } catch (e) { /* private mode */ }
   store.set({ theme: t });
 }
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
   let saved = null;
-  try { saved = localStorage.getItem("mm-theme"); } catch (e) { /* ignore */ }
+  try { saved = localStorage.getItem(THEME_KEY); } catch (e) { /* ignore */ }
   if (!saved) store.set({ theme: currentTheme() });
 });
 export const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -116,7 +141,7 @@ export function ago(iso) {
 }
 export const pct = (v) => `${Math.round((v || 0) * 100)}%`;
 export const dayKey = (ts) => { const d = new Date(ts * 1000); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; };
-export const plural = (n, w) => `${n.toLocaleString()} ${w}${n === 1 ? "" : "s"}`;
+export const plural = (n, w, s = "s") => `${n.toLocaleString()} ${w}${n === 1 ? "" : s}`;
 
 // ------------------------------------------------------------------ icons
 const P = {
@@ -149,6 +174,12 @@ const P = {
   eye: "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
   filter: "M4 5h16l-6 7.5V19l-4 1.5v-8z",
   info: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5M12 8h.01",
+  home: "M4 11l8-7 8 7M6 10v9h4v-5h4v5h4v-9",
+  help: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.6 9.3a2.5 2.5 0 1 1 3.6 2.3c-.8.5-1.2 1-1.2 1.9M12 16.6h.01",
+  lock: "M7 11V8a5 5 0 0 1 10 0v3M6 11h12v9H6z",
+  flask: "M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3M7.5 15h9",
+  warn: "M12 4l9 15.5H3L12 4zM12 10v4.5M12 17h.01",
+  layers: "M12 4l8 4.5-8 4.5-8-4.5L12 4zM4 12.5l8 4.5 8-4.5M4 16.5l8 4.5 8-4.5",
 };
 export function Icon({ name, small, cls = "" }) {
   return html`<svg class=${`i ${small ? "s" : ""} ${cls}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
@@ -171,6 +202,36 @@ export function Confirm({ onConfirm, children, armedLabel = "Click again to conf
     onClick=${(e) => { e.stopPropagation(); if (armed) { setArmed(false); onConfirm(); } else setArmed(true); }}>${armed ? armedLabel : children}</button>`;
 }
 
+// A question in the middle of the page, for anything that changes data outside this app.
+// Escape or a click outside cancels; focus starts on Cancel so Enter can't confirm by accident.
+export function Dialog({ title, children, confirmLabel = "OK", cancelLabel = "Cancel", danger, onConfirm, onClose }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const esc = (e) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
+    addEventListener("keydown", esc, true);
+    ref.current?.querySelector("button.cancel")?.focus();
+    return () => removeEventListener("keydown", esc, true);
+  }, []);
+  return html`<div class="scrim" onPointerDown=${(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div class="dialog" role="dialog" aria-modal="true" aria-label=${title} ref=${ref}>
+      <h2>${title}</h2>
+      <div class="dialog-body">${children}</div>
+      <div class="dialog-actions">
+        <button class="cancel" onClick=${onClose}>${cancelLabel}</button>
+        ${onConfirm && html`<button class=${danger ? "go danger-go" : "go"} onClick=${() => { onClose(); onConfirm(); }}>${confirmLabel}</button>`}
+      </div>
+    </div></div>`;
+}
+
+// The three things this app does, in the order they happen. Also shown on the Trips page until dismissed.
+export function HowItWorks({ dry }) {
+  return html`<ol class="how">
+    <li><b>Get new points</b><span>Copies your recorded GPS from Dawarich. Your originals are kept here and never deleted.</span></li>
+    <li><b>Match</b><span>Draws each trip along the roads, paths and railways you used. This happens only here: Dawarich doesn't change.</span></li>
+    <li><b>Push</b><span>Replaces a trip's points in Dawarich with the corrected route. <b>Undo</b> puts your recorded points back, for one trip or all of them, at any time.${dry ? " In test mode a push changes nothing." : ""}</span></li>
+  </ol>`;
+}
+
 // A button that opens a small menu; closes on outside click or Escape.
 export function Menu({ label, children, cls = "", left = false, title }) {
   const [open, setOpen] = useState(false);
@@ -187,6 +248,39 @@ export function Menu({ label, children, cls = "", left = false, title }) {
     <button class=${cls} title=${title} aria-haspopup="menu" aria-expanded=${open} onClick=${() => setOpen(!open)}>${label}</button>
     ${open && html`<div class=${`menu-pop ${left ? "left" : ""}`} role="menu" onClick=${() => setOpen(false)}>${children}</div>`}
   </div>`;
+}
+
+// The Map button on every map: what is drawn (the page passes its own switches as children),
+// how thick the routes are, and which map is underneath. Stays open while you try things.
+export function MapOptions({ children }) {
+  const prefs = useStore((s) => s.mapPrefs);
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
+    const esc = (e) => { if (e.key === "Escape") { e.stopPropagation(); setOpen(false); } };
+    addEventListener("pointerdown", close);
+    addEventListener("keydown", esc, true);
+    return () => { removeEventListener("pointerdown", close); removeEventListener("keydown", esc, true); };
+  }, [open]);
+  return html`<div class="menu mapopt" ref=${ref}>
+    <button class=${`sm ${open ? "on" : ""}`} aria-haspopup="dialog" aria-expanded=${open} onClick=${() => setOpen(!open)}
+      title="What the map shows and how it looks"><${Icon} name="layers" small />Map</button>
+    ${open && html`<div class="menu-pop left opts" role="dialog" aria-label="Map options">
+      ${children && html`<div class="label">Show</div>${children}`}
+      <div class="label">Route lines</div>
+      <${Seg} value=${prefs.width} options=${[["thin", "Thin"], ["normal", "Normal"], ["bold", "Bold"]]} onChange=${(v) => setMapPrefs({ width: v })} />
+      <div class="label">Map style</div>
+      <${Seg} value=${mapStyles().some(([k]) => k === prefs.style) ? prefs.style : "auto"} options=${mapStyles()} onChange=${(v) => setMapPrefs({ style: v })} />
+    </div>`}
+  </div>`;
+}
+// One switch inside the Map popover.
+export function MapSwitch({ on, onChange, disabled, hint, children }) {
+  return html`<label class="optrow" style=${disabled ? "opacity:.5;pointer-events:none" : ""}>
+    <input type="checkbox" class="switch" checked=${on} disabled=${disabled} onChange=${(e) => onChange(e.target.checked)} />
+    <span>${children}${hint && html`<small>${hint}</small>`}</span></label>`;
 }
 
 export function navigate(hash) { if (location.hash !== hash) location.hash = hash; }

@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import valhalla
-from .geo import dist_point_segment, haversine
+from . import rail, railnet, valhalla
+from .geo import cumulative, dist_point_segment, haversine, point_at, project_arc
 
 PROFILE = {"walk": "pedestrian", "cycle": "bicycle", "drive": "auto"}
 VMAX_KMH = {"walk": 16.0, "cycle": 50.0, "drive": 200.0, "train": 260.0}
@@ -19,6 +19,12 @@ VMAX_KMH = {"walk": 16.0, "cycle": 50.0, "drive": 200.0, "train": 260.0}
 # that a detour at this pace fits, a longer route is believable.
 TYPICAL_KMH = {"walk": 5.0, "cycle": 18.0, "drive": 60.0, "train": 100.0}
 JOIN_M = 25.0         # shorter seams are drawn directly
+LONG_GAP_M = 1000.0
+LONG_WALK_KMH = 9.0
+RAIL_FILL_MIN_M = 300.0   # shorter train holes are platform noise
+WAY_ROUND_EXTRA_M = 300.0   # a route this much longer than the hop it fills
+WAY_ROUND_RATIO = 2.5       # and this many times as long
+WAY_ROUND_JOIN_M = 300.0    # a hop up to this long is drawn straight when every route goes round
 # Walks and rides can be off-road (MTB trails, hill paths). A route there is
 # only believed when it stays this close to the recorded fixes; otherwise the
 # original GPS is kept rather than snapping to the wrong path.
@@ -83,20 +89,76 @@ def _plausible(shape: list[tuple[float, float]], a: dict[str, Any], b: dict[str,
         return "too_short"
     if not force and dt > 0 and length / dt * 3.6 > vmax * 1.3 + 10.0:
         return "too_fast"
+    # The slack above is for short seams, where a few seconds either way
+    # change the speed a lot. Over a kilometre it let an 8 km "walk" at
+    # 23 km/h through (a train with no fixes on the way, drawn along the
+    # road). Nobody walks a kilometre and more at over LONG_WALK_KMH: leave
+    # the hole as it is, for the mode to be set by hand.
+    if not force and mode == "walk" and length > LONG_GAP_M and dt > 0 and length / dt * 3.6 > LONG_WALK_KMH:
+        return "too_fast"
     if trail:
         ref = [(p["lat"], p["lon"]) for p in (a, *mids, b)]
         if mids:
             if max_deviation(shape, ref) > TRAIL_DEV_BY_MODE.get(mode, TRAIL_DEV_M) + max(min(p.get("accuracy") or 15.0, 30.0) for p in mids):
                 return "off_trail"
-        elif length > (2.0 * chord + 40.0 if chord < 150.0 else 1.25 * chord + 30.0):
+        elif not force and length > (2.0 * chord + 40.0 if chord < 150.0 else 1.25 * chord + 30.0):
             # A gap with no fixes: a short one may go round a corner; a long
-            # one is only believable as a nearly direct route.
+            # one is only believable as a nearly direct route. Asked for by
+            # hand ("route it anyway") there is no fix to contradict the
+            # route, and a straight line through buildings is surely wrong.
             return "off_trail"
     if check_mids and mids:
         close = sum(1 for p in mids if _near_line(p, shape) <= max(60.0, 1.5 * (p.get("accuracy") or 0.0)))
         if close < 0.6 * len(mids):
             return "misses_fixes"
     return ""
+
+
+def rail_path(a: dict[str, Any], b: dict[str, Any]) -> list[tuple[float, float]] | None:
+    """The railway from a to b: on a GB timetable line, else on the rails of
+    an OpenStreetMap network (the Underground, trams, lines abroad)."""
+    try:
+        shape = rail.between(a["lat"], a["lon"], b["lat"], b["lon"])
+    except (OSError, ValueError):
+        shape = None
+    if shape:
+        return shape
+    try:
+        return railnet.between(a["lat"], a["lon"], b["lat"], b["lon"])
+    except (OSError, ValueError):
+        return None
+
+
+def _way_round(length: float, chord: float) -> bool:
+    return length - chord >= WAY_ROUND_EXTRA_M and length >= WAY_ROUND_RATIO * max(chord, 30.0)
+
+
+def _straighten(shape: list[tuple[float, float]], pts: list[dict[str, Any]]) -> list[tuple[float, float]]:
+    """A route through the fixes of a gap can be right for most of the way and
+    still go a long way round between two of them (past a car park entrance
+    and back, round a block). Those legs, where the hop is short, are cut out
+    and drawn straight; the rest of the route is kept."""
+    if len(shape) < 2 or len(pts) < 3:
+        return shape
+    cum = cumulative(shape)
+    arcs = [0.0]
+    for p in pts[1:-1]:
+        arc, _ = project_arc(shape, cum, p["lat"], p["lon"], arcs[-1], cum[-1])
+        arcs.append(min(cum[-1], max(arc, arcs[-1])))
+    arcs.append(cum[-1])
+    out: list[tuple[float, float]] = []
+    changed = False
+    for k in range(len(pts) - 1):
+        lo, hi = arcs[k], arcs[k + 1]
+        hop = haversine(pts[k]["lat"], pts[k]["lon"], pts[k + 1]["lat"], pts[k + 1]["lon"])
+        ends = [tuple(point_at(shape, cum, lo)[:2]), tuple(point_at(shape, cum, hi)[:2])]
+        if hop <= WAY_ROUND_JOIN_M and _way_round(hi - lo, hop):
+            leg = ends
+            changed = True
+        else:
+            leg = [ends[0], *(shape[i] for i in range(len(shape)) if lo < cum[i] < hi), ends[1]]
+        out += leg[1:] if out else leg
+    return out if changed else shape
 
 
 def _through(mids: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -142,6 +204,24 @@ def fill(a: dict[str, Any], mids: list[dict[str, Any]], b: dict[str, Any], mode:
             if mids:
                 attempts.append((prof, [a, *_through(mids), b], False))
     why = [] if attempts else ["strict" if profile else "no_profile"]
+    if mode == "train" and strength != "strict" and chord >= RAIL_FILL_MIN_M:
+        # A train with nothing recorded on the way: along the railway that
+        # joins the two ends, when one does and the timing fits a train.
+        shape = rail_path(a, b)
+        dt = b["timestamp"] - a["timestamp"]
+        if shape:
+            length = _length(shape)
+            near = sum(1 for p in mids if _near_line(p, shape) <= 150.0)
+            if length > 1.6 * chord + 500.0:
+                why = ["too_long"]
+            elif not force and dt > 0 and length / dt * 3.6 > vmax * 1.1:
+                why = ["too_fast"]
+            elif mids and near < 0.6 * len(mids):
+                why = ["misses_fixes"]
+            else:
+                return {"kind": "filled", "coords": [(a["lat"], a["lon"]), *shape, (b["lat"], b["lon"])]}
+        else:
+            why = ["no_railway"]
     for prof, locs, check in attempts:
         r = valhalla.route(locs, prof)
         if not r:
@@ -150,10 +230,22 @@ def fill(a: dict[str, Any], mids: list[dict[str, Any]], b: dict[str, Any], mode:
         shape = r["shape"]
         bad = _plausible(shape, a, b, mids, vmax, typical, raw_path, chord, check, mode in TRAIL_MODES,
                          mode, force)
+        if not bad and not mids and not force and _way_round(_length(shape), chord):
+            # Two fixes a short hop apart, nothing recorded between them, and
+            # a route several times the hop: an anchor on the far carriageway
+            # or a one-way street sends the car round the block. Try the next
+            # profile (walking follows the same streets either way round).
+            bad = "way_round"
         if not bad:
+            if mids and not force:
+                shape = _straighten(shape, pts)
             coords = [(a["lat"], a["lon"]), *shape, (b["lat"], b["lon"])]
             return {"kind": "filled", "coords": coords}
         why.append(bad)
+    if "way_round" in why and chord <= WAY_ROUND_JOIN_M:
+        # No route goes nearly straight there. Over so short a hop the plain
+        # line between the two fixes is nearer the truth than a loop.
+        return {"kind": "join", "why": why, "coords": [(a["lat"], a["lon"]), (b["lat"], b["lon"])]}
     kind = "raw" if mids else "straight"
     return {"kind": kind, "why": why,
             "coords": [(p["lat"], p["lon"]) for p in pts] if mids else [(a["lat"], a["lon"]), (b["lat"], b["lon"])]}

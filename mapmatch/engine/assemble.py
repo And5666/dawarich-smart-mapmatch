@@ -5,7 +5,7 @@ import math
 from typing import Any
 
 from .fill import TRAIL_DEV_M, TRAIL_MODES, VMAX_KMH, fill, max_deviation
-from .geo import dist_point_segment, haversine, point_at, subline
+from .geo import dist_point_segment, haversine, point_at, project_arc, subline
 from .stays import centroid
 from .valhalla import unreported
 
@@ -126,8 +126,17 @@ def length_m(coords: list[Any]) -> float:
     return sum(haversine(a[0], a[1], b[0], b[1]) for a, b in zip(coords, coords[1:]))
 
 
-def timed(coords: list[tuple[float, float]], ta: float, tb: float) -> list[list[float]]:
-    """[[lat, lon, ts, is_fix]]: ends are fixes, the rest interpolated by distance."""
+VIA_REACH_M = 80.0     # a fix this close to the line says when the line was there
+
+
+def timed(coords: list[tuple[float, float]], ta: float, tb: float,
+          via: list[dict[str, Any]] | None = None) -> list[list[float]]:
+    """[[lat, lon, ts, is_fix]]: ends are fixes, the rest interpolated by distance.
+
+    `via` are the fixes recorded along the way. Where the line passes one, its
+    time is pinned there, so the speed along the line is the speed that was
+    travelled (fast, then slow into a car park) and not one average: without
+    this a routed gap ran at a constant speed whatever its fixes said."""
     coords = simplify(coords)
     if len(coords) == 1:
         return [[coords[0][0], coords[0][1], ta, 1]]
@@ -135,6 +144,20 @@ def timed(coords: list[tuple[float, float]], ta: float, tb: float) -> list[list[
     for a, b in zip(coords, coords[1:]):
         cum.append(cum[-1] + haversine(a[0], a[1], b[0], b[1]))
     total = cum[-1]
+    knots = [(0.0, float(ta))]
+    if via and total > 0:
+        for p in via:
+            arc, d = project_arc(coords, cum, p["lat"], p["lon"], knots[-1][0], total)
+            if d <= VIA_REACH_M and knots[-1][0] < arc < total and knots[-1][1] < p["timestamp"] < tb:
+                knots.append((arc, float(p["timestamp"])))
+    knots.append((total, float(tb)))
+
+    def when(arc: float) -> float:
+        for (a0, t0), (a1, t1) in zip(knots, knots[1:]):
+            if arc <= a1:
+                return t0 + (t1 - t0) * ((arc - a0) / (a1 - a0) if a1 > a0 else 0.0)
+        return float(tb)
+
     out = []
     for k, (lat, lon) in enumerate(coords):
         if k == 0:
@@ -142,7 +165,7 @@ def timed(coords: list[tuple[float, float]], ta: float, tb: float) -> list[list[
         elif k == len(coords) - 1:
             ts, fix = tb, 1
         else:
-            ts = ta + (tb - ta) * (cum[k] / total if total > 0 else k / (len(coords) - 1))
+            ts = when(cum[k]) if total > 0 else ta + (tb - ta) * k / (len(coords) - 1)
             fix = 0
         out.append([lat, lon, ts, fix])
     return out
@@ -173,7 +196,7 @@ def _filled(a: dict[str, Any], mids: list[dict[str, Any]], b: dict[str, Any], mo
         coords = [[p["lat"], p["lon"], p["timestamp"], 1] for p in (a, *mids, b)]
         pc = _piece("raw", coords, n_in)
     else:
-        pc = _piece(f["kind"], timed(f["coords"], a["timestamp"], b["timestamp"]), n_in)
+        pc = _piece(f["kind"], timed(f["coords"], a["timestamp"], b["timestamp"], mids), n_in)
     if f.get("why"):
         pc["why"] = f["why"]
     # The hole this piece bridges, so the editor can offer it as a gap to choose.
@@ -441,6 +464,13 @@ def connect(segments: list[dict[str, Any]], strength: str, keep: Any = None,
                 if moving:
                     mode = seam_mode(modes)
                     vmax = max(VMAX_KMH.get(m, 16.0) for m in moving)
+                    # The seam next to a train is normally the walk to the
+                    # platform. Kilometres long and faster than anyone walks,
+                    # it is more of the train ride, with nothing recorded.
+                    seam_m = haversine(a["lat"], a["lon"], b["lat"], b["lon"])
+                    seam_s = b["timestamp"] - a["timestamp"]
+                    if "train" in moving and not vias and seam_m > 1500.0 and seam_s > 0 and seam_m / seam_s * 3.6 > 12.0:
+                        mode = "train"
                 else:
                     # Between two stays with nothing recorded: the mode is
                     # unknown, so judge it by distance and allow any speed.

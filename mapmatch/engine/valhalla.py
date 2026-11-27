@@ -168,6 +168,9 @@ def post(path: str, body: dict[str, Any], timeout: float = 120.0) -> dict[str, A
     return out
 
 
+NO_MAP_REACH_M = 1000   # an edge further away than this is not a map under the fix
+
+
 def uncovered(points: list[dict[str, Any]], samples: int = 8) -> float | None:
     """Share of a few fixes spread over the trip where the server has no map
     at all (no tiles: locate finds no edge however near). None when the
@@ -177,7 +180,11 @@ def uncovered(points: list[dict[str, Any]], samples: int = 8) -> float | None:
     step = max(1, len(points) // samples)
     pick = points[::step][:samples]
     try:
-        res = post("/locate", {"locations": [{"lat": float(p["lat"]), "lon": float(p["lon"])} for p in pick],
+        # Without a cutoff the nearest edge can be kilometres away: a ferry
+        # line reaching into a port abroad (from a map of one country only)
+        # made every street of that city look covered.
+        res = post("/locate", {"locations": [{"lat": float(p["lat"]), "lon": float(p["lon"]),
+                                              "search_cutoff": NO_MAP_REACH_M} for p in pick],
                                "costing": "pedestrian", "verbose": False})
     except ValhallaError:
         return None

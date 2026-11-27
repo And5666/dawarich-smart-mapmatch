@@ -517,3 +517,196 @@ details > summary::-webkit-details-marker { display: none; }
   .bar .menu > button .ell { display: none; }
   .bar .menu > button { padding: 0 6px; }
 }
+
+/* ===== 2.10 look ===========================================================================
+   One layer on top of the original sheet, after walking through the portal as five kinds of
+   user (owner, newcomer, phone, cautious, keyboard/low vision):
+   1. cool neutrals, one blue accent for the thing to do next, hint text at 5.6:1,
+      44 px touch targets; light and dark;
+   2. fixes: the Trips panel was 12 px wider than its column (controls slid under the map),
+      phone buttons were 28 px tall;
+   3. new pieces: to-do rows, route thumbnails, the "why this needs a look" list, a real
+      confirm dialog, the test-mode button, the Dawarich card, map options;
+   4. phones: tabs at the bottom, a shorter map, state chips no longer hidden.
+   The font is Inter where the device has it (or PORTAL_EXTRA_CSS provides it), else the system face.
+   ========================================================================================== */
+
+:root {
+  --paper: #f5f7fa; --panel: #ffffff; --raised: #ffffff; --sunk: #eef1f5; --hover: #f1f4f8;
+  --line: #e2e6ec; --line-strong: #c6cdd6;
+  --ink: #1a1d21; --ink-2: #434a54; --ink-3: #616975; --ink-inv: #ffffff;
+  --accent: #1a5fd0; --accent-strong: #154fb0; --on-accent: #ffffff; --accent-wash: rgb(26 95 208 / .08); --focus: #1a5fd0;
+  --warn: #9a5500; --warn-bg: #fbf2df; --bad: #c5281c; --bad-bg: #fbeceb; --good: #167a36; --good-bg: #e7f3ea;
+  --sel: #e8f0fd;
+  --shadow-1: 0 1px 2px rgb(16 24 40 / .05), 0 1px 3px rgb(16 24 40 / .05);
+  --shadow: 0 4px 12px rgb(16 24 40 / .10), 0 12px 32px rgb(16 24 40 / .10);
+  --scrim: rgb(16 24 40 / .38);
+  --r: 10px; --r-s: 8px; --r-l: 16px; --tap: 44px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #101214; --panel: #191b1f; --raised: #22252a; --sunk: #22252a; --hover: #2b2f35;
+    --line: #2a2e34; --line-strong: #3e444c;
+    --ink: #e7e9ec; --ink-2: #b5bbc3; --ink-3: #8f96a0; --ink-inv: #101214;
+    --accent: #8ab4f8; --accent-strong: #a9c8fa; --on-accent: #0a1930; --accent-wash: rgb(138 180 248 / .12); --focus: #8ab4f8;
+    --warn: #f2b344; --warn-bg: #33291a; --bad: #f47b6e; --bad-bg: #3a2222; --good: #5bd07f; --good-bg: #1b3122;
+    --sel: #1d2a40; --scrim: rgb(0 0 0 / .55);
+    --shadow-1: 0 1px 2px rgb(0 0 0 / .3); --shadow: 0 1px 2px rgb(0 0 0 / .3), 0 12px 32px rgb(0 0 0 / .4);
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #101214; --panel: #191b1f; --raised: #22252a; --sunk: #22252a; --hover: #2b2f35;
+  --line: #2a2e34; --line-strong: #3e444c;
+  --ink: #e7e9ec; --ink-2: #b5bbc3; --ink-3: #8f96a0; --ink-inv: #101214;
+  --accent: #8ab4f8; --accent-strong: #a9c8fa; --on-accent: #0a1930; --accent-wash: rgb(138 180 248 / .12); --focus: #8ab4f8;
+  --warn: #f2b344; --warn-bg: #33291a; --bad: #f47b6e; --bad-bg: #3a2222; --good: #5bd07f; --good-bg: #1b3122;
+  --sel: #1d2a40; --scrim: rgb(0 0 0 / .55);
+  --shadow-1: 0 1px 2px rgb(0 0 0 / .3); --shadow: 0 1px 2px rgb(0 0 0 / .3), 0 12px 32px rgb(0 0 0 / .4);
+}
+
+/* One accent, used for the thing to do next and for what is switched on. */
+button.go { background: var(--accent); color: var(--on-accent); border-color: var(--accent); box-shadow: var(--shadow-1); }
+button.go:hover:not(:disabled) { background: var(--accent-strong); border-color: var(--accent-strong); opacity: 1; }
+button.go.danger-go { background: var(--bad); border-color: var(--bad); color: #fff; }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
+input.switch:checked { background: var(--accent); }
+.nav a.on { color: var(--accent); background: var(--accent-wash); }
+.nav a.on svg { color: var(--accent); }
+.choice.on, .todo-row.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.modefilter button.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.modefilter button.on .sw { box-shadow: 0 0 0 1.5px var(--on-accent); }
+.float .meter i, .sync .meter i { background: var(--accent); }
+.kbd { color: var(--ink-2); }
+
+/* ---- top bar: the way home, and test mode where nobody can miss it */
+.bar .home { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 10px; margin-left: -6px; border-radius: var(--r);
+  color: var(--ink-2); text-decoration: none; font-size: 13.5px; font-weight: 500; flex: none; }
+.bar .home:hover { background: var(--hover); color: var(--ink); }
+.bar .home + .mark { padding-left: 14px; border-left: 1px solid var(--line); }
+.testmode { height: 28px; padding: 0 10px; border-radius: 999px; font-size: 12.5px; background: var(--warn-bg); color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 35%, transparent); box-shadow: none; flex: none; }
+.testmode:hover:not(:disabled) { background: color-mix(in srgb, var(--warn-bg) 80%, var(--warn) 20%); }
+
+/* ---- Trips: nothing may be wider than the panel */
+.side-top { grid-template-columns: minmax(0, 1fr); }
+.side-head, .filters, .modefilter { min-width: 0; }
+.side-head select, .filters select { min-width: 0; text-overflow: ellipsis; }
+.filters .menu { flex: none; }
+.todo { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.todo-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); min-width: 0; }
+.todo-row .todo-main { all: unset; box-sizing: border-box; flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; cursor: pointer; border-radius: 6px; }
+.todo-row .todo-main:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.todo-row b { font-size: 22px; font-weight: 650; letter-spacing: -.03em; line-height: 1; min-width: 30px; text-align: right; }
+.todo-row .todo-main > span { display: grid; min-width: 0; }
+.todo-row strong { font-size: 13.5px; font-weight: 600; }
+.todo-row small { font-size: 12px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.todo-row.warn { background: var(--warn-bg); border-color: color-mix(in srgb, var(--warn) 30%, var(--line)); }
+.todo-row.warn b { color: var(--warn); }
+.todo-row.warn small { color: var(--ink-2); }
+.todo-done { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--good); padding: 8px 12px; background: var(--good-bg); border-radius: 12px; }
+.trip { grid-template-columns: auto 54px 40px minmax(0, 1fr) auto; gap: 12px; }
+.list.flat .trip { grid-template-columns: auto 112px 40px minmax(0, 1fr) auto; }
+.thumb { width: 40px; height: 30px; display: block; }
+.thumb path { fill: none; stroke: var(--c); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.trip:hover, .trip.hot { background: var(--hover); }
+.intro { margin: 12px 12px 4px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--accent-wash); display: grid; gap: 8px; font-size: 13px; }
+.how { margin: 0; padding: 0; list-style: none; counter-reset: how; display: grid; gap: 10px; }
+.how li { counter-increment: how; display: grid; grid-template-columns: 24px 1fr; column-gap: 10px; }
+.how li::before { content: counter(how); grid-row: 1 / 3; width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: var(--on-accent);
+  display: grid; place-items: center; font-size: 12.5px; font-weight: 600; }
+.how li b { font-weight: 600; font-size: 13.5px; }
+.how li span { color: var(--ink-2); font-size: 13px; line-height: 1.45; }
+
+/* ---- Trip: what to look at, and a clear way to pass it */
+.tv-state { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.look { border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--line)); background: var(--warn-bg); border-radius: 12px; padding: 12px 14px; display: grid; gap: 10px; margin-top: 4px; }
+.look h3 { margin: 0; font-size: 13.5px; font-weight: 600; display: flex; align-items: center; gap: 7px; color: var(--warn); }
+.look ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.look li { display: flex; align-items: center; gap: 10px; font-size: 13px; line-height: 1.4; }
+.look li > span { flex: 1; min-width: 0; }
+.look .help { color: var(--ink-2); }
+.strip .max { background: color-mix(in srgb, var(--panel) 85%, transparent); padding: 0 4px; border-radius: 4px; }
+
+/* Moving points: while editing, a finger on the map belongs to the map, not to page scrolling.
+   (MapLibre drops its own touch-action when panning is switched off for a drag, and the
+   browser then scrolled the page and cancelled the drag.) */
+.tv-map.editing .maplibregl-canvas-container, .tv-map.editing .maplibregl-canvas { touch-action: none !important; }
+.float.bc .small { white-space: normal; line-height: 1.35; }
+/* Dawarich: how much is there, and the two directions */
+.dw { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px 10px; display: grid; gap: 8px; background: var(--panel); min-width: 0; }
+.dw-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 13.5px; }
+.dw-head b { font-weight: 600; }
+.dw-head button.link { font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.dw-bar { height: 6px; border-radius: 3px; background: var(--sunk); overflow: hidden; }
+.dw-bar i { display: block; height: 100%; background: var(--good); border-radius: 3px; transition: width .3s; }
+.dw-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.dw-actions button { min-width: 0; padding: 0 8px; }
+.dw-note { font-size: 12px; color: var(--ink-3); line-height: 1.35; }
+/* the Map button and its options */
+.mapopt > button.on { background: var(--accent-wash); border-color: var(--accent); color: var(--accent); }
+.menu-pop.opts { width: 290px; max-width: calc(100vw - 32px); padding: 10px 12px 12px; display: grid; gap: 8px; }
+.menu-pop.opts .label { padding: 4px 0 0; font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.menu-pop.opts .seg { display: flex; flex-wrap: nowrap; }
+.menu-pop.opts .seg button { flex: 1 1 0; width: auto; height: 30px; padding: 0 6px; justify-content: center; font-size: 12.5px; border-radius: var(--r-s); }
+.menu-pop.opts .seg button.on { background: var(--panel); color: var(--ink); box-shadow: var(--shadow-1); }
+.optrow { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; cursor: pointer; padding: 2px 0; }
+.optrow input.switch { margin-top: 1px; }
+.optrow span { display: grid; font-size: 13.5px; font-weight: 500; }
+.optrow small { font-size: 12px; font-weight: 400; color: var(--ink-3); line-height: 1.35; }
+@media (max-width: 640px) {
+  /* the editing bar sits along the bottom edge of the map, never over the middle of it */
+  .tv-map.editing .float.bc { left: 8px; right: 8px; bottom: 8px; transform: none; max-width: none; flex-wrap: wrap; justify-content: flex-end; padding: 8px 10px; }
+  .tv-map.editing .float.bc .small { flex: 1 1 100%; }
+}
+
+/* ---- a question in the middle of the page */
+.scrim { position: fixed; inset: 0; z-index: 80; background: var(--scrim); display: grid; place-items: center; padding: 16px; animation: fade .12s ease-out; }
+.dialog { width: min(460px, 100%); background: var(--raised); border: 1px solid var(--line); border-radius: var(--r-l); box-shadow: var(--shadow); padding: 22px 22px 18px; display: grid; gap: 14px; }
+.dialog h2 { margin: 0; font-size: 17px; letter-spacing: -.015em; }
+.dialog-body { display: grid; gap: 10px; font-size: 14px; line-height: 1.5; color: var(--ink-2); }
+.dialog-body b { color: var(--ink); }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.dialog-actions button { height: 38px; padding: 0 16px; }
+@keyframes fade { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .scrim, .toast { animation: none; } }
+
+/* ---- phones and tablets held upright: tabs at the bottom, shorter map, nothing hidden */
+@media (max-width: 860px) {
+  .trips { grid-template-rows: 34vh 1fr; }
+  .bar .home .lbl, .testmode .lbl { display: none; }
+  .testmode { width: 34px; padding: 0; }
+}
+@media (max-width: 640px) {
+  .shell { padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px)); }
+  .bar { gap: 8px; }
+  .bar > .mark { display: inline-flex; padding-left: 10px; }
+  .bar > .mark .name { display: inline; }
+  .bar > .grow { display: block; }
+  .bar .nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; height: calc(60px + env(safe-area-inset-bottom, 0px)); padding: 0 4px env(safe-area-inset-bottom, 0px);
+    background: var(--panel); border-top: 1px solid var(--line); display: flex; justify-content: space-around; gap: 0; overflow: visible; flex: none; }
+  .bar .nav a { flex: 1 1 0; flex-direction: column; gap: 3px; justify-content: center; font-size: 11.5px; padding: 0; border-radius: 12px; min-height: 0; margin: 6px 2px; }
+  .bar .nav a svg { width: 20px; height: 20px; }
+  .toasts { bottom: calc(72px + env(safe-area-inset-bottom, 0px)); }
+  .sync .lbl, .sync .msg { display: none; }
+  .sync button { width: var(--tap); padding: 0; gap: 0; }
+  .tv-head .tv-title { flex-basis: calc(100% - 64px); }
+  .tv-head .tv-state { flex-basis: 100%; order: 5; }
+  .tv-head .tv-state .chip { display: inline-flex; }
+  .dialog-actions button { flex: 1; }
+  .doc { padding: 20px 14px 40px; }
+}
+/* Fingers, not a mouse: every control is at least 44 px tall. */
+@media (pointer: coarse) {
+  button, .btn, select, input:not([type="checkbox"]):not([type="radio"]):not([type="file"]) { min-height: var(--tap); }
+  button.sm, .btn.sm { min-height: 40px; padding: 0 14px; font-size: 13px; }
+  button.icon { min-width: var(--tap); }
+  button.link { min-height: 0; }
+  .modefilter button { min-height: 38px; padding: 0 12px; }
+  .seg button { min-height: 38px; }
+  .todo-row .todo-main { min-height: 40px; }
+  .testmode { min-height: 36px; min-width: 36px; }
+  .bar .home { height: 40px; }
+  .trip { padding-top: 12px; padding-bottom: 12px; }
+  .menu-pop button, .menu-pop a { height: 42px; }
+  .maplibregl-ctrl-group button { width: 36px; height: 36px; }
+}

@@ -92,3 +92,43 @@ def centroid(fixes: list[dict[str, Any]]) -> tuple[float, float]:
         lat += p["lat"] * w
         lon += p["lon"] * w
     return lat / wsum, lon / wsum
+
+
+# A place visited with the phone logging once a minute or less: the fixes
+# wander 60-100 m (car park, tent, tap) for most of an hour. That is outside
+# the stay radius, so it used to read as a 0.4 km/h "walk" and got a walking
+# route drawn for it. It is a stop.
+DWELL_RADIUS_M = 100.0
+DWELL_MIN_S = 900
+DWELL_MAX_KMH = 1.5     # path length over elapsed time: slower than any walk
+
+
+def find_dwells(fixes: list[dict[str, Any]]) -> list[tuple[int, int]]:
+    """[start, end) runs that stay within DWELL_RADIUS_M of their centre for
+    DWELL_MIN_S or more while covering almost no ground. Only for labelling
+    modes inside a trip (modes.label uses it at the trip's two ends); trips
+    are still split on find_stays alone."""
+    runs: list[tuple[int, int]] = []
+    n = len(fixes)
+    i = 0
+    while i < n:
+        lat, lon = fixes[i]["lat"], fixes[i]["lon"]
+        k = 1
+        j = i + 1
+        path = 0.0
+        while j < n:
+            p = fixes[j]
+            if haversine(lat, lon, p["lat"], p["lon"]) > DWELL_RADIUS_M:
+                break
+            path += haversine(fixes[j - 1]["lat"], fixes[j - 1]["lon"], p["lat"], p["lon"])
+            lat = (lat * k + p["lat"]) / (k + 1)
+            lon = (lon * k + p["lon"]) / (k + 1)
+            k += 1
+            j += 1
+        dur = fixes[j - 1]["timestamp"] - fixes[i]["timestamp"]
+        if j - i >= 3 and dur >= DWELL_MIN_S and path / dur * 3.6 <= DWELL_MAX_KMH and not drifts(fixes[i:j]):
+            runs.append((i, j))
+            i = j
+            continue
+        i += 1
+    return runs

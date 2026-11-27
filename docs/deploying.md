@@ -182,6 +182,38 @@ archive. **Settings → Troubleshooting → Repair tracks** rewrites every trip 
 you should never need it, except once after upgrading from a version before 2.4, whose pushes left
 straight lines between the points either side of a trip.
 
+## Offline basemap
+
+By default the maps in the portal are CARTO's hosted styles, so the browser
+fetches map tiles for whatever area is on screen from `basemaps.cartocdn.com`.
+If that is not acceptable (the areas you look at are where you live and go),
+serve the basemap yourself:
+
+1. Get a [Protomaps](https://protomaps.com) `.pmtiles` file for your area (the
+   daily planet build can be cut down with `pmtiles extract`).
+2. Put it on any web server the browser can reach, next to a folder holding
+   `pmtiles.js` (the `pmtiles` library), `basemaps.js` (`@protomaps/basemaps`),
+   `fonts/` and `sprites/v4/` (both from `protomaps/basemaps-assets`).
+3. Set `PORTAL_PMTILES_URL` to the file and `PORTAL_PMTILES_ASSETS` to the
+   folder, for example `/maps/region.pmtiles` and `/maps/lib/`.
+
+With both set the portal never contacts a map server of anyone else's. If the
+files are missing the map shows a plain background and the routes still draw.
+The Map button then offers light, grey, plain and dark styles.
+
+## Railway network for Great Britain (the Underground, trams)
+
+The shipped timetable shapes cover National Rail. For the London Underground,
+trams and light rail, build a network from the same OpenStreetMap extract
+Valhalla was built from: **Admin → Railways → Build**, or
+
+    docker exec mapmatch python -m mapmatch.tools.railways /valhalla/great-britain-latest.osm.pbf --out /data/rail
+
+It needs about 200 MB of memory and ten minutes for Great Britain, writes a
+5 MB file, and is used from the next match on. A ride with nothing recorded on
+the way (a tunnel, a phone in a pocket) is then drawn along the line between
+the two stations instead of as a straight line.
+
 ## What is deliberately not in the image
 
 The container needs `mapmatch/`, `pyproject.toml`, and the two GB rail files.

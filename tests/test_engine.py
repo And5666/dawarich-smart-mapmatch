@@ -1,7 +1,9 @@
 """Engine unit tests. No network: Valhalla is faked in conftest.py."""
 from __future__ import annotations
 
-from conftest import T0, encode_polyline, track
+import math
+
+from conftest import LAT0, LON0, T0, encode_polyline, offset, track
 
 from mapmatch.engine import valhalla
 from mapmatch.engine.api import match_trip
@@ -571,3 +573,132 @@ def test_detail_is_judged_per_watch_block_not_per_mode():
     assert all(d[:400]) and not any(d[401:])
     assert not precise(ride[100:121]), "too short to judge on its own"
     assert all(d[100:121]), "but it sits inside a detailed block"
+
+
+def test_area_between_gps_and_drawn_line():
+    """A drawn line that leaves the straight hop between two fixes encloses
+    area; one that runs along the fixes encloses none."""
+    from mapmatch.engine.quality import between
+    m = 1 / 110540.0                                   # one metre of latitude
+    k = 1 / (111320.0 * 0.6225)                        # one metre of longitude at 51.5 N
+    a = {"lat": 51.5, "lon": -1.0, "timestamp": T0}
+    b = {"lat": 51.5, "lon": -1.0 + 1000 * k, "timestamp": T0 + 100}
+    along = [[51.5, -1.0, T0, 1], [51.5, -1.0 + 1000 * k, T0 + 100, 1]]
+    box = [[51.5, -1.0, T0, 1], [51.5 + 200 * m, -1.0, T0 + 20, 1],
+           [51.5 + 200 * m, -1.0 + 1000 * k, T0 + 80, 1], [51.5, -1.0 + 1000 * k, T0 + 100, 1]]
+    seg = lambda coords, kind="matched": [{"mode": "drive", "pieces": [{"kind": kind, "coords": coords}]}]
+    assert between([a, b], seg(along)).get("area_m2", 0) < 50
+    q = between([a, b], seg(box))
+    assert 190_000 < q["area_m2"] < 210_000            # a 1000 m x 200 m rectangle
+    assert 130 < q["gap_m"] < 150 and q["bulge_max_m"] in range(195, 206)
+    assert (q["bulge_t0"], q["bulge_t1"]) == (T0, T0 + 100)
+    assert q["detour_line_m"] > q["detour_hop_m"] + 350
+    assert between([a, b], seg(box, "recorded")) == {}, "the GPS itself encloses nothing"
+
+
+def _walk(n, lat0=51.45, lon0=-2.6, dt=25, step=35.0):
+    """n fixes walking east at about 5 km/h."""
+    k = 1 / (111320.0 * 0.623)
+    return [{"lat": lat0, "lon": lon0 + i * step * k, "timestamp": T0 + i * dt, "accuracy": 15.0} for i in range(n)]
+
+
+def test_one_fix_that_jumps_off_a_walk_and_back_is_dropped():
+    pts = _walk(16)
+    pts[8] = {**pts[8], "lat": pts[8]["lat"] + 95 / 110540.0}          # 95 m sideways, back at the next fix
+    kept, dropped = clean(pts, jitter=True)
+    assert [p["timestamp"] for p in dropped if p["_drop"] == "spike"] == [pts[8]["timestamp"]]
+    kept, dropped = clean(_walk(16), jitter=True)
+    assert not dropped, "an ordinary walk loses nothing"
+    kept, dropped = clean(pts)                                         # trip splitting sees every fix
+    assert not dropped
+
+
+def test_phone_hopping_to_and_fro_while_parked_is_dropped_but_a_turn_round_is_not():
+    m = 1 / 110540.0
+    arrive = _walk(12)                                                  # arrives on foot, phone then sits still
+    home = arrive[-1]
+    t = home["timestamp"]
+    hops = []
+    for i, off in enumerate([350, 0, 420, 0, -380, 0, 300, 0, 450, 0]):  # every 22 s: away, back, away, back
+        hops.append({"lat": home["lat"] + off * m, "lon": home["lon"], "timestamp": t + 22 * (i + 1), "accuracy": 20.0})
+    leave = [{**p, "lon": home["lon"] + (p["lon"] - arrive[0]["lon"]), "timestamp": hops[-1]["timestamp"] + 25 * (i + 1)}
+             for i, p in enumerate(_walk(8))]
+    kept, dropped = clean(arrive + hops + leave, jitter=True)
+    assert sum(1 for p in dropped if p["_drop"] == "jitter") == 5, "the five hops away go, the fixes at the true spot stay"
+    # A drive up a road, a turn, and back down it: three fast reversals at most, and it never comes back to one spot.
+    drive = [{"lat": 51.45 + y * m, "lon": -2.6, "timestamp": T0 + 30 * i, "accuracy": 10.0}
+             for i, y in enumerate([0, 400, 800, 1200, 1050, 1180, 800, 400, 0, -400, -800])]
+    kept, dropped = clean(drive, jitter=True)
+    assert not [p for p in dropped if p["_drop"] == "jitter"]
+
+
+def test_sparse_fixes_cannot_be_slower_than_the_ground_they_cover():
+    """A fix a minute, a kilometre apart: the phone's own reading taken at a
+    junction (2 m/s) must not make a drive look like a bike ride."""
+    drive = track([(1000, 0)] * 8, dt=60, velocity=2.0)
+    assert min(speeds(drive)) > 50
+    labels, _, _ = label(drive)
+    assert set(labels) == {"drive"}
+    # Closely logged, the reading is trusted: positions a few metres apart are noise.
+    ride = track([(5, 0)] * 30, dt=1, velocity=5.0)
+    assert 17 < speeds(ride)[10] < 19
+
+
+def test_a_ride_does_not_turn_into_a_drive_without_a_stop():
+    """The car slowing into town is still the car; a ride after parking is a ride."""
+    fast = track([(900, 0)] * 10, dt=40)                                    # 81 km/h
+    slow = track([(160, 0)] * 14, start=(fast[-1]["lat"], fast[-1]["lon"]), t0=fast[-1]["timestamp"] + 40, dt=40)   # 14 km/h
+    labels, _, _ = label(fast + slow)
+    assert set(labels) == {"drive"}, "no stop between them: one vehicle"
+    parked = track([(2, 0), (-2, 0)] * 4, start=(fast[-1]["lat"], fast[-1]["lon"]), t0=fast[-1]["timestamp"] + 40, dt=40)
+    ride = track([(160, 0)] * 40, start=(parked[-1]["lat"], parked[-1]["lon"]), t0=parked[-1]["timestamp"] + 40, dt=40)   # 27 min at 14 km/h
+    labels, _, _ = label(fast + parked + ride)
+    assert labels[-1] == "cycle" and "stay" in labels and labels[0] == "drive"
+    # A short quick hop on from the car park is the car again.
+    hop = track([(300, 0)] * 8, start=(parked[-1]["lat"], parked[-1]["lon"]), t0=parked[-1]["timestamp"] + 40, dt=40)   # 27 km/h, 5 min
+    labels, _, _ = label(fast + parked + hop)
+    assert labels[-1] == "drive"
+
+
+def test_a_routed_gap_that_goes_round_the_block_is_drawn_straight(fake_valhalla):
+    """Two fixes 120 m apart with nothing between them: a route four times
+    that length is an anchor on the wrong side of the road, not a journey.
+    (A route too long for the time it took is a different thing, and stays a
+    straight line that is shown as a doubt.)"""
+    a = {"lat": LAT0, "lon": LON0, "timestamp": T0}
+    lat, lon = offset(LAT0, LON0, 120, 0)
+    b = {"lat": lat, "lon": lon, "timestamp": T0 + 40}
+    fake_valhalla.route_detour = 3.0          # about 500 m for the 120 m hop, at a speed a car can do
+    out = fill(a, [], b, "drive")
+    assert out["kind"] == "join" and "way_round" in out["why"] and len(out["coords"]) == 2
+    fake_valhalla.route_detour = 1.2
+    assert fill(a, [], b, "drive")["kind"] == "filled", "an ordinary route is kept"
+
+
+def test_gps_kept_point_for_point_is_not_a_doubt():
+    from mapmatch.engine.api import _unsure_km
+    dense = [[LAT0, LON0 + k * 0.0005, T0 + 30 * k, 1] for k in range(20)]          # 33 m steps
+    sparse = [[LAT0, LON0 + k * 0.01, T0 + 300 * k, 1] for k in range(3)]           # 650 m steps
+    seg = lambda kind, coords, km: [{"mode": "walk", "pieces": [{"kind": kind, "coords": coords, "km": km}]}]
+    assert _unsure_km(seg("raw", dense, 0.62)) == 0
+    assert _unsure_km(seg("raw", sparse, 1.3)) > 1.2
+    assert _unsure_km(seg("straight", sparse[:2], 0.65)) == 0.65
+
+
+def test_a_routed_gap_keeps_the_times_of_the_fixes_along_it():
+    """About 900 m in the first minute, 100 m in the second: the line passes
+    the middle fix at its own time, not where an even speed would put it."""
+    from mapmatch.engine.assemble import timed
+    from mapmatch.engine.geo import haversine
+    # a road with bends in it, so that no vertex is simplified away
+    line = [offset(LAT0, LON0, m, 40 if (m // 100) % 2 else 0) for m in range(0, 1001, 100)]
+    mid = {"lat": line[9][0], "lon": line[9][1], "timestamp": T0 + 60}
+    even = timed(line, T0, T0 + 120)
+    pinned = timed(line, T0, T0 + 120, [mid])
+    at = lambda out: min(out, key=lambda c: haversine(c[0], c[1], mid["lat"], mid["lon"]))[2]
+    assert T0 + 100 < at(even) < T0 + 115, "an even speed reaches it late"
+    assert abs(at(pinned) - (T0 + 60)) < 1.5
+    assert pinned[0][2] == T0 and pinned[-1][2] == T0 + 120
+    assert [c[2] for c in pinned] == sorted(c[2] for c in pinned)
+    far = {"lat": LAT0 + 0.01, "lon": line[5][1], "timestamp": T0 + 10}                # over a kilometre off the line
+    assert [c[2] for c in timed(line, T0, T0 + 120, [far])] == [c[2] for c in even]

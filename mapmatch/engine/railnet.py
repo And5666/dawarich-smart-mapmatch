@@ -91,6 +91,30 @@ class Net:
         return {"net": self, "a": a, "b": b, "t": t, "dist": d,
                 "lat": pa[0] + (pb[0] - pa[0]) * t, "lon": pa[1] + (pb[1] - pa[1]) * t}
 
+    def near(self, lat: float, lon: float, reach: float, most: int = 6) -> list[dict[str, Any]]:
+        """Snaps on the tracks within `reach`, nearest first: at a station
+        several lines pass, and only one of them goes where the train went."""
+        ci, cj = int(lat / CELL), int(lon / CELL)
+        found = []
+        for di in (-1, 0, 1):
+            for dj in (-1, 0, 1):
+                for a, b in self.index.get((ci + di, cj + dj), ()):
+                    d, t = _project(lat, lon, self.nodes[a], self.nodes[b])
+                    if d <= reach:
+                        found.append((d, a, b, t))
+        found.sort()
+        out: list[dict[str, Any]] = []
+        for d, a, b, t in found:
+            pa, pb = self.nodes[a], self.nodes[b]
+            la, lo = pa[0] + (pb[0] - pa[0]) * t, pa[1] + (pb[1] - pa[1]) * t
+            # One snap per track: skip the next segment of a track already taken.
+            if any(_hav(la, lo, o["lat"], o["lon"]) < 8.0 for o in out):
+                continue
+            out.append({"net": self, "a": a, "b": b, "t": t, "dist": d, "lat": la, "lon": lo})
+            if len(out) >= most:
+                break
+        return out
+
     def route(self, s: dict[str, Any], g: dict[str, Any], limit_m: float) -> list[tuple[float, float]] | None:
         """Track positions strictly between two snaps, along the rails; None
         when the rails don't join them within limit_m."""
@@ -179,6 +203,30 @@ def nearest(lat: float, lon: float) -> dict[str, Any] | None:
         if n and (best is None or n["dist"] < best["dist"]):
             best = n
     return best
+
+
+def between(lat_a: float, lon_a: float, lat_b: float, lon_b: float,
+            reach: float = 200.0) -> list[tuple[float, float]] | None:
+    """The rails from a to b: the shortest way along one network between any
+    track within `reach` of each end, or None. For a ride with nothing
+    recorded on the way (the Underground, a tunnel)."""
+    chord = _hav(lat_a, lon_a, lat_b, lon_b)
+    best: tuple[float, list[tuple[float, float]]] | None = None
+    for net in networks():
+        for sa in net.near(lat_a, lon_a, reach):
+            for sb in net.near(lat_b, lon_b, reach):
+                path = net.route(sa, sb, max(2000.0, 2.0 * chord + 1000.0))
+                if path is None:
+                    continue
+                line = [(sa["lat"], sa["lon"]), *path, (sb["lat"], sb["lon"])]
+                length = cumulative(line)[-1] + sa["dist"] + sb["dist"]
+                if best is None or length < best[0]:
+                    best = (length, line)
+    return best[1] if best else None
+
+
+def station_distance(lat: float, lon: float) -> float:
+    return min((_hav(lat, lon, s[0], s[1]) for net in networks() for s in net.stations), default=1e9)
 
 
 def distance(lat: float, lon: float) -> float:

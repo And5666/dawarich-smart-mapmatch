@@ -27,6 +27,15 @@ services:
       # Start in dry-run: pushes are planned and logged but Dawarich is not changed.
       # Set to 0 once you have checked a few trips.
       PUSH_DRY_RUN: "1"
+      # Refuse to start without an admin account (set ADMIN_PASSWORD), so nobody can register first.
+      # REQUIRE_ADMIN: "1"
+      # Part of another site? A link back, your stylesheet, a shared light/dark key:
+      # PORTAL_HOME_URL: "/"
+      # PORTAL_EXTRA_CSS: "/site.css"
+      # PORTAL_THEME_KEY: "theme"
+      # An offline basemap instead of CARTO's hosted one (docs/deploying.md):
+      # PORTAL_PMTILES_URL: "/maps/region.pmtiles"
+      # PORTAL_PMTILES_ASSETS: "/maps/lib/"
       MATCH_WORKERS: "4"
     volumes:
       # SQLite database with the archive of original GPS points. Back this up.

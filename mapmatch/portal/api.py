@@ -74,6 +74,10 @@ class LockIn(BaseModel):
     locked: bool
 
 
+class CheckedIn(BaseModel):
+    ok: bool = True
+
+
 class JobIn(BaseModel):
     kind: str
     params: dict[str, Any] = {}
@@ -265,6 +269,9 @@ def build(app_state: Any) -> APIRouter:
         return {"name": u.get("display_name") or u["username"], "username": u["username"],
                 "is_admin": bool(u["is_admin"]), "dawarich_linked": bool(s.get("api_key")),
                 "settings": _public_settings(s, cfg), "archive": archive.stats(db, u["id"]),
+                "home_url": cfg.home_url, "home_label": cfg.home_label,
+                "basemap": ({"pmtiles": cfg.pmtiles_url, "assets": cfg.pmtiles_assets}
+                            if cfg.pmtiles_url and cfg.pmtiles_assets else None),
                 "dry_run": cfg.push_dry_run, "dawarich_needs_repair": push.needs_repair(db, u["id"]), "engine": ENGINE_VERSION, "modes": list(MODES)}
 
     # ------------------------------------------------------------ settings
@@ -497,6 +504,14 @@ def build(app_state: Any) -> APIRouter:
         trip_or_404(u["id"], tid)
         with db.tx() as c:
             c.execute("UPDATE trips SET locked=? WHERE id=?", (1 if body.locked else 0, tid))
+        return _detail(u["id"], tid)
+
+    @r.post("/trips/{tid}/checked")
+    def checked(tid: int, body: CheckedIn, u: dict[str, Any] = Depends(user)) -> dict[str, Any]:
+        """The user has looked at this match and it is right (or, with ok=false, not after all)."""
+        t = trip_or_404(u["id"], tid)
+        with db.tx() as c:
+            c.execute("UPDATE trips SET checked_version=? WHERE id=?", (int(t["result_version"]) if body.ok else 0, tid))
         return _detail(u["id"], tid)
 
     @r.post("/trips/{tid}/gaps")

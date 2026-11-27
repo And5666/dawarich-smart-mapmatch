@@ -179,16 +179,46 @@ def match_gtfs(fixes: list[dict[str, Any]]) -> dict[str, Any]:
         arcs = [None if a is None else total - a for a in arcs]
     anchors: list[dict[str, Any] | None] = []
     last = 0.0
+    prev: dict[str, Any] | None = None
     for p, arc in zip(fixes, arcs):
         if arc is None:
             anchors.append(None)
             continue
+        if prev is not None:
+            # Some shapes run a stretch out, back and out again. The nearest
+            # point on the whole shape then hops between the passes: forward
+            # by kilometres at one fix, and "backward" (pinned to one spot by
+            # the line below) for the fixes after. Look near where the train
+            # was instead, and take that when the shape is there.
+            reach = 1.5 * haversine(prev["lat"], prev["lon"], p["lat"], p["lon"]) + 300.0
+            if arc > last + reach or arc < last - 50.0:
+                a2, d2 = _project_between(poly, cum, p["lat"], p["lon"], last, last + reach)
+                if d2 <= 110:
+                    arc = a2
         arc = max(arc, last)
         last = arc
+        prev = p
         lat, lon, _ = point_at(poly, cum, arc)
         anchors.append({"piece": 0, "arc": arc, "lat": lat, "lon": lon,
                         "dist": haversine(lat, lon, p["lat"], p["lon"]), "kind": "rail"})
     return {"pieces": [{"poly": poly, "cum": cum}], "anchors": anchors, "profile": "rail"}
+
+
+def _project_between(poly: list[tuple[float, float]], cum: list[float], lat: float, lon: float,
+                     lo_arc: float, hi_arc: float) -> tuple[float, float]:
+    """Nearest arc and distance on the part of the line from lo_arc to hi_arc
+    only (project_arc's own window reaches a few vertices past each end, which
+    on a sparse shape is kilometres)."""
+    lo_arc = max(0.0, min(cum[-1], lo_arc))
+    hi_arc = max(lo_arc, min(cum[-1], hi_arc))
+    if hi_arc - lo_arc < 1.0:
+        la, lo, _ = point_at(poly, cum, lo_arc)
+        return lo_arc, haversine(lat, lon, la, lo)
+    part = [point_at(poly, cum, lo_arc)[:2]]
+    part += [poly[i] for i in range(len(poly)) if lo_arc < cum[i] < hi_arc]
+    part.append(point_at(poly, cum, hi_arc)[:2])
+    arc, d = project_arc(part, cumulative(part), lat, lon)
+    return lo_arc + arc, d
 
 
 def match_segment(fixes: list[dict[str, Any]], mode: str) -> dict[str, Any]:
