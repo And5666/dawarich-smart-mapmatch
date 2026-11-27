@@ -192,6 +192,11 @@ push does in Dawarich.
 | `PUSH_DRY_RUN` | `0` (`1` in the example compose) | `1` works out pushes without changing Dawarich |
 | `MATCH_WORKERS` | `4` | Trips matched in parallel; keep at or below Valhalla's thread count |
 | `VALHALLA_DATA_DIR` | none | Optional read-only mount of Valhalla's data, so admins can see the map files and build railways from them |
+| `REQUIRE_ADMIN` | `0` | `1` refuses to start without an admin account, so a first visitor can never register as admin |
+| `PORTAL_HOME_URL`, `PORTAL_HOME_LABEL` | none, `Dashboard` | A link in the top bar back to the site the portal is part of |
+| `PORTAL_EXTRA_CSS` | none | One more stylesheet, loaded after the portal's own (your fonts or colours) |
+| `PORTAL_THEME_KEY` | `mm-theme` | The `localStorage` key for light/dark, to share the choice with a site on the same origin |
+| `PORTAL_PMTILES_URL`, `PORTAL_PMTILES_ASSETS` | none | An offline basemap instead of CARTO's hosted one: see [Offline basemap](docs/deploying.md#offline-basemap) |
 
 Lost the admin password? Run
 `docker exec -it mapmatch python -m mapmatch.portal.admin reset <username>`.
