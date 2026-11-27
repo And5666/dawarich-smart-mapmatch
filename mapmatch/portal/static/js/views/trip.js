@@ -173,7 +173,7 @@ export function TripView({ id }) {
   const gaps = useMemo(() => listGaps(shown), [shown]);
   // The stretches left as plain GPS, longest first: where to look when a trip is flagged.
   const keptParts = useMemo(() => shown.flatMap((s) => (s.pieces || []).filter((p) => (p.kind === "raw" || p.kind === "straight") && p.km >= 0.05 && p.coords?.length > 1)
-    .map((p) => ({ t0: p.coords[0][2], t1: p.coords[p.coords.length - 1][2], km: p.km, hole: p.kind === "straight" }))).sort((x, y) => y.km - x.km), [shown]);
+    .map((p) => ({ t0: p.coords[0][2], t1: p.coords[p.coords.length - 1][2], km: p.km, hole: p.kind === "straight", unlinked: !!p.unlinked }))).sort((x, y) => y.km - x.km), [shown]);
   const [ask, setAsk] = useState(false);
   const [undo, setUndo] = useState(false);
   const queue = useMemo(() => { try { return JSON.parse(sessionStorage.getItem("mm-review") || "[]"); } catch (e) { return []; } }, [id]);
@@ -278,7 +278,8 @@ export function TripView({ id }) {
     const parts = [];
     for (const s of shown) {
       // A stop is drawn as a dot, but GPS kept as recorded is drawn point for point, stops included.
-      for (const p of s.pieces) if (p.coords.length > 1 && (s.mode !== "stay" || p.kind === "recorded")) parts.push(line(p.coords,
+      // A hole nothing could explain (p.unlinked) is not drawn: no line is better than a wrong one.
+      for (const p of s.pieces) if (p.coords.length > 1 && !p.unlinked && (s.mode !== "stay" || p.kind === "recorded")) parts.push(line(p.coords,
         { sid: s.id, m: s.mode, k: p.kind, kept: p.kept === true, t0: s.t0, t1: s.t1, gap: p.gap ? p.gap[0] : null }));
     }
     const W = LINE_WIDTHS[prefs.width] || 1;
@@ -578,7 +579,7 @@ export function TripView({ id }) {
               ${t.state === "review" && !preview && html`<div class="look">
                 <h3><${Icon} name="warn" small />Why this needs a look</h3>
                 <ul>
-                  ${keptParts.slice(0, 4).map((p) => html`<li key=${p.t0}><span>${km(p.km)} ${p.hole ? "is a straight line across a gap" : "was left as plain GPS"}, at ${time(p.t0)}</span>
+                  ${keptParts.slice(0, 4).map((p) => html`<li key=${p.t0}><span>${km(p.km)} ${p.unlinked ? "with nothing recorded and no route that fits: left unconnected" : p.hole ? "is a straight line across a gap" : "was left as plain GPS"}, at ${time(p.t0)}</span>
                     <button class="sm" onClick=${() => showSpan(p.t0, p.t1)}>Show</button></li>`)}
                   ${keptParts.length > 4 && html`<li><span class="faint">and ${keptParts.length - 4} shorter ${keptParts.length - 4 === 1 ? "stretch" : "stretches"}</span></li>`}
                   ${q.detour_line_m - q.detour_hop_m >= 300 && q.detour_line_m >= 2.5 * Math.max(q.detour_hop_m, 30) && html`<li>

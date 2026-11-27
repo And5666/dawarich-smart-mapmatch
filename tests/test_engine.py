@@ -702,3 +702,88 @@ def test_a_routed_gap_keeps_the_times_of_the_fixes_along_it():
     assert [c[2] for c in pinned] == sorted(c[2] for c in pinned)
     far = {"lat": LAT0 + 0.01, "lon": line[5][1], "timestamp": T0 + 10}                # over a kilometre off the line
     assert [c[2] for c in timed(line, T0, T0 + 120, [far])] == [c[2] for c in even]
+
+
+def _two_track_network(tmp_path):
+    """A double-track main line running east for 6 km, the tracks 4 m apart and joined only by a
+    crossover at each end: the shape of a real railway in OpenStreetMap."""
+    import gzip
+    import json
+    nodes, ways = [], []
+    for row, north in enumerate((0.0, 4.0)):
+        ids = []
+        for k in range(61):                                   # a node every 100 m
+            lat, lon = offset(LAT0, LON0, 100.0 * k, north)
+            ids.append(len(nodes))
+            nodes.append([lat, lon])
+        ways.append(ids)
+    ways.append([0, 61])                                      # crossovers at the two ends
+    ways.append([60, 121])
+    d = tmp_path / "rail"
+    d.mkdir()
+    with gzip.open(d / "railways-test.json.gz", "wt") as f:
+        json.dump({"name": "test", "nodes": nodes, "ways": ways, "stations": [nodes[5], nodes[55]]}, f)
+    return d
+
+
+def test_a_train_keeps_to_one_track(tmp_path, monkeypatch):
+    """Fixes fall on either track at random. Snapped one by one the line runs to a crossover and
+    back each time they change; followed as a journey it is one track, as long as the ground covered."""
+    from mapmatch.engine import railnet
+    monkeypatch.setattr(railnet, "_dirs", [str(_two_track_network(tmp_path))])
+    monkeypatch.setattr(railnet, "_nets", None)
+    fixes = []
+    for k in range(11):                                       # every 500 m, alternately nearer each track
+        lat, lon = offset(LAT0, LON0, 500.0 * k + 250.0, 3.5 if k % 2 else 0.5)
+        fixes.append({"lat": lat, "lon": lon, "timestamp": T0 + 30 * k, "accuracy": 10.0})
+    res = railnet.match(fixes)
+    assert all(res["anchors"]) and len(res["pieces"]) == 1
+    assert 4900 < res["pieces"][0]["cum"][-1] < 5200, "5 km of ground, 5 km of rails: no trips to the crossovers"
+    assert max(a["dist"] for a in res["anchors"]) < 5
+    path = railnet.between(fixes[0]["lat"], fixes[0]["lon"], fixes[-1]["lat"], fixes[-1]["lon"])
+    assert path and len(path) > 40
+
+
+def test_a_poor_fix_a_walker_would_have_to_run_to_is_dropped():
+    pts = [{**p, "accuracy": 12.0} for p in _walk(16)]
+    pts[8] = {**pts[8], "lat": pts[8]["lat"] + 110 / 110540.0, "accuracy": 38.0}     # 110 m out, and the phone says it is unsure
+    kept, dropped = clean(pts, jitter=True)
+    assert [p["timestamp"] for p in dropped] == [pts[8]["timestamp"]]
+    sure = [{**p, "accuracy": 8.0} for p in pts]                                     # the same shape from a fix it trusts
+    sure[8]["lat"] = pts[8]["lat"] - 110 / 110540.0 + 45 / 110540.0                  # 45 m: too small for the side-step rule
+    kept, dropped = clean(sure, jitter=True)
+    assert not dropped, "a good fix off the line is where the walker was"
+
+
+def test_a_hole_nothing_explains_is_left_unconnected(fake_valhalla):
+    from mapmatch.engine import assemble
+    lat, lon = offset(LAT0, LON0, 3000, 0)
+    hop = [[LAT0, LON0, T0, 1], [lat, lon, T0 + 600, 1]]                             # 3 km, ten minutes, nothing between
+    near = [[LAT0, LON0, T0, 1], [offset(LAT0, LON0, 400, 0)[0], offset(LAT0, LON0, 400, 0)[1], T0 + 60, 1]]
+    segs = [{"mode": "walk", "pieces": [{"kind": "straight", "coords": hop, "n_in": 0, "km": 3.0},
+                                        {"kind": "straight", "coords": near, "n_in": 0, "km": 0.4}]}]
+    assemble.unlink(segs)
+    assert segs[0]["pieces"][0].get("unlinked") is True and not segs[0]["pieces"][1].get("unlinked")
+    # Kept GPS is cut at such a hole; with no route to be had the two halves are not joined.
+    fake_valhalla.fail_route = True
+    track_ = [[LAT0, LON0 + k * 0.0003, T0 + 20 * k, 1] for k in range(5)]
+    far = [[LAT0 + 0.03, LON0 + k * 0.0003, T0 + 1000 + 20 * k, 1] for k in range(5)]
+    segs = [{"mode": "walk", "pieces": [{"kind": "recorded", "coords": track_ + far, "n_in": 10, "km": 3.5}]}]
+    assemble.unlink(segs)
+    kinds = [(p["kind"], bool(p.get("unlinked"))) for p in segs[0]["pieces"]]
+    assert kinds == [("recorded", False), ("straight", True), ("recorded", False)]
+    # With a route, the hole is the route: here a ride, since nobody walks 3.3 km in 15 minutes.
+    fake_valhalla.fail_route = False
+    segs = [{"mode": "walk", "pieces": [{"kind": "recorded", "coords": track_ + far, "n_in": 10, "km": 3.5}]}]
+    assemble.unlink(segs)
+    mid = segs[0]["pieces"][1]
+    assert mid["kind"] == "filled" and mid.get("via") == "cycle" and not mid.get("unlinked")
+
+
+def test_kept_gps_is_not_drawn_through_fixes_the_phone_was_unsure_of(fake_valhalla):
+    from mapmatch.engine.assemble import _filled
+    a, m1, m2, b = track([(40, 0), (40, 0), (40, 0)])
+    m1 = {**m1, "lat": m1["lat"] + 90 / 111_320.0, "accuracy": 39.0}                 # scatter: 90 m off, rated poor
+    fake_valhalla.fail_route = True
+    pc = _filled(a, [m1, m2], b, "walk", "fill", 2)
+    assert pc["kind"] == "raw" and len(pc["coords"]) == 3, "the poor fix is left out, the good one kept"

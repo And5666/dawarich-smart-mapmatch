@@ -19,6 +19,7 @@ MIN_SPLIT = 6
 # Share of fixes the narrow search (fixes without an accuracy) may leave
 # unmatched before the chunk is also tried at the profile's wide radius.
 WIDE_RETRY_UNMATCHED = 0.2
+RAILS_COVER = 0.85     # share of the timetable match's fixes the network's rails must also carry
 
 
 def _runs_by_gap(fixes: list[dict[str, Any]], profile: str) -> list[tuple[int, int]]:
@@ -121,7 +122,17 @@ def match_rail(fixes: list[dict[str, Any]]) -> dict[str, Any]:
         return gb
     if not any(gb["anchors"]):
         return osm
-    # The timetable shape is one clean line; prefer it unless clearly worse.
+    # The timetable shapes say which line it is, but they are coarse: often one
+    # point per station with a straight line between (median 400 m apart, up
+    # to kilometres), so a journey on them cuts across the country. The rails
+    # of a network are the real track. Use them whenever they explain the
+    # journey about as well: nearly as many fixes on the line, in few pieces,
+    # and no longer than the ground covered allows.
+    on = lambda m: sum(1 for a in m["anchors"] if a)
+    path = sum(haversine(a["lat"], a["lon"], b["lat"], b["lon"]) for a, b in zip(fixes, fixes[1:]))
+    rails = sum(p["cum"][-1] for p in osm["pieces"])
+    if on(osm) >= RAILS_COVER * on(gb) and len(osm["pieces"]) <= 1 + on(osm) // 20 and rails <= 1.25 * path + 1000.0:
+        return osm
     return osm if fit_score(fixes, osm) > fit_score(fixes, gb) + 0.1 else gb
 
 

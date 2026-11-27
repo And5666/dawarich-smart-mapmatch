@@ -12,7 +12,7 @@ import math
 from typing import Any
 
 from . import rail, railnet
-from .fill import rail_path
+from .fill import at_station, rail_path
 from .geo import haversine
 from .stays import find_dwells, find_stays
 
@@ -251,12 +251,7 @@ TRAIN_HOLE_STATION_M = 300.0
 
 
 def _near_station(p: dict[str, Any]) -> bool:
-    try:
-        if rail.station_distance(p["lat"], p["lon"]) <= TRAIN_HOLE_STATION_M:
-            return True
-    except (OSError, ValueError):
-        pass
-    return railnet.station_distance(p["lat"], p["lon"]) <= TRAIN_HOLE_STATION_M
+    return at_station(p, TRAIN_HOLE_STATION_M)
 
 
 def _train_holes(fixes: list[dict[str, Any]], labels: list[str], forced: list[bool], pinned: list[bool]) -> None:

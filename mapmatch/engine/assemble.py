@@ -127,6 +127,7 @@ def length_m(coords: list[Any]) -> float:
 
 
 VIA_REACH_M = 80.0     # a fix this close to the line says when the line was there
+UNSURE_ACC_M = 25.0    # a reported accuracy this poor: the fix is not drawn through when GPS is kept
 
 
 def timed(coords: list[tuple[float, float]], ta: float, tb: float,
@@ -193,10 +194,16 @@ def _filled(a: dict[str, Any], mids: list[dict[str, Any]], b: dict[str, Any], mo
     gate = choice is True or choice == "gate"
     f = fill(a, mids, b, mode, "strict" if forced else "fill" if choice else strength, vmax, gate)
     if f["kind"] == "raw":
-        coords = [[p["lat"], p["lon"], p["timestamp"], 1] for p in (a, *mids, b)]
-        pc = _piece("raw", coords, n_in)
+        # GPS kept because no path fits it. Kept means the fixes the phone was sure of:
+        # one it rated 25 m or worse, between two positions that are on the map, is
+        # scatter (between tall buildings, over water), and the line through it a zigzag.
+        sure = [p for p in mids if (p.get("accuracy") or 0.0) < UNSURE_ACC_M]
+        coords = [[p["lat"], p["lon"], p["timestamp"], 1] for p in (a, *sure, b)]
+        pc = _piece("raw" if sure else "straight", coords, n_in)
     else:
         pc = _piece(f["kind"], timed(f["coords"], a["timestamp"], b["timestamp"], mids), n_in)
+        if f.get("via"):
+            pc["via"] = f["via"]          # routed as another mode than the stretch it is in
     if f.get("why"):
         pc["why"] = f["why"]
     # The hole this piece bridges, so the editor can offer it as a gap to choose.
@@ -507,6 +514,61 @@ def merge_same_mode(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
         else:
             out.append(s)
     return out
+
+
+UNLINK_M = 1000.0     # fixes this far apart
+UNLINK_S = 180        # and this long apart in time, inside GPS that is kept as it is
+
+
+def unlink(segments: list[dict[str, Any]]) -> None:
+    """Two fixes far apart with nothing known between them are not joined.
+
+    A straight line a kilometre or more long says "went this way", which is
+    the one thing known to be false: it crosses fields, rivers and buildings.
+    Every hole has been offered to the gap filler by now (its own mode, then
+    any other way of covering the ground in the time). What is left is marked
+    `unlinked`: it is not drawn, and it shows as a gap the user can still
+    route by hand. Its length still counts as distance: the ground between
+    its two ends was covered somehow, and the straight line is the least it
+    can have been. Kept GPS (raw, or recorded by a watch) is cut at such a
+    hole too, after the gap filler has had its try: a watch paused in one
+    town and started again in the next."""
+    for s in segments:
+        out: list[dict[str, Any]] = []
+        for p in s["pieces"]:
+            c = p["coords"]
+            if p["kind"] == "straight":
+                if length_m(c) >= UNLINK_M:
+                    p["unlinked"] = True
+                out.append(p)
+                continue
+            if p["kind"] not in ("raw", "recorded") or len(c) < 2:
+                out.append(p)
+                continue
+            cuts = [k for k in range(len(c) - 1) if c[k + 1][2] - c[k][2] >= UNLINK_S
+                    and haversine(c[k][0], c[k][1], c[k + 1][0], c[k + 1][1]) >= UNLINK_M]
+            if not cuts:
+                out.append(p)
+                continue
+            start = 0
+            for k in [*cuts, None]:
+                part = c[start:] if k is None else c[start:k + 1]
+                if part:
+                    out.append({**p, "coords": part, "n_in": len(part), "km": round(length_m(part) / 1000.0, 4)})
+                if k is not None:
+                    hop = [c[k], c[k + 1]]
+                    ends = [{"lat": x[0], "lon": x[1], "timestamp": x[2]} for x in hop]
+                    f = fill(ends[0], [], ends[1], s["mode"]) if s["mode"] in VMAX_KMH else {"kind": "straight"}
+                    if f["kind"] == "filled":
+                        pc = _piece("filled", timed(f["coords"], hop[0][2], hop[1][2]), 0)
+                        if f.get("via"):
+                            pc["via"] = f["via"]
+                    else:
+                        pc = {"kind": "straight", "coords": hop, "n_in": 0, "km": round(length_m(hop) / 1000.0, 4), "unlinked": True}
+                    pc["gap"] = [int(hop[0][2]), int(hop[1][2])]
+                    out.append(pc)
+                    start = k + 1
+        s["pieces"] = out
 
 
 def finish(segments: list[dict[str, Any]]) -> None:

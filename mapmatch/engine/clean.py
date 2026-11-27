@@ -76,6 +76,8 @@ def clean(points: list[dict[str, Any]], jitter: bool = False
         dropped.extend(hops)
         out, hops = _side_steps(out)
         dropped.extend(hops)
+        out, hops = _unsure_fixes(out)
+        dropped.extend(hops)
 
     # Spikes: one fix that sticks out from an otherwise straight-ish path.
     changed = True
@@ -290,3 +292,32 @@ def _side_steps(out: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[d
         out[i]["_drop"] = "spike"
         hops.append(out[i])
     return [p for i, p in enumerate(out) if i not in gone], hops
+
+
+# Between tall buildings a phone reports positions 50-150 m off, and says so:
+# accuracy 25 m or worse. On a walk such a fix is "reached" at 11-15 km/h and
+# the next one is back on the path; kept, it draws the walk out over a
+# harbour. A fix the phone itself is unsure of is dropped when getting to it
+# or away from it needs a pace the walk around it never has.
+UNSURE_ACC_M = 25.0
+UNSURE_KMH = 10.0          # to or from the fix
+CALM_KMH = 7.5             # the track without it, and the fixes around it
+
+
+def _unsure_fixes(out: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    hops: list[dict[str, Any]] = []
+    out = list(out)
+    i = 1
+    while i < len(out) - 1:
+        a, b, c = out[i - 1], out[i], out[i + 1]
+        if (b.get("accuracy") or 0.0) >= UNSURE_ACC_M and c["timestamp"] - a["timestamp"] >= 20 \
+                and max(_kmh(a, b), _kmh(b, c)) >= UNSURE_KMH and _kmh(a, c) <= CALM_KMH:
+            around = sorted(_kmh(out[k], out[k + 1]) for k in (i - 3, i - 2, i + 1, i + 2) if 0 <= k < len(out) - 1)
+            if around and around[len(around) // 2] <= CALM_KMH:
+                b["_drop"] = "spike"
+                hops.append(b)
+                del out[i]
+                i = max(1, i - 1)          # its neighbours are judged again without it
+                continue
+        i += 1
+    return out, hops

@@ -10,7 +10,7 @@ from .match import fit_score, match_segment
 from .modes import label, runs, summary_speed
 from .quality import between, deviations, path_km, percentile
 
-ENGINE_VERSION = "2.10.0"
+ENGINE_VERSION = "2.10.1"
 MODES = ("walk", "cycle", "drive", "train", "stay", "raw")
 MOVING = ("walk", "cycle", "drive", "train")
 NO_MAP_FRAC = 0.75   # share of sampled fixes with no map under them: the trip is abroad
@@ -211,7 +211,13 @@ def match_trip(points: list[dict[str, Any]], overrides: list[dict[str, Any]] | N
         return {"segments": [], "stream": [], "dropped": dropped, "quality": {},
                 "engine_version": ENGINE_VERSION}
     labels, forced, keys = label(fixes, overrides)
-    if not snap and assemble.precise(fixes):
+    # A trip logged in fine detail is left as recorded, unless it has a train
+    # ride with nothing recorded on the way (a watch paused at one station
+    # and started again at another): that hole is a 17 km straight line as
+    # recorded, and belongs on the railway. The detailed parts either side
+    # are still kept point for point, each judged on its own below.
+    train_hole = any(k.startswith("auto:train") for k in keys)
+    if not snap and not train_hole and assemble.precise(fixes):
         return _as_recorded(fixes, dropped, labels, forced, keys, "detailed")
     moving = [(labels[i], any(forced[i:j])) for _, i, j in runs(keys) if labels[i] in MOVING]
     if moving and all(left_alone(m, f) for m, f in moving):
@@ -227,7 +233,8 @@ def match_trip(points: list[dict[str, Any]], overrides: list[dict[str, Any]] | N
     # judged on its own, so the watch part is kept and the phone part matched.
     dense = assemble.dense_blocks(fixes)
     detailed = assemble.detailed_fixes(fixes)
-    keys = [k if forced[i] else f"{k}|{'d' if dense[i] else 's'}" for i, k in enumerate(keys)]
+    # (A train ride found across a hole is one run whatever was logged either side of it.)
+    keys = [k if forced[i] or k.startswith("auto:") else f"{k}|{'d' if dense[i] else 's'}" for i, k in enumerate(keys)]
 
     segments: list[dict[str, Any]] = []
     hooked: list[dict[str, Any]] = []
@@ -281,6 +288,7 @@ def match_trip(points: list[dict[str, Any]], overrides: list[dict[str, Any]] | N
 
     segments = assemble.connect(segments, strength, keep_gap, force_gap)
     segments = assemble.merge_same_mode(segments)
+    assemble.unlink(segments)
     assemble.finish(segments)
     out = assemble.stream(segments)
     if hooked:
@@ -314,6 +322,7 @@ def _as_recorded(fixes: list[dict[str, Any]], dropped: list[dict[str, Any]], lab
                          "n_fixes": j - i, "key": key if any(forced[i:j]) else None,
                          "pieces": [assemble._piece("recorded", coords, j - i)]})
     segments = assemble.merge_same_mode(segments)
+    assemble.unlink(segments)
     assemble.finish(segments)
     out = assemble.stream(segments)
     q = quality(fixes, segments, out)
@@ -348,15 +357,19 @@ def _unsure_km(segments: list[dict[str, Any]]) -> float:
 def quality(fixes: list[dict[str, Any]], segments: list[dict[str, Any]],
             out: list[dict[str, Any]]) -> dict[str, Any]:
     km: dict[str, float] = {}
+    holes = 0.0
     for s in segments:
         for p in s["pieces"]:
             km[p["kind"]] = km.get(p["kind"], 0.0) + p["km"]
+            if p.get("unlinked"):
+                holes += p["km"]            # not drawn: nothing is known about the way
     moving = sum(v for k, v in km.items() if k != "stay")
     errs = deviations(fixes, out)
     raw_km = path_km(fixes)
     return {
         "raw_km": round(raw_km, 3),
         "km": round(path_km(out), 3),
+        "unlinked_km": round(holes, 3),
         "matched_frac": round(km.get("matched", 0.0) / moving, 3) if moving else 0.0,
         "recorded_frac": round(km.get("recorded", 0.0) / moving, 3) if moving else 0.0,
         "filled_frac": round(km.get("filled", 0.0) / moving, 3) if moving else 0.0,
@@ -364,7 +377,7 @@ def quality(fixes: list[dict[str, Any]], segments: list[dict[str, Any]],
         # The part of that which is a guess: a straight line across a hole, or kept GPS whose fixes are
         # so far apart that it is straight lines too. GPS kept point for point along a path the map
         # does not have is where you were, not a doubt about the match.
-        "unsure_frac": round(_unsure_km(segments) / moving, 3) if moving else 0.0,
+        "unsure_frac": round(min(1.0, _unsure_km(segments) / moving), 3) if moving else 0.0,
         "p50": round(percentile(errs, 0.5), 1),
         "p95": round(percentile(errs, 0.95), 1),
         "segments": len(segments),

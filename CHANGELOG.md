@@ -1,6 +1,6 @@
 # Changes
 
-## 2.10.0
+## 2.10.1
 
 Found by running the matcher over a real account (a few hundred trips, two
 years, phone and watch), looking at every flagged trip and at the trips whose
@@ -19,6 +19,23 @@ with a test, not a correction to that trip.
   Underground). Before, these were walks along the road at 20 km/h, or
   straight lines. A walking route across a gap of more than 1 km is refused
   above 9 km/h.
+- **Trains follow the real rails.** The shipped timetable shapes are coarse
+  (often one point per station, a straight line between), so a train was
+  drawn as chords across the country. Where an OpenStreetMap railway network
+  is installed, trains are matched on its rails, by a matcher that follows
+  one track (snapping fix by fix ran to a crossover and back whenever two
+  fixes fell on different tracks of a double line). A watch-logged trip with
+  a train ride in the middle keeps its detailed parts and gets the ride on
+  the railway.
+- **Holes.** Two fixes a kilometre or more apart with nothing between them
+  are tried every way the ground could have been covered in the time (train
+  between stations, on foot, by bike, by car). If nothing fits they are left
+  unconnected: no line is drawn, the gap can still be routed by hand, and
+  its length still counts as distance. Kept GPS is cut at such holes too.
+- **Unreliable fixes on a walk.** A fix the phone itself rates at 25 m or
+  worse, that a walker would have had to run to, is dropped; and GPS that is
+  kept because no path fits is drawn only through the fixes the phone was
+  sure of. Walks between tall buildings were being drawn out over water.
 - **A timetable shape that doubles back** (out, back and out again along the
   same track) no longer pins several fixes to one spot.
 - **Stray fixes.** A phone hopping hundreds of metres to and fro while parked
