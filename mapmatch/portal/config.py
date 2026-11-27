@@ -24,6 +24,9 @@ class Config:
     # a typo ("y", "ture") must not silently turn dry run off. Unset keeps upstream's default.
     push_dry_run: bool = field(default_factory=lambda: (os.environ.get("PUSH_DRY_RUN") is not None
                                and os.environ["PUSH_DRY_RUN"].strip().lower() not in ("0", "false", "no", "off", "")))
+    # A push then rewrites the pushed trips and nothing else: no stop is tidied, no link is drawn,
+    # and no point outside a trip being pushed or undone is deleted or written.
+    push_trips_only: bool = field(default_factory=lambda: _flag("PUSH_TRIPS_ONLY"))
     secure_cookie: bool = field(default_factory=lambda: _flag("PORTAL_SECURE_COOKIE"))
     # When the portal is one page of a larger site: a link back to it in the top bar,
     # an extra stylesheet (fonts, colours) loaded after the portal's own, and the

@@ -853,3 +853,31 @@ def test_a_push_that_would_invent_points_changes_nothing(env, monkeypatch):
     assert sorted(dw.points.items()) == before and not dw.ours()
     assert any("refused to write" in (t["error"] or "") for t in client.get("/api/trips").json()["trips"])
     assert not client.get("/api/me").json()["dawarich_needs_repair"]
+
+
+def test_trips_only_push_touches_nothing_outside_the_trip(env, monkeypatch):
+    """PUSH_TRIPS_ONLY: the trip's own fixes are swapped for its matched line. Every other
+    point in Dawarich (the stops either side, the other trips) is neither deleted nor
+    rewritten, no stop point or link is added, and a revert puts the trip's fixes back."""
+    from mapmatch.portal import push
+    client, dw, jobs, db = env
+    originals = dw.originals()
+    sync(client, jobs)
+    real = push.apply
+
+    def trips_only(db_, cfg, *a, **k):
+        object.__setattr__(cfg, "push_trips_only", True)
+        return real(db_, cfg, *a, **k)
+    monkeypatch.setattr(push, "apply", trips_only)
+    trip = client.get("/api/trips").json()["trips"][-1]
+    outside = {k for k in originals if not trip["start"] <= k[0] <= trip["end"]}
+    ids_before = {i for i, p in dw.points.items() if not trip["start"] <= p["timestamp"] <= trip["end"]}
+    assert client.post(f"/api/trips/{trip['id']}/push", headers=H).status_code == 200
+    ours = dw.ours()
+    assert ours and all(trip["start"] <= p["timestamp"] <= trip["end"] for p in ours), "only the trip's own line is written"
+    assert {k for k in dw.originals() if not trip["start"] <= k[0] <= trip["end"]} == outside
+    assert ids_before <= set(dw.points), "no point outside the trip was deleted and re-created"
+    assert not [k for k in dw.originals() if trip["start"] <= k[0] <= trip["end"]], "the trip's fixes made way for the line"
+    assert client.post(f"/api/trips/{trip['id']}/revert", headers=H).status_code == 200
+    assert dw.originals() == originals and not dw.ours()
+    assert ids_before <= set(dw.points)

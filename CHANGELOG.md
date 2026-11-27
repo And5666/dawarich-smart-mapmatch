@@ -19,6 +19,11 @@
   put back must be in the archive. Anything else and the span is refused: the
   trip shows the reason and Dawarich is left exactly as it was, for a push by
   hand and for automatic runs alike.
+- **`PUSH_TRIPS_ONLY=1`** for those who want Dawarich changed as little as
+  possible: a push swaps each pushed trip's fixes for its matched line and
+  touches nothing else. Stops keep their recorded fixes (no half-hourly stop
+  points, which sit on one spot and read as duplicates in Dawarich), no links
+  are drawn, and trips that are not pushed are not deleted and written again.
 - After updating, **Settings → Repair tracks** rewrites what earlier pushes
   wrote, removing the points above.
 
