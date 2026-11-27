@@ -14,7 +14,7 @@ from typing import Any
 from . import rail, railnet
 from .fill import at_station, rail_path
 from .geo import haversine
-from .stays import find_dwells, find_stays
+from .stays import find_dwells, find_milling, find_stays
 
 MODES = ("walk", "cycle", "drive", "train")
 SWITCH_COST = 6.0
@@ -440,8 +440,14 @@ def label(fixes: list[dict[str, Any]], overrides: list[dict[str, Any]] | None = 
         j = i
         while j < n and labels[j] != "stay" and not forced[j]:
             j += 1
-        for a, b in find_dwells(fixes[i:j]):
-            if not (all(m == "stay" for m in labels[:i + a]) or all(m == "stay" for m in labels[i + b:])):
+        part = fixes[i:j]
+        slow = find_dwells(part)
+        # ...and anywhere in a walk or a ride, five minutes of milling about on one spot.
+        mill = [(a, b) for a, b in find_milling(part)
+                if all(labels[i + k] in ("walk", "cycle", "drive") for k in range(a, b))
+                and not any(a < d and c < b for c, d in slow)]
+        for a, b in sorted(slow + mill):
+            if (a, b) in slow and not (all(m == "stay" for m in labels[:i + a]) or all(m == "stay" for m in labels[i + b:])):
                 continue
             for k in range(i + a, i + b):
                 labels[k] = "stay"

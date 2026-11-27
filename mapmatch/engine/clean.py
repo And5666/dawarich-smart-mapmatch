@@ -78,6 +78,8 @@ def clean(points: list[dict[str, Any]], jitter: bool = False
         dropped.extend(hops)
         out, hops = _unsure_fixes(out)
         dropped.extend(hops)
+        out, hops = _settle(out)
+        dropped.extend(hops)
 
     # Spikes: one fix that sticks out from an otherwise straight-ish path.
     changed = True
@@ -321,3 +323,45 @@ def _unsure_fixes(out: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list
                 continue
         i += 1
     return out, hops
+
+
+# A trip ends where you stop: in a shop, at a desk. Indoors the last fixes (and the
+# first ones of the trip out again) scatter over a hundred metres and draw a star
+# over the building. Where a trip's end is such a tangle, it is the way in and one
+# position: the fix it entered by and the one nearest the middle of the rest.
+SETTLE_RADIUS_M = 90.0
+SETTLE_MIN_FIXES = 4
+SETTLE_PATH_M = 120.0      # the tangle is at least this long
+SETTLE_RATIO = 3.0         # and this many times as long as it gets anywhere
+
+
+def _settle(out: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    dropped: list[dict[str, Any]] = []
+    for rev in (False, True):
+        seq = out[::-1] if rev else out          # seq runs towards the end being looked at
+        n = len(seq)
+        if n < SETTLE_MIN_FIXES + 2:
+            continue
+        lat, lon, k = seq[-1]["lat"], seq[-1]["lon"], 1
+        j = n - 1
+        while j > 0 and _m(seq[j - 1], {"lat": lat, "lon": lon}) <= SETTLE_RADIUS_M:
+            j -= 1
+            lat, lon, k = (lat * k + seq[j]["lat"]) / (k + 1), (lon * k + seq[j]["lon"]) / (k + 1), k + 1
+        run = seq[j:]
+        if len(run) < SETTLE_MIN_FIXES or j == 0:
+            continue
+        path = sum(_m(a, b) for a, b in zip(run, run[1:]))
+        if path < SETTLE_PATH_M or path < SETTLE_RATIO * _m(run[0], run[-1]):
+            continue
+        centre = min(run[1:], key=lambda p: _m(p, {"lat": lat, "lon": lon}))
+        gone = [p for p in run[1:] if p is not centre]
+        for p in gone:
+            p["_drop"] = "jitter"
+        dropped.extend(gone)
+        ids = {id(p) for p in gone}
+        out = [p for p in out if id(p) not in ids]
+    return out, dropped
+
+
+def _m(a: dict[str, Any], b: dict[str, Any]) -> float:
+    return haversine(a["lat"], a["lon"], b["lat"], b["lon"])

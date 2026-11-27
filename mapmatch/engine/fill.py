@@ -25,7 +25,7 @@ RAIL_FILL_MIN_M = 300.0   # shorter train holes are platform noise
 WAY_ROUND_EXTRA_M = 300.0   # a route this much longer than the hop it fills
 WAY_ROUND_RATIO = 2.5       # and this many times as long
 WAY_ROUND_JOIN_M = 300.0    # a hop up to this long is drawn straight when every route goes round
-HOLE_M = 1000.0             # two fixes this far apart with nothing between: a hole, not a hop
+HOLE_M = 200.0              # two fixes this far apart with nothing between: a hole, not a hop
 # Walks and rides can be off-road (MTB trails, hill paths). A route there is
 # only believed when it stays this close to the recorded fixes; otherwise the
 # original GPS is kept rather than snapping to the wrong path.
@@ -102,7 +102,7 @@ def _plausible(shape: list[tuple[float, float]], a: dict[str, Any], b: dict[str,
         if mids:
             if max_deviation(shape, ref) > TRAIL_DEV_BY_MODE.get(mode, TRAIL_DEV_M) + max(min(p.get("accuracy") or 15.0, 30.0) for p in mids):
                 return "off_trail"
-        elif not force and length > (2.0 * chord + 40.0 if chord < 150.0 else 1.25 * chord + 30.0):
+        elif not force and length > (1.6 * chord + 25.0 if chord < 150.0 else 1.25 * chord + 30.0):
             # A gap with no fixes: a short one may go round a corner; a long
             # one is only believable as a nearly direct route. Asked for by
             # hand ("route it anyway") there is no fix to contradict the

@@ -132,3 +132,47 @@ def find_dwells(fixes: list[dict[str, Any]]) -> list[tuple[int, int]]:
             continue
         i += 1
     return runs
+
+
+MILL_MIN_S = 300
+MILL_MIN_FIXES = 8
+MILL_OUT_S = 20
+
+
+def find_milling(fixes: list[dict[str, Any]]) -> list[tuple[int, int]]:
+    """[start, end) runs of five minutes or more inside DWELL_RADIUS_M of their own
+    centre that are not steady progress: round a shop, a market, a station
+    concourse. Indoors the positions scatter by tens of metres, so the path is
+    long and fast and neither find_stays (50 m) nor find_dwells (almost no
+    ground covered) sees a stop. Nobody travelling stays inside 100 m for five
+    minutes; a slow scramble does, and is told apart by drifting one way."""
+    runs: list[tuple[int, int]] = []
+    n = len(fixes)
+    i = 0
+    while i < n:
+        lat, lon = fixes[i]["lat"], fixes[i]["lon"]
+        k = 1
+        j = i + 1
+        end = j                     # one past the last fix inside the radius
+        while j < n:
+            p = fixes[j]
+            if haversine(lat, lon, p["lat"], p["lon"]) > DWELL_RADIUS_M:
+                # A stray fix or two does not end it (indoors they fly off and come
+                # back); twenty seconds outside does.
+                if p["timestamp"] - fixes[end - 1]["timestamp"] > MILL_OUT_S:
+                    break
+                j += 1
+                continue
+            lat = (lat * k + p["lat"]) / (k + 1)
+            lon = (lon * k + p["lon"]) / (k + 1)
+            k += 1
+            j += 1
+            end = j
+        j = end
+        if k >= MILL_MIN_FIXES and fixes[j - 1]["timestamp"] - fixes[i]["timestamp"] >= MILL_MIN_S \
+                and not drifts(fixes[i:j]):
+            runs.append((i, j))
+            i = j
+            continue
+        i += 1
+    return runs

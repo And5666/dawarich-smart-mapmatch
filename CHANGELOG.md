@@ -1,5 +1,38 @@
 # Changes
 
+## 2.11.0
+
+Found by looking at the overview map of a whole city with every trip drawn:
+lines over water, tangles inside shops, loops round car parks, straight lines
+through blocks. Each is a rule, measured over 580 trips (`line drawn while
+stopped` 135 km to 5 km; straight jumps of 150 m+ in kept GPS 42 to 4; fixes
+dropped as end-of-trip scatter 24 to 1,150; watch-ride truth 97.0% to 97.5%).
+
+- **A stop is one dot, however it was logged.** A watch left running in a shop
+  drew a tangle a hundred metres wide; so did a "wide stop". Five minutes of
+  milling about on one spot anywhere in a walk or a ride is a stop too.
+- **A trip logged in fine detail is no longer exempt.** Its holes are routed or
+  left unconnected and its stops are dots, like any other trip. It is reported
+  as "kept as recorded" only when nothing in it needed tidying; otherwise it
+  can be pushed like any corrected trip. The same goes for a trip abroad.
+- **Where a trip ends indoors**, the last fixes (and the first of the trip out)
+  scatter over the building. Such a tangle is the way in and one position.
+- **Kept GPS is pruned and judged.** Fixes that could not have been walked to
+  at the stretch's own pace go. What is still a zigzag is scatter, not a walk
+  off the paths: it becomes the path there was time for, else a plain line.
+- **Holes from 200 m** (was 1 km) are tried every way and otherwise left
+  unconnected; kept GPS is cut where a step is 150 m and eight times the
+  usual step of its track (a watch that lost signal for 700 m).
+- **No ferry lines for walks and rides.** A ferry route is the only "path" out
+  on a harbour and a walk along the quay snapped to it.
+- **Car parks.** Nobody on foot or a bike follows the parking aisles: positions
+  matched to an aisle are not trusted, and no route is tried across them. A
+  matched or routed stretch may be 1.3 times the GPS it replaces (was 1.4 to 2).
+- **A straight line of 60 m or more is drawn only where a path runs under it**
+  (`valhalla.off_paths`); otherwise the two ends are left unconnected.
+- Known limit: floating pontoons are footways on the map, so a line can still
+  follow one along a quay. Telling them from land needs a water layer.
+
 ## 2.10.1
 
 ### Safety: nothing reaches Dawarich that the portal doesn't show or the GPS doesn't back

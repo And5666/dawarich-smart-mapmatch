@@ -633,7 +633,7 @@ def test_trip_kept_as_recorded_is_never_written_to_dawarich(env):
     assert not dw.ours() and client.get(f"/api/trips/{t['id']}").json()["trip"]["push"] == "recorded"
 
 
-def test_trip_kept_as_recorded_is_drawn_through_its_stops(fake_valhalla):
+def test_a_detailed_trip_is_drawn_through_its_stops(fake_valhalla):
     from mapmatch.engine.api import match_trip
     from mapmatch.portal.trips import matched_preview
     ride = [(5, 0.5 if k % 20 < 10 else -0.5) for k in range(300)]
@@ -642,9 +642,12 @@ def test_trip_kept_as_recorded_is_drawn_through_its_stops(fake_valhalla):
                  t0=a[-1]["timestamp"] + 1, dt=1, accuracy=None)
     b = track(ride, start=(stop[-1]["lat"], stop[-1]["lon"]), t0=stop[-1]["timestamp"] + 1, dt=1, accuracy=None)
     out = match_trip(a + stop + b)
-    assert out["quality"]["as_recorded"] and "stay" in [s["mode"] for s in out["segments"]]
+    assert "stay" in [s["mode"] for s in out["segments"]]
     parts = matched_preview(out)
-    assert "stay" in [p["m"] for p in parts]           # the stop is part of the line, not skipped
+    assert [p["m"] for p in parts] == ["cycle", "cycle"]      # the stop itself is a dot, not a tangle
+    from mapmatch.engine.geo import haversine
+    a, b = parts[0]["c"][-1], parts[1]["c"][0]
+    assert haversine(a[0], a[1], b[0], b[1]) < 60          # and the line runs up to it and on from it
 
 
 def test_match_settings_are_saved_and_used(env):

@@ -37,7 +37,7 @@ PROFILES: dict[str, dict[str, Any]] = {
         "costing_options": {"bicycle": {
             "use_trails": 1.0, "avoid_bad_surfaces": 0.0,
             "bicycle_type": "Mountain", "use_roads": 0.4, "use_hills": 1.0,
-            "ignore_oneways": True, "ignore_restrictions": True,
+            "ignore_oneways": True, "ignore_restrictions": True, "use_ferry": 0.0,
         }},
     },
     "pedestrian": {
@@ -48,7 +48,7 @@ PROFILES: dict[str, dict[str, Any]] = {
         "costing_options": {"pedestrian": {
             "use_tracks": 1.0, "walkway_factor": 0.8,
             "sidewalk_factor": 1.0, "max_hiking_difficulty": 6,
-            "ignore_oneways": True,
+            "ignore_oneways": True, "use_ferry": 0.0,
         }},
     },
 }
@@ -193,6 +193,30 @@ def uncovered(points: list[dict[str, Any]], samples: int = 8) -> float | None:
     return sum(1 for r in res if not (r or {}).get("edges")) / len(res)
 
 
+PATH_REACH_M = 25      # a point with no path this near is on water, a roof, the middle of a field
+
+
+def off_paths(points: list[tuple[float, float]], reach: float = PATH_REACH_M) -> bool:
+    """True when one of the points has nothing a person could walk on within
+    `reach` of it (a ferry line does not count). False when the server can't say."""
+    if not points:
+        return False
+    try:
+        res = post("/locate", {"locations": [{"lat": float(p[0]), "lon": float(p[1]), "search_cutoff": reach}
+                                             for p in points],
+                               "costing": "pedestrian", "verbose": True})
+    except ValhallaError:
+        return False
+    if not isinstance(res, list) or len(res) != len(points):
+        return False
+    for r in res:
+        edges = [e for e in ((r or {}).get("edges") or [])
+                 if (((e.get("edge") or {}).get("classification") or {}).get("use") or "") not in ("ferry", "rail_ferry")]
+        if not edges:
+            return True
+    return False
+
+
 def _shape_item(p: dict[str, Any], default_radius: float, narrow: bool = False) -> dict[str, Any]:
     item: dict[str, Any] = {"lat": float(p["lat"]), "lon": float(p["lon"])}
     if p.get("timestamp") is not None:
@@ -239,15 +263,25 @@ def match(points: list[dict[str, Any]], profile: str, timeout: float = 120.0,
 
     # Split the shape into continuous pieces. A break is where the next edge
     # does not start on the vertex the previous one ended on.
+    # A ferry line is water. A walk or a ride near a harbour snaps to it readily (it
+    # is the only "path" out there); such an edge is left out, and the line breaks at it.
     piece_of_edge: list[int] = []
     bounds: list[list[int]] = []  # [first_vertex, last_vertex] per piece
+    joined = False
     for i, e in enumerate(edges):
+        if profile != "auto" and e.get("use") == "ferry":
+            piece_of_edge.append(-1)
+            joined = False
+            continue
         b, t = int(e.get("begin_shape_index", 0)), int(e.get("end_shape_index", 0))
-        if i == 0 or b != int(edges[i - 1].get("end_shape_index", -1)):
+        if not joined or b != int(edges[i - 1].get("end_shape_index", -1)):
             bounds.append([b, t])
         else:
             bounds[-1][1] = t
         piece_of_edge.append(len(bounds) - 1)
+        joined = True
+    if not bounds:
+        return {"pieces": [], "anchors": [None] * len(points)}
     pieces = []
     for b, t in bounds:
         sub = poly[b:t + 1]
@@ -265,6 +299,9 @@ def match(points: list[dict[str, Any]], profile: str, timeout: float = 120.0,
             continue
         e = edges[ei]
         pi = piece_of_edge[ei]
+        if pi < 0:
+            anchors.append(None)
+            continue
         pc = pieces[pi]
         b = int(e.get("begin_shape_index", 0)) - pc["offset"]
         t = int(e.get("end_shape_index", 0)) - pc["offset"]
