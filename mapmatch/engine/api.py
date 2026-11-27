@@ -10,7 +10,7 @@ from .match import fit_score, match_segment
 from .modes import label, runs, summary_speed
 from .quality import between, deviations, path_km, percentile
 
-ENGINE_VERSION = "2.11.0"
+ENGINE_VERSION = "2.12.0"
 MODES = ("walk", "cycle", "drive", "train", "stay", "raw")
 MOVING = ("walk", "cycle", "drive", "train")
 NO_MAP_FRAC = 0.75   # share of sampled fixes with no map under them: the trip is abroad
@@ -374,7 +374,11 @@ def quality(fixes: list[dict[str, Any]], segments: list[dict[str, Any]],
             if p.get("unlinked"):
                 holes += p["km"]            # not drawn: nothing is known about the way
     moving = sum(v for k, v in km.items() if k != "stay")
-    errs = deviations(fixes, out)
+    # How far the fixes lie from the line, where there is a line: a stop is one dot, and
+    # the fixes scattered round it are not points the route missed.
+    stops = [(s["pieces"][0]["coords"][0][2], s["pieces"][-1]["coords"][-1][2]) for s in segments
+             if s["mode"] == "stay" and s["pieces"] and s["pieces"][0]["coords"]]
+    errs = deviations([p for p in fixes if not any(a < p["timestamp"] < b for a, b in stops)], out)
     raw_km = path_km(fixes)
     return {
         "raw_km": round(raw_km, 3),

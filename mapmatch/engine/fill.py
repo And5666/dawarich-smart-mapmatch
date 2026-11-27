@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import rail, railnet, valhalla
+from . import ground, rail, railnet, valhalla
 from .geo import cumulative, dist_point_segment, haversine, point_at, project_arc
 
 PROFILE = {"walk": "pedestrian", "cycle": "bicycle", "drive": "auto"}
@@ -25,6 +25,7 @@ RAIL_FILL_MIN_M = 300.0   # shorter train holes are platform noise
 WAY_ROUND_EXTRA_M = 300.0   # a route this much longer than the hop it fills
 WAY_ROUND_RATIO = 2.5       # and this many times as long
 WAY_ROUND_JOIN_M = 300.0    # a hop up to this long is drawn straight when every route goes round
+OPEN_M = 120.0              # a hop up to this long goes straight across open ground
 HOLE_M = 200.0              # two fixes this far apart with nothing between: a hole, not a hop
 # Walks and rides can be off-road (MTB trails, hill paths). A route there is
 # only believed when it stays this close to the recorded fixes; otherwise the
@@ -281,6 +282,13 @@ def fill(a: dict[str, Any], mids: list[dict[str, Any]], b: dict[str, Any], mode:
             # or a one-way street sends the car round the block. Try the next
             # profile (walking follows the same streets either way round).
             bad = "way_round"
+        if not bad and not mids and not force and mode in TRAIL_MODES and chord <= OPEN_M \
+                and _length(shape) > 1.15 * chord + 10.0 and ground.available() \
+                and not ground.blocked(a["lat"], a["lon"], b["lat"], b["lon"]):
+            # Open ground (a car park, a square): the basemap shows nothing in the way of
+            # going straight, and on foot or a bike that is what people do. The route
+            # follows the aisles round it.
+            return {"kind": "join", "why": ["open_ground"], "coords": [(a["lat"], a["lon"]), (b["lat"], b["lon"])]}
         if not bad:
             if mids and not force:
                 shape = _straighten(shape, pts)

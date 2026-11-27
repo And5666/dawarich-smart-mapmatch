@@ -8,6 +8,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from . import ground
 from .geo import haversine
 
 MAX_ACCURACY_M = 150.0
@@ -77,6 +78,8 @@ def clean(points: list[dict[str, Any]], jitter: bool = False
         out, hops = _side_steps(out)
         dropped.extend(hops)
         out, hops = _unsure_fixes(out)
+        dropped.extend(hops)
+        out, hops = _afloat(out)
         dropped.extend(hops)
         out, hops = _settle(out)
         dropped.extend(hops)
@@ -331,6 +334,7 @@ def _unsure_fixes(out: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list
 # position: the fix it entered by and the one nearest the middle of the rest.
 SETTLE_RADIUS_M = 90.0
 SETTLE_MIN_FIXES = 4
+SETTLE_DOOR_M = 60.0
 SETTLE_PATH_M = 120.0      # the tangle is at least this long
 SETTLE_RATIO = 3.0         # and this many times as long as it gets anywhere
 
@@ -351,16 +355,52 @@ def _settle(out: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[
         if len(run) < SETTLE_MIN_FIXES or j == 0:
             continue
         path = sum(_m(a, b) for a, b in zip(run, run[1:]))
-        if path < SETTLE_PATH_M or path < SETTLE_RATIO * _m(run[0], run[-1]):
+        door = next((k for k, p in enumerate(run) if ground.indoors(p["lat"], p["lon"])), None) \
+            if len(run) >= 3 and ground.available() else None
+        if door is not None and len(run) - door >= 3 and max(_m(run[door], p) for p in run[door + 1:]) <= SETTLE_DOOR_M:
+            # The basemap says this end is inside a building, and from the first fix under
+            # its roof nothing gets further than a room or two away: the trip has arrived
+            # (or not yet left). A walk past shop fronts drifts under roofs too, but goes on.
+            gone = run[door + 1:]
+        elif path < SETTLE_PATH_M or path < SETTLE_RATIO * _m(run[0], run[-1]):
             continue
-        centre = min(run[1:], key=lambda p: _m(p, {"lat": lat, "lon": lon}))
-        gone = [p for p in run[1:] if p is not centre]
+        else:
+            centre = min(run[1:], key=lambda p: _m(p, {"lat": lat, "lon": lon}))
+            gone = [p for p in run[1:] if p is not centre]
         for p in gone:
             p["_drop"] = "jitter"
         dropped.extend(gone)
         ids = {id(p) for p in gone}
         out = [p for p in out if id(p) not in ids]
     return out, dropped
+
+
+AFLOAT_M = 250.0       # fixes on water that get this far are a boat, not an error
+
+
+def _afloat(out: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Fixes the basemap puts on water (and not on a bridge) are dropped, unless a run
+    of them travels: a ferry crossing is a journey, a fix out in the harbour beside a
+    quayside walk is an error."""
+    if not ground.available():
+        return out, []
+    wet = [ground.wet(p["lat"], p["lon"]) for p in out]
+    gone: list[dict[str, Any]] = []
+    i, n = 0, len(out)
+    while i < n:
+        if not wet[i]:
+            i += 1
+            continue
+        j = i
+        while j + 1 < n and wet[j + 1]:
+            j += 1
+        if _m(out[i], out[j]) < AFLOAT_M:
+            gone.extend(out[i:j + 1])
+        i = j + 1
+    for p in gone:
+        p["_drop"] = "water"
+    ids = {id(p) for p in gone}
+    return [p for p in out if id(p) not in ids], gone
 
 
 def _m(a: dict[str, Any], b: dict[str, Any]) -> float:

@@ -1,5 +1,23 @@
 # Changes
 
+## 2.12.0
+
+- **The engine can read the basemap** (`MAPMATCH_GROUND_PMTILES`, the same
+  Protomaps PMTiles file the portal can draw offline; `mapmatch/engine/ground.py`,
+  pure Python). It answers three questions the road network cannot: is this
+  point on water, is it under a roof, and does a straight line between two
+  points cross water or run through buildings. Without the file nothing changes.
+- With it: fixes on water are dropped unless a run of them travels (a ferry);
+  positions matched to a "footway" that is on water (a floating pontoon) are
+  not trusted; a trip that ends under a roof stops at the first fix inside when
+  nothing after it gets further than a room away; kept GPS that stays under one
+  roof for twenty seconds is taken out; a straight step of 25 m or more across
+  water or through buildings is routed if a path fits the time, else left
+  unconnected; and across open ground (a car park, a square) a short hop goes
+  straight instead of round the aisles.
+- "Points far from the line" no longer counts the fixes of a stop: a stop is
+  one dot, and the scatter round it is not something the route missed.
+
 ## 2.11.0
 
 Found by looking at the overview map of a whole city with every trip drawn:

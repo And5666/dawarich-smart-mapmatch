@@ -4,8 +4,8 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from . import valhalla
-from .fill import END_SNAP_M, PROFILE, TRAIL_DEV_M, TRAIL_MODES, VMAX_KMH, fill, max_deviation
+from . import ground, valhalla
+from .fill import END_SNAP_M, PROFILE, TRAIL_DEV_M, TRAIL_MODES, TYPICAL_KMH, VMAX_KMH, fill, max_deviation
 from .geo import dist_point_segment, haversine, point_at, project_arc, subline
 from .stays import centroid
 from .valhalla import unreported
@@ -184,6 +184,8 @@ def _fixpt(p: dict[str, Any], lat: float | None = None, lon: float | None = None
 
 CALM_OVER = 1.3        # kept GPS may ask for this many times the usual pace of its stretch
 TORTUOUS = 1.3         # kept GPS this many times as long as it is far (plus 30 m) is scatter
+BLOCK_MIN_M = 25.0     # a straight step this long is checked against water and buildings
+INDOOR_RUN_S = 20      # kept GPS this long under one roof is drift, or a shop: not part of the line
 PROBE_MIN_M = 60.0     # a straight step this long is checked for paths under it
 PROBE_EVERY_M = 30.0
 CALM_MIN_SAVE_M = 10.0
@@ -245,11 +247,21 @@ def _filled(a: dict[str, Any], mids: list[dict[str, Any]], b: dict[str, Any], mo
         # scatter (between tall buildings, over water), and the line through it a zigzag.
         sure = [p for p in mids if (p.get("accuracy") or 0.0) < UNSURE_ACC_M]
         shape = None
-        if pace and not forced and (strength != "strict" or direct):
-            sure = calm(a, sure, b, pace)
+        if not forced and (strength != "strict" or direct):
+            slow = mode in ("walk", "cycle") and ground.available()
+            if slow:
+                # A fix the basemap puts on water is scatter. (One under a roof may be a
+                # pavement fix ten metres out: the steps between fixes are judged below.)
+                sure = [p for p in sure if not ground.wet(p["lat"], p["lon"])]
+            if pace:
+                sure = calm(a, sure, b, pace)
+            line = [a, *sure, b]
             chord = haversine(a["lat"], a["lon"], b["lat"], b["lon"])
-            path = length_m([(p["lat"], p["lon"]) for p in (a, *sure, b)])
-            if sure and path > TORTUOUS * chord + 30.0:
+            path = length_m([(p["lat"], p["lon"]) for p in line])
+            through = slow and any(haversine(p["lat"], p["lon"], q["lat"], q["lon"]) >= BLOCK_MIN_M
+                                   and ground.blocked(p["lat"], p["lon"], q["lat"], q["lon"]) for p, q in zip(line, line[1:]))
+            pace = pace or TYPICAL_KMH.get(mode, 5.0)
+            if through or (sure and path > TORTUOUS * chord + 30.0):
                 # Still a zigzag: scatter round a walk the map could not follow, not a walk
                 # off the paths (that is as long as it is far). The fixes are no guide,
                 # so the way there is the path a walker had time for, or failing that
@@ -304,6 +316,8 @@ def road_pieces(fixes: list[dict[str, Any]], mode: str, m: dict[str, Any],
         # accuracy usually landed on the wrong path.
         if mode in ("walk", "cycle") and "parking_aisle" in anchors[k]["kind"]:
             return False          # nobody on foot or a bike follows the aisles of a car park
+        if mode in ("walk", "cycle") and ground.wet(anchors[k]["lat"], anchors[k]["lon"]):
+            return False          # a "footway" on the water is a pontoon: boats moor there
         if not trail:
             return True
         acc = fixes[k].get("accuracy") or 20.0
@@ -619,24 +633,48 @@ def unlink(segments: list[dict[str, Any]]) -> None:
                 d = length_m(c)
                 if p["kind"] == "straight" and d >= UNLINK_M:
                     p["unlinked"] = True
+                elif d >= BLOCK_MIN_M and len(c) == 2 and s["mode"] in ("walk", "cycle") and not p.get("kept") \
+                        and ground.blocked(c[0][0], c[0][1], c[1][0], c[1][1]):
+                    p["unlinked"] = True          # across water or through buildings: not drawn
                 elif d >= PROBE_MIN_M and len(c) == 2 and s["mode"] in ("walk", "cycle") and not p.get("kept"):
                     # A shorter straight line is fine across a car park or a square. Across
                     # water or through a block of buildings it is not: no path runs under it.
                     k = int(d // PROBE_EVERY_M)
                     mids = [(c[0][0] + (c[1][0] - c[0][0]) * i / (k + 1), c[0][1] + (c[1][1] - c[0][1]) * i / (k + 1))
                             for i in range(1, k + 1)]
-                    if valhalla.off_paths(mids):
-                        p["unlinked"] = True
+                    if not ground.available() and valhalla.off_paths(mids):
+                        p["unlinked"] = True          # (with a basemap, water and buildings were asked above)
                 out.append(p)
                 continue
             if p["kind"] not in ("raw", "recorded") or len(c) < 2:
                 out.append(p)
                 continue
+            slow = s["mode"] in ("walk", "cycle") and ground.available()
+            if slow and len(c) > 2:
+                # Kept GPS that stays under one roof for twenty seconds is a watch drifting
+                # indoors (or you, in a shop): those fixes go, and the step across is judged below.
+                inside = [ground.indoors(x[0], x[1]) for x in c]
+                keep = [True] * len(c)
+                i = 1
+                while i < len(c) - 1:
+                    if not inside[i]:
+                        i += 1
+                        continue
+                    j = i
+                    while j + 1 < len(c) - 1 and inside[j + 1]:
+                        j += 1
+                    if c[j][2] - c[i][2] >= INDOOR_RUN_S:
+                        keep[i:j + 1] = [False] * (j + 1 - i)
+                    i = j + 1
+                if not all(keep):
+                    c = [x for x, k in zip(c, keep) if k]
+                    p = {**p, "coords": c, "n_in": len(c), "km": round(length_m(c) / 1000.0, 4)}
             hop = [haversine(c[k][0], c[k][1], c[k + 1][0], c[k + 1][1]) for k in range(len(c) - 1)]
             usual = sorted(hop)[len(hop) // 2]
             cuts = [k for k in range(len(c) - 1)
                     if (hop[k] >= CUT_M and c[k + 1][2] - c[k][2] >= CUT_S)
-                    or (len(hop) >= 10 and hop[k] >= max(CUT_HOP_M, CUT_HOPS * usual))]
+                    or (len(hop) >= 10 and hop[k] >= max(CUT_HOP_M, CUT_HOPS * usual))
+                    or (slow and hop[k] >= BLOCK_MIN_M and ground.blocked(c[k][0], c[k][1], c[k + 1][0], c[k + 1][1]))]
             if not cuts:
                 out.append(p)
                 continue
