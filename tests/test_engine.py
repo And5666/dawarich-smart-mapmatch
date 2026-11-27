@@ -326,6 +326,31 @@ def test_stop_to_trip_link_follows_the_road_between_their_times(fake_valhalla):
     assert link(a, {**a, "timestamp": T0 + 60}) == [], "nothing to draw for a few metres"
 
 
+def test_no_link_is_guessed_across_a_journey_nobody_logged(fake_valhalla):
+    """Two hours at a place, then nothing for an hour, then a drive starting
+    4.6 km away: the hour between is unknown, not a walk to invent."""
+    from mapmatch.portal.push import link
+    a = {"lat": LAT0, "lon": LON0, "timestamp": T0, "tracker": "phone"}
+    assert link(a, {"lat": LAT0, "lon": LON0 + 0.067, "timestamp": T0 + 3600}) == [], "4.6 km, an hour unrecorded"
+    assert link(a, {"lat": LAT0, "lon": LON0 + 0.004, "timestamp": T0 + 3600}) == [], "short, but an hour unrecorded"
+    assert link(a, {"lat": LAT0, "lon": LON0 + 0.004, "timestamp": T0 + 240}, "walk"), "the step to a trip is still drawn"
+
+
+def test_stop_points_never_fill_days_with_no_data():
+    """The phone off for six weeks at home: one fix before, one after. The stop
+    is not stamped every half hour through the weeks in between."""
+    from mapmatch.portal.push import tidy_stops
+    day = 86400
+    run = [{"lat": LAT0, "lon": LON0, "timestamp": T0, "accuracy": 15, "tracker_id": "phone"},
+           {"lat": LAT0 + 0.0003, "lon": LON0, "timestamp": T0 + 44 * day, "accuracy": 15, "tracker_id": "phone"}]
+    pts = [p for c in tidy_stops(run) for p in c]
+    assert sorted(p["timestamp"] for p in pts) == [T0, T0 + 44 * day]
+    # Overnight at home with a fix now and then is still one stop, stamped through the night.
+    night = [{**run[0], "timestamp": T0 + k * 4 * 3600} for k in range(4)]
+    stamps = [p["timestamp"] for c in tidy_stops(night) for p in c]
+    assert len(stamps) == 12 * 2 + 1 and stamps[-1] == T0 + 12 * 3600
+
+
 def test_pushed_lines_have_no_long_straight_steps_but_jumps_stay_jumps():
     from mapmatch.engine.geo import haversine
     from mapmatch.portal.push import densify

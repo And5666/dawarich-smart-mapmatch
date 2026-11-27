@@ -828,3 +828,28 @@ def test_site_settings_reach_the_page_and_the_api(tmp_path, fake_valhalla):
     me = site.get("/api/me").json()
     assert me["basemap"] == {"pmtiles": "/maps/world.pmtiles", "assets": "/maps/lib/"}
     assert (me["home_url"], me["home_label"]) == ("/", "Home")
+
+
+def test_a_push_that_would_invent_points_changes_nothing(env, monkeypatch):
+    """Whatever goes wrong in building the points, the guard has the last word:
+    a stop point where no fix was refuses the span, by hand or automatically,
+    and Dawarich keeps exactly what it had."""
+    from mapmatch.portal import push
+    client, dw, jobs, db = env
+    sync(client, jobs)
+    before = sorted(dw.points.items())
+    real = push.tidy_stops
+
+    def broken(run):
+        places = real(run)
+        return places + [[{**places[-1][-1], "lat": places[-1][-1]["lat"] + 0.03,
+                           "timestamp": places[-1][-1]["timestamp"] - 60}]] if places else places
+    monkeypatch.setattr(push, "tidy_stops", broken)
+    trip = client.get("/api/trips").json()["trips"][-1]
+    r = client.post(f"/api/trips/{trip['id']}/push", headers=H)
+    assert r.status_code == 400 and "refused to write to Dawarich" in r.text
+    assert sorted(dw.points.items()) == before
+    run_job(client, jobs, "push_all")             # the path automatic runs take
+    assert sorted(dw.points.items()) == before and not dw.ours()
+    assert any("refused to write" in (t["error"] or "") for t in client.get("/api/trips").json()["trips"])
+    assert not client.get("/api/me").json()["dawarich_needs_repair"]

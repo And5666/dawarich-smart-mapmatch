@@ -2,23 +2,28 @@
 
 ## 2.10.1
 
-Found by running the matcher over a real account (a few hundred trips, two
-years, phone and watch), looking at every flagged trip and at the trips whose
-drawn line strayed furthest from the GPS, and then using the portal as five
-kinds of user. Every item below started as a wrong or doubtful trip; each is a rule
-with a test, not a correction to that trip.
+### Safety: nothing reaches Dawarich that the portal doesn't show or the GPS doesn't back
 
-### Matching
+- **Days with no data got points.** With the phone off from 13 October to
+  26 November, the stop either side was stamped every half hour through all
+  six weeks (48 points a day). Stop points now never bridge more than 12 hours
+  with nothing recorded.
+- **Made-up routes between trips.** An hour with nothing recorded between a
+  stop and the next trip, 4.6 km away, was drawn as a walk the portal never
+  showed. A link between a stop and a trip is now only the short step between
+  them: at most 15 minutes and 1.5 km.
+- **A last check before every write** (`mapmatch/portal/guard.py`), separate
+  from the code that builds the points. A matched point must lie on the line
+  the portal draws; a stop point must sit where fixes were, between two fixes
+  at most 12 hours apart; a link must be a short step between them; a point
+  put back must be in the archive. Anything else and the span is refused: the
+  trip shows the reason and Dawarich is left exactly as it was, for a push by
+  hand and for automatic runs alike.
+- After updating, **Settings → Repair tracks** rewrites what earlier pushes
+  wrote, removing the points above.
 
-- **No map here.** A trip abroad was reported as unmatched instead of
-  "no map, kept as recorded" when a ferry line reached into its port: the
-  coverage check now needs a road within 1 km.
-- **Trains with nothing recorded on the way.** Two fixes at two stations, a
-  railway between them and a pace no walker keeps: a train, drawn along the
-  line (timetable shapes first, then an OpenStreetMap network, which adds the
-  Underground). Before, these were walks along the road at 20 km/h, or
-  straight lines. A walking route across a gap of more than 1 km is refused
-  above 9 km/h.
+### Matching: trains on the real rails, long gaps, unreliable fixes (engine 2.10.1)
+
 - **Trains follow the real rails.** The shipped timetable shapes are coarse
   (often one point per station, a straight line between), so a train was
   drawn as chords across the country. Where an OpenStreetMap railway network
@@ -36,6 +41,26 @@ with a test, not a correction to that trip.
   worse, that a walker would have had to run to, is dropped; and GPS that is
   kept because no path fits is drawn only through the fixes the phone was
   sure of. Walks between tall buildings were being drawn out over water.
+
+## 2.10.0
+
+Found by running the matcher over a real account (a few hundred trips, two
+years, phone and watch), looking at every flagged trip and at the trips whose
+drawn line strayed furthest from the GPS, and then using the portal as five
+kinds of user. Every item below started as a wrong or doubtful trip; each is a rule
+with a test, not a correction to that trip.
+
+### Matching
+
+- **No map here.** A trip abroad was reported as unmatched instead of
+  "no map, kept as recorded" when a ferry line reached into its port: the
+  coverage check now needs a road within 1 km.
+- **Trains with nothing recorded on the way.** Two fixes at two stations, a
+  railway between them and a pace no walker keeps: a train, drawn along the
+  line (timetable shapes first, then an OpenStreetMap network, which adds the
+  Underground). Before, these were walks along the road at 20 km/h, or
+  straight lines. A walking route across a gap of more than 1 km is refused
+  above 9 km/h.
 - **A timetable shape that doubles back** (out, back and out again along the
   same track) no longer pins several fixes to one spot.
 - **Stray fixes.** A phone hopping hundreds of metres to and fro while parked
